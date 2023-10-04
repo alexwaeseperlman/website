@@ -1,0 +1,127 @@
+body {
+  margin: 0;
+}
+#root {
+  --splash: #f6fdff;
+  --text-color: #0079ac;
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  background-color: var(--splash);
+  display: flex;
+  /*align-items: center;*/
+}
+
+#main-container {
+  display: flex;
+  flex-direction: column;
+  gap: 45px;
+  padding: 64px;
+}
+
+h1 {
+  font-family: "Roboto";
+  font-weight: 900;
+  text-transform: uppercase;
+
+  font-style: normal;
+
+  font-size: 50px;
+
+  color: #0079ac;
+}
+
+.menu-link {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.menu-link-label {
+  font-family: "Roboto Slab";
+
+  font-size: 35px;
+  color: #0079ac;
+
+  text-transform: uppercase;
+
+  min-height: 50px;
+  user-select: none;
+
+  transition: ease 0.1s;
+
+  width: fit-content;
+  height: fit-content;
+}
+
+.menu-link-label:hover {
+  cursor: pointer;
+  filter: opacity(0.7);
+}
+
+.menu-link.selected > .menu-link-label {
+  filter: opacity(0.7);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+
+.content {
+  font-family: "Roboto Slab";
+  color: black;
+  font-size: 24;
+  transition: ease 0.15s;
+  overflow: hidden;
+  top: 60px;
+  flex: 1;
+}
+
+#media-icons {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  justify-self: flex-end;
+  flex: 1;
+}
+
+.media-icon {
+  cursor: pointer;
+  transition: ease-out 0.1s;
+}
+
+.media-icon:hover {
+  transform: scale(1.1);
+}
+
+a {
+  color: #0079ac;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+
+input {
+  font-family: "Roboto Slab";
+  background-color: #f6fdff;
+  font-size: 24;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  padding-left: 8px;
+  transition: ease 0.1s;
+  outline: none;
+}
+
+input:disabled {
+  background-color: #eee;
+}
+
+input.error {
+  border-color: red;
+}
+
+.course-code {
+  font-family: "Roboto Slab";
+  font-weight: bolder;
+}

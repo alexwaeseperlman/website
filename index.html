@@ -1,0 +1,124 @@
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
+  rel="stylesheet"
+/>
+<link rel="stylesheet" href="index.css" />
+<style>
+  .menu-link > .content {
+    max-height: 0;
+  }
+</style>
+
+<div id="root">
+  <div id="main-container">
+    <h1><a href="index.html">Alex Waese-Perlman</a></h1>
+    <div class="menu-link">
+      <a class="menu-link-label">About me</a>
+      <div class="content">
+        <p>
+          I am a junior at McGill University, in the joint honours math and
+          computer science program.
+        </p>
+        <p>
+          Last summer I worked as a software engineering intern at Roblox in San
+          Mateo. I was on the core services team, improving the searchability of
+          logs company-wide.
+        </p>
+        <p>
+          Next summer I am interning at Optiver, a high frequency trading firm
+          in Chicago.
+        </p>
+      </div>
+    </div>
+
+    <div class="menu-link">
+      <a class="menu-link-label">Utilities</a>
+      <div class="content">
+        <p>
+          <a href="birthday_paradox/index.html">Birthday paradox</a>
+        </p>
+      </div>
+    </div>
+
+    <div class="menu-link">
+      <a class="menu-link-label">Courses</a>
+      <div class="content">
+        <p>
+          <a href="birthday_paradox.html" class="course-code">COMP 330</a> -
+          Theory of computation
+        </p>
+        <p>
+          <a href="birthday_paradox.html" class="course-code">MATH 456</a> -
+          Honours algebra 3
+        </p>
+        <p>
+          <a href="birthday_paradox.html" class="course-code">MATH 350</a> -
+          Honours discrete math
+        </p>
+        <p>
+          <a href="birthday_paradox.html" class="course-code">MATH 254</a> -
+          Honours analysis 1
+        </p>
+        <p>
+          <a href="birthday_paradox.html" class="course-code">PHYS 357</a> -
+          Honours quantum physics
+        </p>
+      </div>
+    </div>
+
+    <div class="menu-link">
+      <a class="menu-link-label" href="resume.pdf">Resume</a>
+
+      <div class="content"></div>
+    </div>
+
+    <div id="media-icons">
+      <a class="media-icon" href="mailto:alex@alexwp.com">
+        <img src="gmail.svg" />
+      </a>
+      <a class="media-icon" href="https://linkedin.com/in/alex-wp">
+        <img src="linkedin.svg" />
+      </a>
+      <a class="media-icon" href="https://github.com/alexwaeseperlman">
+        <img src="github.svg" />
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const menuLinks = Array.from(document.querySelectorAll(".menu-link"));
+  const labels = Array.from(document.querySelectorAll(".menu-link-label"));
+  let selected = null;
+  labels.forEach((label) => {
+    label.addEventListener("click", () => {
+      const par = label.parentElement;
+      if (selected) {
+        close(selected.querySelector(".content"));
+        selected.classList.toggle("selected");
+      }
+      if (par == selected) selected = null;
+      else selected = par;
+      if (selected) {
+        open(selected.querySelector(".content"));
+        selected.classList.toggle("selected");
+      }
+      menuLinks.forEach((menuLink) => {
+        // calculate the distance between this menuLink and the first one
+        if (menuLink == par) {
+        } else {
+        }
+      });
+    });
+  });
+  function open(content) {
+    console.log(content);
+    content.style.maxHeight = content.scrollHeight + "px";
+  }
+
+  function close(content) {
+    content.style.maxHeight = null;
+  }
+</script>
