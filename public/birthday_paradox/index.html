@@ -5,6 +5,7 @@
   rel="stylesheet"
 />
 <link rel="stylesheet" href="../index.css" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
 
 <div id="root">
   <div id="main-container">
@@ -22,7 +23,7 @@
           the left to select the independent variable.
         </p>
         <form>
-          <p>
+          <div class="input-row">
             <input
               type="radio"
               name="independent"
@@ -30,51 +31,47 @@
               value="num-people"
               checked
               onchange="handleIndependentChange(this);"
-            /><label for="num-people"
-              >Number of people:
-
-              <input
-                disabled
-                id="num-people-val"
-                type="number"
-                value="23"
-                oninput="handleDataChange();"
-            /></label>
-          </p>
-          <p>
+            /><label for="num-people">Number of people: </label>
+            <input
+              disabled
+              id="num-people-val"
+              type="number"
+              value="23"
+              oninput="handleDataChange();"
+            />
+          </div>
+          <div class="input-row">
             <input
               type="radio"
               name="independent"
               id="num-days"
               value="num-days"
               onchange="handleIndependentChange(this);"
-            /><label for="num-days"
-              >Number of days in a year:
-              <input
-                id="num-days-val"
-                type="number"
-                value="365"
-                oninput="handleDataChange();"
-            /></label>
-          </p>
-          <p>
+            /><label for="num-days">Number of days in a year: </label
+            ><input
+              id="num-days-val"
+              type="number"
+              value="365"
+              oninput="handleDataChange();"
+            />
+          </div>
+          <div class="input-row">
             <input
               type="radio"
               name="independent"
               value="prob-collision"
               id="prob-collision"
               onchange="handleIndependentChange(this);"
-            /><label for="prob-collision"
-              >Probability of a collision:
-              <input
-                id="prob-collision-val"
-                type="number"
-                value="0.5"
-                maxlength="9"
-                min="0"
-                oninput="handleDataChange();"
-            /></label>
-          </p>
+            /><label for="prob-collision">Probability of a collision: </label
+            ><input
+              id="prob-collision-val"
+              type="number"
+              value="0.5"
+              maxlength="9"
+              min="0"
+              oninput="handleDataChange();"
+            />
+          </div>
         </form>
 
         <p>

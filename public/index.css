@@ -1,22 +1,26 @@
 body {
   margin: 0;
+  box-sizing: border-box;
 }
 #root {
   --splash: #f6fdff;
   --text-color: #0079ac;
+  box-sizing: border-box;
   margin: 0;
   width: 100%;
   min-height: 100%;
   background-color: var(--splash);
   display: flex;
-  /*align-items: center;*/
+  justify-content: center;
+  padding: 32px;
 }
 
 #main-container {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 45px;
-  padding: 64px;
+  gap: 32px;
+  max-width: 90vw;
 }
 
 h1 {
@@ -109,6 +113,7 @@ input {
   border: 2px solid currentColor;
   border-radius: 8px;
   padding-left: 8px;
+  height: 40px;
   transition: ease 0.1s;
   outline: none;
 }
@@ -123,5 +128,13 @@ input.error {
 
 .course-code {
   font-family: "Roboto Slab";
-  font-weight: bolder;
+  font-weight: bold;
+}
+
+.input-row {
+  display: flex;
+  gap: 16px;
+  margin: 8px;
+  max-width: 100%;
+  align-items: center;
 }
