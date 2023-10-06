@@ -36,7 +36,7 @@ function logBirthday(numPeople, numDays) {
     .minus(numPeople.times(numDays.ln()));
 }
 
-const bsearchIters = 100;
+const bsearchIters = 75;
 const innerBsearchIters = 25;
 function updateNumPeople(probStr, numDaysStr) {
   if (interval) clearInterval(interval);
@@ -80,7 +80,7 @@ function updateNumDays(numPeopleStr, probStr) {
   const numPeople = new Decimal(numPeopleStr);
   // binary search
   let lb = numPeople,
-    ub = numPeople.plus(1);
+    ub = new Decimal(2);
   let cnt = 0;
   interval = setInterval(() => {
     cnt++;
@@ -90,14 +90,14 @@ function updateNumDays(numPeopleStr, probStr) {
     let mid;
     for (let i = 0; i < innerBsearchIters; i++) {
       mid = lb.plus(ub).dividedBy(2);
+
       if (logBirthday(numPeople, ub).lt(target)) {
         lb = ub.plus(0);
         ub = ub.times(2);
       } else {
-        // fixed number of iterations
         const val = logBirthday(numPeople, mid);
-        if (val.gt(target)) lb = mid;
-        else ub = mid;
+        if (val.gt(target)) ub = mid;
+        else lb = mid;
       }
     }
     const str = mid.toFixed(0);
