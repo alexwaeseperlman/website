@@ -77,6 +77,15 @@ h1 {
   overflow: hidden;
   top: 60px;
   flex: 1;
+  background-color: white;
+  box-sizing: border-box;
+  border-radius: 6px;
+}
+.menu-link.selected > .content {
+  border: 2px solid #0001;
+}
+.content-container {
+  padding: 16px;
 }
 
 #media-icons {
