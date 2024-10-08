@@ -83,6 +83,9 @@ h1 {
 .menu-link.selected > .content {
   border: 2px solid #0001;
 }
+.content.selected {
+  border: 2px solid #0001;
+}
 .content-container {
   padding: 16px;
 }
@@ -132,6 +135,32 @@ input:disabled {
 
 input.error {
   border-color: red;
+}
+
+button {
+  font-family: "Roboto Slab";
+  font-size: 24;
+  background-color: #0079ac;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  height: 40px;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: ease 0.1s;
+}
+
+button:hover {
+  background-color: #005f7f;
+}
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+button:active {
+  background-color: #004c66;
 }
 
 .course-code {

@@ -1,0 +1,192 @@
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
+  rel="stylesheet" />
+<link rel="stylesheet" href="../index.css" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+
+<div id="root">
+  <div id="main-container">
+    <h1><a href="../">Alex Waese-Perlman</a></h1>
+    <div class="menu-link">
+      <div class="menu-link-label">24 solver</div>
+      <div class="content selected" style="max-height: none">
+        <div class="content-container">
+          <p>
+            24 is a game played with a deck of cards. In one round 4 cards are
+            drawn. The goal is to use the four numbers on the cards to make 24
+            using addition, subtraction, multiplication, division and brackets.
+            The cards can be used in any order, but all 4 cards must be used
+            exactly once.
+          </p>
+          <div class="input-row">
+            Cards:
+            <input type="number" min="1" max="13" name="card1" id="card1" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+            <input type="number" min="1" max="13" name="card2" id="card2" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+            <input type="number" min="1" max="13" name="card3" id="card3" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+            <input type="number" min="1" max="13" name="card4" id="card4" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+            <button onclick="generate()">
+              Generate
+            </button>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    <div class="menu-link" id="solutions" onclick="toggleSolutions()">
+      <div class="menu-link-label">Show Solutions</div>
+      <div class="content" style="max-height: 0px">
+        <div class="content-container">
+          <ul id="output">
+          </ul>
+        </div>
+      </div>
+  </div>
+</div>
+
+<script>
+  const cardElements = [document.getElementById('card1'), document.getElementById('card2'), document.getElementById('card3'), document.getElementById('card4')];
+  const cardVals = [null, null, null, null];
+
+  const ops = ['+', '-', '*', '/'];
+  const apply = {
+    '+': (a, b) => a + b,
+    '-': (a, b) => a - b,
+    '*': (a, b) => a * b,
+    '/': (a, b) => a / b
+  };
+
+  const eps = 1e-9;
+
+  /*
+  type val = {
+    value: number,
+    expr: string,
+    op: string
+  }
+    vals: val[]
+  */
+  function solve(vals) {
+    if (vals.length == 1 && Math.abs(vals[0].value - 24) < eps) {
+      return [vals[0].expr];
+    }
+    const out = []
+    for (let i = 0; i < vals.length; i++) {
+      for (let j = 0; j < vals.length; j++) {
+        if (j == i) continue;
+
+        for (const op of ops) {
+          const cur = [];
+
+          for (let k = 0; k < vals.length; k++) {
+            if (k == i || k == j) continue;
+            cur.push(vals[k]);
+          }
+
+          const lhs = { ...vals[i] }, rhs = { ...vals[j] };
+          if (op == '/' && Math.abs(rhs.value) < eps) continue;
+
+          // never apply subtraction to subtraction
+          if (op == '-' && (rhs.op == '-' || rhs.op == '+')) continue;
+          // never apply division to division
+          if (op == '/' && (rhs.op == '/' || rhs.op == '*')) continue;
+          // never apply multiplication to the middle of a sequence of multiplications
+          if (op == '*' && ((lhs.op == '*' && rhs.op == '*') || i > j)) continue;
+          // never apply addition to two additions
+          if (op == '+' && ((lhs.op == '+' && rhs.op == '+') || i > j)) continue;
+
+          // apply brackets if necessary
+          if (op == '/' || op == '*') {
+            if (lhs.op == '+' || lhs.op == '-') lhs.expr = '(' + lhs.expr + ')';
+            if (rhs.op == '+' || rhs.op == '-') rhs.expr = '(' + rhs.expr + ')';
+          }
+
+          const val = {
+            value: apply[op](lhs.value, rhs.value),
+            expr: lhs.expr + op + rhs.expr,
+            op: op
+          };
+
+          // never need to go negative - if we do, we can just swap the order of the operands
+          if (op == '-' && val.value < 0) continue;
+          if (op == '/' && val.value < 1 - eps) continue;
+
+          cur.push(val);
+          out.push(...solve(cur));
+        }
+      }
+    }
+
+    return out;
+
+  }
+
+  function solveAndUpdate() {
+    for (let i = 0; i < 4; i++) {
+      cardVals[i] = parseInt(cardElements[i].value);
+    }
+    const vals = [];
+    for (const card of cardVals) {
+      vals.push({
+        value: card,
+        expr: card.toString(),
+        op: ''
+      });
+    }
+    const exprs = new Set();
+    for (const out of solve(vals)) {
+      exprs.add(out);
+    }
+    const output = document.getElementById('output');
+    output.innerHTML = '';
+    if (exprs.size == 0) {
+      output.innerHTML = 'No solutions';
+    }
+    for (const expr of exprs) {
+      output.innerHTML += `<li>${expr}</li>`;
+    }
+  }
+  let solutionsOpen = false;
+  function handleCardChange() {
+    const content = document.querySelector('#solutions .content');
+    solveAndUpdate();
+    if (solutionsOpen) {
+      open(content);
+    }
+  }
+  function generate() {
+    const cards = [];
+    for (let i = 0; i < 52; i++) {
+      cards.push(Math.floor(i / 4) + 1);
+    }
+    for (const card of cardElements) {
+      card.value = cards[Math.floor(Math.random() * cards.length)];
+      cards.splice(cards.indexOf(card.value), 1);
+    }
+    handleCardChange();
+  }
+
+  function toggleSolutions() {
+    const content = document.querySelector('#solutions .content');
+    const solutions = document.querySelector('#solutions');
+    const title = document.querySelector('#solutions .menu-link-label');
+    if (solutionsOpen) {
+      close(content);
+      solutions.classList.remove('selected');
+      title.textContent = 'Show Solutions';
+    } else {
+      solutions.classList.add('selected');
+      open(content);
+      title.textContent = 'Hide Solutions';
+    }
+    solutionsOpen = !solutionsOpen;
+  }
+
+  function open(content) {
+    content.style.maxHeight = content.scrollHeight + "px";
+  }
+
+  function close(content) {
+    content.style.maxHeight = 0;
+  }
+</script>

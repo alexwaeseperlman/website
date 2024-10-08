@@ -1,9 +1,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link
-  href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
-  rel="stylesheet"
-/>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
+  rel="stylesheet" />
 <link rel="stylesheet" href="../index.css" />
 <meta name="viewport" content="width=device-width, user-scalable=no" />
 
@@ -12,77 +10,44 @@
     <h1><a href="../">Alex Waese-Perlman</a></h1>
     <div class="menu-link">
       <div class="menu-link-label">Birthday paradox calculator</div>
-      <div class="content" style="max-height: none">
-        <p>
-          The birthday paradox is the unexpectedly high probability of two
-          people sharing a birthday in a group.
-        </p>
-        <p>
-          This calculator allows large numbers of people and days. It's useful
-          for determining the probability of a hash collision. Use the check on
-          the left to select the independent variable.
-        </p>
-        <form>
-          <div class="input-row">
-            <input
-              type="radio"
-              name="independent"
-              id="num-people"
-              value="num-people"
-              checked
-              onchange="handleIndependentChange(this);"
-            /><label for="num-people">Number of people: </label>
-            <input
-              disabled
-              id="num-people-val"
-              type="number"
-              value="23"
-              oninput="handleDataChange();"
-            />
-          </div>
-          <div class="input-row">
-            <input
-              type="radio"
-              name="independent"
-              id="num-days"
-              value="num-days"
-              onchange="handleIndependentChange(this);"
-            /><label for="num-days">Number of days in a year: </label
-            ><input
-              id="num-days-val"
-              type="number"
-              value="365"
-              oninput="handleDataChange();"
-            />
-          </div>
-          <div class="input-row">
-            <input
-              type="radio"
-              name="independent"
-              value="prob-collision"
-              id="prob-collision"
-              onchange="handleIndependentChange(this);"
-            /><label for="prob-collision">Probability of a collision: </label
-            ><input
-              id="prob-collision-val"
-              type="number"
-              value="0.5"
-              maxlength="9"
-              min="0"
-              oninput="handleDataChange();"
-            />
-          </div>
-        </form>
+      <div class="content selected" style="max-height: none">
+        <div class="content-container">
+          <p>
+            The birthday paradox is the unexpectedly high probability of two
+            people sharing a birthday in a group.
+          </p>
+          <p>
+            This calculator allows large numbers of people and days. It's useful
+            for determining the probability of a hash collision. Use the check on
+            the left to select the independent variable.
+          </p>
+          <form>
+            <div class="input-row">
+              <input type="radio" name="independent" id="num-people" value="num-people" checked
+                onchange="handleIndependentChange(this);" /><label for="num-people">Number of people: </label>
+              <input disabled id="num-people-val" type="number" value="23" oninput="handleDataChange();" />
+            </div>
+            <div class="input-row">
+              <input type="radio" name="independent" id="num-days" value="num-days"
+                onchange="handleIndependentChange(this);" /><label for="num-days">Number of days in a year:
+              </label><input id="num-days-val" type="number" value="365" oninput="handleDataChange();" />
+            </div>
+            <div class="input-row">
+              <input type="radio" name="independent" value="prob-collision" id="prob-collision"
+                onchange="handleIndependentChange(this);" /><label for="prob-collision">Probability of a collision:
+              </label><input id="prob-collision-val" type="number" value="0.5" maxlength="9" min="0"
+                oninput="handleDataChange();" />
+            </div>
+          </form>
 
-        <p>
-          It's able to handle large numbers (over 50 digits) by working with
-          logarithms and using the
-          <a
-            href="https://en.wikipedia.org/wiki/Stirling%27s_approximation#Versions_suitable_for_calculators"
-          >
-            Stirling approximation
-          </a>
-        </p>
+          <p>
+            It's able to handle large numbers (over 50 digits) by working with
+            logarithms and using the
+            <a href="https://en.wikipedia.org/wiki/Stirling%27s_approximation#Versions_suitable_for_calculators">
+              Stirling approximation
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   </div>
