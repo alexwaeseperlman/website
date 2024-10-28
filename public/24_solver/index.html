@@ -25,8 +25,10 @@
             <input type="number" min="1" max="13" name="card2" id="card2" onkeyup="handleCardChange();" onchange="handleCardChange();" />
             <input type="number" min="1" max="13" name="card3" id="card3" onkeyup="handleCardChange();" onchange="handleCardChange();" />
             <input type="number" min="1" max="13" name="card4" id="card4" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+          </div>
+          <div class="input-row">
             <button onclick="generate()">
-              Generate
+              Randomly generate
             </button>
           </div>
         </div>
@@ -118,8 +120,8 @@
     }
 
     return out;
-
   }
+  let countStr = "";
 
   function solveAndUpdate() {
     for (let i = 0; i < 4; i++) {
@@ -139,12 +141,15 @@
     }
     const output = document.getElementById('output');
     output.innerHTML = '';
+    countStr = `(${exprs.size} found)`;
     if (exprs.size == 0) {
       output.innerHTML = 'No solutions';
+      countStr = `(none found)`;
     }
     for (const expr of exprs) {
       output.innerHTML += `<li>${expr}</li>`;
     }
+    toggleSolutions(solutionsOpen);
   }
   let solutionsOpen = false;
   function handleCardChange() {
@@ -166,20 +171,25 @@
     handleCardChange();
   }
 
-  function toggleSolutions() {
+  function toggleSolutions(newOpen) {
     const content = document.querySelector('#solutions .content');
     const solutions = document.querySelector('#solutions');
     const title = document.querySelector('#solutions .menu-link-label');
+    
+    if (typeof newOpen == 'boolean') solutionsOpen = newOpen;
+    else solutionsOpen = !solutionsOpen;
+
+    console.log(newOpen)
+
     if (solutionsOpen) {
+      open(content);
+      solutions.classList.add('selected');
+      title.textContent = `Hide Solutions ${countStr}`;
+    } else {
       close(content);
       solutions.classList.remove('selected');
-      title.textContent = 'Show Solutions';
-    } else {
-      solutions.classList.add('selected');
-      open(content);
-      title.textContent = 'Hide Solutions';
+      title.textContent = `Show Solutions ${countStr}`;
     }
-    solutionsOpen = !solutionsOpen;
   }
 
   function open(content) {
