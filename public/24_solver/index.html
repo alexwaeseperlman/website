@@ -19,18 +19,15 @@
             The cards can be used in any order, but all 4 cards must be used
             exactly once.
           </p>
-          <div class="input-row">
             Cards:
-            <input type="number" min="1" max="13" name="card1" id="card1" onkeyup="handleCardChange();" onchange="handleCardChange();" />
-            <input type="number" min="1" max="13" name="card2" id="card2" onkeyup="handleCardChange();" onchange="handleCardChange();" />
-            <input type="number" min="1" max="13" name="card3" id="card3" onkeyup="handleCardChange();" onchange="handleCardChange();" />
-            <input type="number" min="1" max="13" name="card4" id="card4" onkeyup="handleCardChange();" onchange="handleCardChange();" />
-          </div>
-          <div class="input-row">
-            <button onclick="generate()">
-              Randomly generate
-            </button>
-          </div>
+          <br/>
+          <input class="card-input" type="number" min="1" max="13" name="card1" id="card1" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+          <input class="card-input" type="number" min="1" max="13" name="card2" id="card2" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+          <input class="card-input" type="number" min="1" max="13" name="card3" id="card3" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+          <input class="card-input" type="number" min="1" max="13" name="card4" id="card4" onkeyup="handleCardChange();" onchange="handleCardChange();" />
+          <button onclick="generate()">
+            Randomly generate
+          </button>
         </div>
       </div>
       

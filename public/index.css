@@ -175,3 +175,8 @@ button:active {
   max-width: 100%;
   align-items: center;
 }
+
+.card-input {
+  margin-bottom: 4px;
+  width: 48px;
+}
