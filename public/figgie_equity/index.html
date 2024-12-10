@@ -1,0 +1,162 @@
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
+  rel="stylesheet" />
+<link rel="stylesheet" href="../index.css" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+
+<div id="root">
+  <div id="main-container">
+    <h1><a href="../">Alex Waese-Perlman</a></h1>
+    <div class="menu-link">
+      <div class="menu-link-label">Figgie equity calculator</div>
+      <div class="content selected" style="max-height: none">
+        <div class="content-container">
+          <p>
+            <a href="https://www.figgie.com/">Figgie</a> is 
+            a card game where a deck starts with random unknown distribution 
+            of each suit. There are 8 cards of one suit, 10 of two others,
+            and 12 of the last. The goal is to trade cards on a market with other players
+            and where card values are determined by the distribution of suits.
+          </p>
+          <p>
+            This tool helps you calculate the equity of each suit based on
+            the suits you've seen. It uses Bayes theorem and some simple counting.
+          </p>
+          <p>
+            Suit distribution:
+          </p>
+          <p>
+            <label for="spades">♠</label><input class="suit-input" value="2" type="number" min="0" max="12" name="spades" id="spades" onkeyup="handleSuitChange();" onchange="handleSuitChange();" /> 
+            <label for="clubs">♣</label><input class="suit-input" value="3"type="number" min="0" max="12" name="clubs" id="clubs" onkeyup="handleSuitChange();" onchange="handleSuitChange();" />
+            <label for="hearts">♥</label><input class="suit-input"value="2" type="number" min="0" max="12" name="hearts" id="hearts" onkeyup="handleSuitChange();" onchange="handleSuitChange();" />
+            <label for="diamonds">♦</label><input class="suit-input"value="3" type="number" min="0" max="12" name="diamonds" id="diamonds" onkeyup="handleSuitChange();" onchange="handleSuitChange();" />
+          </p>
+          <p>
+            Equity
+            <br>
+            ♠: <span id="spades-equity"></span><br>
+            ♣: <span id="clubs-equity"></span><br>
+            ♥: <span id="hearts-equity"></span><br>
+            ♦: <span id="diamonds-equity"></span><br>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const suitElements = [document.getElementById('spades'), document.getElementById('clubs'), document.getElementById('hearts'), document.getElementById('diamonds')];
+  const equityElements = [document.getElementById('spades-equity'), document.getElementById('clubs-equity'), document.getElementById('hearts-equity'), document.getElementById('diamonds-equity')];
+  let binom = [[1], [1, 1]];
+  for (let i = 2; i < 50; i++) {
+    binom.push([1]);
+    for (let j = 1; j < i; j++) {
+      binom[i].push(binom[i-1][j-1] + binom[i-1][j]);
+    }
+    binom[i].push(1);
+  }
+  function comb(n, k) {
+    if (k < 0 || k > n) return 0;
+    return binom[n][k];
+  }
+  function solve(vals) {
+    let total = 0;
+    const goalCard = [0, 0, 0, 0];
+    const rareCard = [0, 0, 0, 0];
+    const rareGoalCard = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        if (i == j) continue;
+        let cur = [10, 10, 10, 10];
+        cur[i] = 8;
+        cur[j] = 12;
+
+        let sample = 1;
+        for (let k = 0; k < 4; k++) {
+          sample *= comb(cur[k], vals[k]);
+        }
+        sample /= comb(40, vals.reduce((a, b) => a + b));
+        total += sample;
+        goalCard[j^1] += sample;
+        rareCard[i] += sample;
+        console.log(cur, sample, total, i, j);
+        if (i == j^1) rareGoalCard[i] += sample;
+      }
+    }
+
+    let out = ["", "", "", ""];
+    for (let i = 0; i < 4; i++) {
+      goalCard[i] /= total;
+      rareGoalCard[i] /= total;
+      let baseVal = 10*goalCard[i];
+      let rareProb = 100*rareCard[i];
+      let eightVal = (120) * (rareGoalCard[i] + (goalCard[i]-rareGoalCard[i])/2);
+      let tenVal = (100) * (goalCard[i]);
+      out[i] = `${(goalCard[i]*100).toFixed(2)}% of being goal card. ${rareProb.toFixed(2)}% of having 8.`// 5 worth $${eightVal.toFixed(2)}, 6 worth $${tenVal.toFixed(2)}`;
+    }
+    return out;
+  }
+  let countStr = "";
+
+  solveAndUpdate();
+  function solveAndUpdate() {
+    const suitVals = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      suitVals[i] = parseInt(suitElements[i].value);
+    }
+    const out = solve(suitVals);
+    for (let i = 0; i < 4; i++) {
+      equityElements[i].textContent = out[i];
+    }
+  }
+  let solutionsOpen = false;
+  function handleSuitChange() {
+    const content = document.querySelector('#solutions .content');
+    solveAndUpdate();
+    if (solutionsOpen) {
+      open(content);
+    }
+  }
+  function generate() {
+    const suits = [];
+    for (let i = 0; i < 52; i++) {
+      suits.push(Math.floor(i / 4) + 1);
+    }
+    for (const suit of suitElements) {
+      suit.value = suits[Math.floor(Math.random() * suits.length)];
+      suits.splice(suits.indexOf(suit.value), 1);
+    }
+    handleSuitChange();
+  }
+
+  function toggleSolutions(newOpen) {
+    const content = document.querySelector('#solutions .content');
+    const solutions = document.querySelector('#solutions');
+    const title = document.querySelector('#solutions .menu-link-label');
+    
+    if (typeof newOpen == 'boolean') solutionsOpen = newOpen;
+    else solutionsOpen = !solutionsOpen;
+
+    console.log(newOpen)
+
+    if (solutionsOpen) {
+      open(content);
+      solutions.classList.add('selected');
+      title.textContent = `Hide Solutions ${countStr}`;
+    } else {
+      close(content);
+      solutions.classList.remove('selected');
+      title.textContent = `Show Solutions ${countStr}`;
+    }
+  }
+
+  function open(content) {
+    content.style.maxHeight = content.scrollHeight + "px";
+  }
+
+  function close(content) {
+    content.style.maxHeight = 0;
+  }
+</script>
