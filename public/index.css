@@ -12,6 +12,7 @@ body {
   background-color: var(--splash);
   justify-content: center;
   padding: 32px 10vw;
+  z-index: 100;
 }
 
 #main-container {
@@ -179,4 +180,8 @@ button:active {
 .card-input {
   margin-bottom: 4px;
   width: 48px;
+}
+canvas {
+  touch-action: none;
+  pointer-events: none;;
 }
