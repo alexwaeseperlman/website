@@ -17,6 +17,7 @@ extern "C" {
 }
 const ITER_INTERVAL: i32 = 50;
 const ITERS: i32 = 50;
+const MAX_ITER: i32 = 50000;
 
 use once_cell::sync::Lazy;
 
@@ -88,6 +89,9 @@ pub fn startup() {
                 for _ in 0..ITERS {
                     annealer.anneal(line_art, &mut rng);
                     iter_cnt += 1;
+                }
+                if iter_cnt > MAX_ITER {
+                    break;
                 }
             }
             push_image(&line_art.image);

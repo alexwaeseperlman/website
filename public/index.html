@@ -13,10 +13,11 @@
 <div id="root">
   <div id="main-container">
     <h1><a href="index.html">Alex Waese-Perlman</a></h1>
-    <div class="menu-link">
+    <div class="menu-link" id="about-me">
       <a class="menu-link-label">About me</a>
       <div class="content">
-        <div class="content-container">
+        <div class="content-container" style="position:relative;">
+          <canvas id="line-art-canvas" style="margin-left:20px;float:right;right:0;bottom:0;mix-blend-mode: multiply;z-index: 1;opacity: 0.75;"></canvas>
           <p>
             I am a senior at McGill University, in the joint honours math and
             computer science program.
@@ -45,7 +46,7 @@
     </div>
 
     <div class="menu-link">
-      <a class="menu-link-label">Useful things</a>
+      <a class="menu-link-label">Shnickshnacks</a>
       <div class="content">
         <div class="content-container">
           <p>
@@ -158,8 +159,40 @@
     </div>
   </div>
 </div>
+<script src="line-art/line-art.js" type="module"></script>
+<image src="line-art-image.jpeg" id="line-art-image" style="display:none;" />
+<script type="module">
+  import { lineArt } from './line-art/line-art.js';
+  const canvas = document.getElementById("line-art-canvas");
 
-<script>
+  const image = document.getElementById("line-art-image");
+  let worker = null, shapedImage = null;
+  let lineArtLoaded = false;
+  window.restartLineArt = function restartLineArt() {
+    if (worker) worker.postMessage(shapedImage)
+  }
+  image.onload = () => {
+    canvas.width = image.width;
+    canvas.height = image.height;
+    [worker, shapedImage] = lineArt(image, (data) => {
+      lineArtLoaded = true;
+      canvas.getContext("2d").putImageData(data, 0, 0);
+    });
+  }
+  const startLineArtInterval = setInterval(() => {
+    if (!lineArtLoaded) {
+      restartLineArt();
+    }
+    else {
+      clearInterval(startLineArtInterval);
+    }
+  }, 100);
+  if (image.complete) {
+    image.onload();
+  }
+</script>
+
+<script type="module">
   const menuLinks = Array.from(document.querySelectorAll(".menu-link"));
   const labels = Array.from(document.querySelectorAll(".menu-link-label"));
   let selected = null;
@@ -172,6 +205,9 @@
       }
       if (par == selected) selected = null;
       else selected = par;
+      if (par.id == 'about-me') {
+        restartLineArt();
+      }
       if (selected) {
         open(selected.querySelector(".content"));
         selected.classList.toggle("selected");
@@ -179,28 +215,16 @@
     });
   });
   function open(content) {
-    console.log(content);
     content.style.maxHeight = content.scrollHeight + "px";
+  }
+
+  window.onresize = () => {
+    if (selected) {
+      open(selected.querySelector(".content"));
+    }
   }
 
   function close(content) {
     content.style.maxHeight = 0;
-  }
-</script>
-<script src="line-art/line-art.js" type="module"></script>
-<image src="line-art-image.jpeg" id="line-art-image" style="display:none;"/>
-<canvas id="line-art-canvas" style="position:absolute;bottom:0;right:0;mix-blend-mode: multiply;z-index: 1;opacity: 0.75;"></canvas>
-<script type="module">
-  import { lineArt } from './line-art/line-art.js';
-  const canvas = document.getElementById("line-art-canvas");
-  
-  const image = document.getElementById("line-art-image");
-  image.onload = () => {
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const worker = lineArt(image, (data) => {
-      canvas.getContext("2d").putImageData(data, 0, 0);
-    });
-    console.log(worker)
   }
 </script>

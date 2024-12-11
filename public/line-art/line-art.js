@@ -35,5 +35,5 @@ export function lineArt(img, onImageData) {
     }
     onImageData(imageData, width, height);
   };
-  return worker;
+  return [worker, reshapedData];
 }
