@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Home</title>
+</head>
+
+<body>
+    Image upload:
+    <input type="file" id="file" />
+    <canvas id="canvas"></canvas>
+    <image id="line-art-image" style="display:none;" />
+</body>
+<script type="module">
+    import { lineArt } from './line-art.js';
+    let [worker, shapedImage] = [null, null];
+    const fileInput = document.getElementById("file");
+    const lineArtImage = document.getElementById("line-art-image");
+    const canvas = document.getElementById("canvas");
+    fileInput.addEventListener("change", (e) => {
+        const data = [];
+        const file = e.target.files[0];
+        lineArtImage.src = URL.createObjectURL(file);
+    });
+
+    lineArtImage.onload = () => {
+        if (worker) worker.terminate()
+        console.log('starting')
+        canvas.width = lineArtImage.width;
+        canvas.height = lineArtImage.height;
+        [worker, shapedImage] = lineArt(lineArtImage, (data) => {
+            console.log('rec')
+            canvas.getContext("2d").putImageData(data, 0, 0);
+        });
+    };
+</script>
+
+</html>

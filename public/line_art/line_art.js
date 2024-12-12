@@ -1,5 +1,5 @@
 export function lineArt(img, onImageData) {
-  const worker = new Worker("./line-art/wasm-worker.js", { type: "module" });
+  const worker = new Worker("/line_art/wasm-worker.js", { type: "module" });
   const canvas = document.createElement("canvas");
   canvas.style.display = "none";
   const width = img.width;
