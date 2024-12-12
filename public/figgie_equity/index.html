@@ -82,7 +82,7 @@
         goalCard[j^1] += sample;
         rareCard[i] += sample;
         console.log(cur, sample, total, i, j);
-        if (i == j^1) rareGoalCard[i] += sample;
+        if (i == (j^1)) rareGoalCard[i] += sample;
       }
     }
 
@@ -90,11 +90,12 @@
     for (let i = 0; i < 4; i++) {
       goalCard[i] /= total;
       rareGoalCard[i] /= total;
+      rareCard[i] /= total;
       let baseVal = 10*goalCard[i];
       let rareProb = 100*rareCard[i];
       let eightVal = (120) * (rareGoalCard[i] + (goalCard[i]-rareGoalCard[i])/2);
       let tenVal = (100) * (goalCard[i]);
-      out[i] = `${(goalCard[i]*100).toFixed(2)}% of being goal card. ${rareProb.toFixed(2)}% of having 8.`// 5 worth $${eightVal.toFixed(2)}, 6 worth $${tenVal.toFixed(2)}`;
+      out[i] = `${(goalCard[i]*100).toFixed(2)}% of being goal card. ${(rareGoalCard[i]*100).toFixed(2)}% of having 8.`// 5 worth $${eightVal.toFixed(2)}, 6 worth $${tenVal.toFixed(2)}`;
     }
     return out;
   }
