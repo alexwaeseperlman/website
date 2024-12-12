@@ -99,10 +99,11 @@
                         This is exactly the probability of getting \(k-1\) heads in a row, followed by a tails,
                         where the probability of heads is \(p\).
                         Or in the context of this problem, we can say that after each child, the family has a probability \(p\) of having another child,
-                        and probability \(1-p\) of stopping having children.
+                        and probability \(1-p\) of stopping having children. 
+                        Note that this exactly is a geometric distribution with parameter \(p\).
                     </p>
                     <p>
-                        But this distribution isn't a geometric distribution, so clearly the first child is different from the rest.
+                        But the overall distribution isn't a geometric distribution, so the first child must be different from the rest.
                         This is what the parameter \(\alpha\) is for. The probability of having a first child is 
                         \[
                             \mathbb{P}(N \geq 1) = 1 - \mathbb{P}(N = 0) = \alpha\frac{p}{1-p}
@@ -114,7 +115,7 @@
                         into two events for which \(N\) is still \(0\).
                         Instead of having the first child be different, we say that the family first makes the decision to <i>start</i> having children,
                         and then each child is born with probability \(p\). Call the event that they start having children \(S\).
-                        Since \(\mathbb{P}(N \geq 1) = \frac{\alpha p}{1-p}\), and \(\mathbb{P}(N \geq 1 | S)\) should be \(p\) 
+                        Since \(\mathbb{P}(N \geq 1) = \frac{\alpha p}{1-p}\), and \(\mathbb{P}(N \geq 1 | S)\) should be \(p\),
                         we can say that \(\mathbb{P}(S) = \frac{\alpha}{1-p}\).
                     </p>
                     <p>
@@ -122,7 +123,7 @@
                         the family has a boy, the family has a girl, or the family stops having children.
                         This is like a weighted dice-roll with three outcomes.
                         The first two outcomes happen with probability \(\frac{p}{2}\) each, and the last happens with probability \(1 - p\).
-                        To find the probability mass function of \(G\), the key observation to determine the probability mass function of \(G\) 
+                        To find the probability mass function of \(G\), the key observation
                         is that we <i>don't care</i> about children 
                         that are boys. If the family has a boy, we just ignore them and move on to the next child.
                         In other words, we can condition the roll on the fact that it was not a boy.
