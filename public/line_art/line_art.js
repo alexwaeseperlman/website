@@ -20,9 +20,9 @@ export function lineArt(img, onImageData) {
   for (let i = 0; i < height; i++) {
     reshapedData.push(dataArray.slice(i * width, (i + 1) * width));
   }
-  setTimeout(() => {
+  /*setTimeout(() => {
     worker.postMessage(reshapedData);
-  }, 100);
+  }, 100);*/
 
   worker.onmessage = (e) => {
     const imageData = ctx.createImageData(width, height);

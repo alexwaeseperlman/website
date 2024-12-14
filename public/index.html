@@ -17,7 +17,8 @@
       <a class="menu-link-label">About me</a>
       <div class="content">
         <div class="content-container" style="position:relative;">
-          <canvas id="line_art-canvas" style="margin-left:20px;float:right;right:0;bottom:0;mix-blend-mode: multiply;z-index: 1;opacity: 0.75;"></canvas>
+          <div id="line-art-canvas-container">
+          </div>
           <p>
             I am a senior at McGill University, in the joint honours math and
             computer science program.
@@ -176,30 +177,49 @@
 <image src="line-art-image.jpeg" id="line-art-image" style="display:none;" />
 <script type="module">
   import { lineArt } from './line_art/line_art.js';
-  const canvas = document.getElementById("line_art-canvas");
+  const canvasContainer = document.getElementById("line-art-canvas-container");
+  const canvas = document.createElement('canvas');
+  canvasContainer.appendChild(canvas);
 
   const image = document.getElementById("line-art-image");
-  let worker = null, shapedImage = null;
+  window.worker = null
+  let shapedImage = null;
   let lineArtLoaded = false;
+  let imageLoaded = false;
   window.restartLineArt = function restartLineArt() {
-    if (worker) worker.postMessage(shapedImage)
-  }
-  image.onload = () => {
-    canvas.width = image.width;
-    canvas.height = image.height;
-    [worker, shapedImage] = lineArt(image, (data) => {
-      lineArtLoaded = true;
-      canvas.getContext("2d").putImageData(data, 0, 0);
-    });
-  }
-  const startLineArtInterval = setInterval(() => {
-    if (!lineArtLoaded) {
-      window.restartLineArt();
+    console.log('restart', worker)
+    if (window.worker == null) {
+      if (!imageLoaded) {
+        setTimeout(() => {
+          restartLineArt();
+        }, 100)
+        return;
+      }
+      [window.worker, shapedImage] = lineArt(image, (data) => {
+        lineArtLoaded = true;
+        canvas.getContext("2d").putImageData(data, 0, 0);
+      });
+      setTimeout(() => {
+        window.worker.postMessage(shapedImage);
+      }, 100)
     }
     else {
-      clearInterval(startLineArtInterval);
+      worker.postMessage(shapedImage);
     }
-  }, 100);
+  }
+  window.killLineArt = () => {
+    if (window.worker) window.worker.terminate();
+    window.worker = null;
+    let ctx = canvas.getContext('2d')
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  image.onload = () => {
+    console.log('load')
+    imageLoaded = true;
+    canvas.width = image.width;
+    canvas.height = image.height;
+  }
   if (image.complete) {
     image.onload();
   }
@@ -218,7 +238,10 @@
       }
       if (par == selected) selected = null;
       else selected = par;
-      if (par.id == 'about-me') {
+      if (par.id != 'about-me' || selected == null) {
+        killLineArt();
+      }
+      if (par.id == 'about-me' && selected) {
         restartLineArt();
       }
       if (selected) {
