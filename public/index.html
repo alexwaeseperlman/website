@@ -242,7 +242,7 @@
         killLineArt();
       }
       if (par.id == 'about-me' && selected) {
-        restartLineArt();
+        forceRestartLineArt();
       }
       if (selected) {
         open(selected.querySelector(".content"));
@@ -253,6 +253,23 @@
   function open(content) {
     content.style.maxHeight = content.scrollHeight + "px";
   }
+
+  function forceRestartLineArt() {
+    if (!window.restartLineArt) {
+      setTimeout(() => {
+        forceRestartLineArt();
+      }, 100)
+    }
+    else {
+      window.restartLineArt();
+    }
+  }
+
+  setInterval(() => {
+    if (selected == null || selected.id != 'about-me') {
+      killLineArt();
+    }
+  }, 100);
 
   window.onresize = () => {
     if (selected) {
