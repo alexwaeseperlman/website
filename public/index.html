@@ -196,16 +196,26 @@
           }, 100)
           return;
         }
+        lineArtLoaded = false;
         [window.worker, shapedImage] = lineArt(image, (data) => {
           lineArtLoaded = true;
           canvas.getContext("2d").putImageData(data, 0, 0);
         });
         setTimeout(() => {
-          window.worker.postMessage(shapedImage);
-        }, 100)
+          forcePostMessage(shapedImage);
+        }, 10);
       }
       else {
         worker.postMessage(shapedImage);
+      }
+    }
+    function forcePostMessage(msg) {
+      if (!lineArtLoaded) {
+        window.worker.postMessage(msg);
+        console.log('retry')
+        setTimeout(() => {
+          forcePostMessage(msg);
+        }, 300)
       }
     }
     window.killLineArt = () => {
