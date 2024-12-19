@@ -177,52 +177,54 @@
 <image src="line-art-image.jpeg" id="line-art-image" style="display:none;" />
 <script type="module">
   import { lineArt } from './line_art/line_art.js';
-  const canvasContainer = document.getElementById("line-art-canvas-container");
-  const canvas = document.createElement('canvas');
-  canvasContainer.appendChild(canvas);
+  document.addEventListener('readystatechange', () => {
+    const canvasContainer = document.getElementById("line-art-canvas-container");
+    const canvas = document.createElement('canvas');
+    canvasContainer.appendChild(canvas);
 
-  const image = document.getElementById("line-art-image");
-  window.worker = null
-  let shapedImage = null;
-  let lineArtLoaded = false;
-  let imageLoaded = false;
-  window.restartLineArt = function restartLineArt() {
-    console.log('restart', worker)
-    if (window.worker == null) {
-      if (!imageLoaded) {
+    const image = document.getElementById("line-art-image");
+    window.worker = null
+    let shapedImage = null;
+    let lineArtLoaded = false;
+    let imageLoaded = false;
+    window.restartLineArt = function restartLineArt() {
+      console.log('restart', worker)
+      if (window.worker == null) {
+        if (!imageLoaded) {
+          setTimeout(() => {
+            restartLineArt();
+          }, 100)
+          return;
+        }
+        [window.worker, shapedImage] = lineArt(image, (data) => {
+          lineArtLoaded = true;
+          canvas.getContext("2d").putImageData(data, 0, 0);
+        });
         setTimeout(() => {
-          restartLineArt();
+          window.worker.postMessage(shapedImage);
         }, 100)
-        return;
       }
-      [window.worker, shapedImage] = lineArt(image, (data) => {
-        lineArtLoaded = true;
-        canvas.getContext("2d").putImageData(data, 0, 0);
-      });
-      setTimeout(() => {
-        window.worker.postMessage(shapedImage);
-      }, 100)
+      else {
+        worker.postMessage(shapedImage);
+      }
     }
-    else {
-      worker.postMessage(shapedImage);
+    window.killLineArt = () => {
+      if (window.worker) window.worker.terminate();
+      window.worker = null;
+      let ctx = canvas.getContext('2d')
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-  }
-  window.killLineArt = () => {
-    if (window.worker) window.worker.terminate();
-    window.worker = null;
-    let ctx = canvas.getContext('2d')
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-  image.onload = () => {
-    console.log('load')
-    imageLoaded = true;
-    canvas.width = image.width;
-    canvas.height = image.height;
-  }
-  if (image.complete) {
-    image.onload();
-  }
+    image.onload = () => {
+      console.log('load')
+      imageLoaded = true;
+      canvas.width = image.width;
+      canvas.height = image.height;
+    }
+    if (image.complete) {
+      image.onload();
+    }
+  });
 </script>
 
 <script type="module">
