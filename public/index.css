@@ -97,6 +97,7 @@ h1 {
   gap: 20px;
   justify-self: flex-end;
   flex: 1;
+  margin-top: 16px;
 }
 
 .media-icon {
