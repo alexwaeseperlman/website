@@ -18,7 +18,7 @@ extern "C" {
 const ITER_INTERVAL: i32 = 50;
 const ITERS: i32 = 50;
 const MAX_ITER: i32 = 50000;
-
+const POINTS: usize = 700;
 use once_cell::sync::Lazy;
 
 static line_art_arc: Lazy<Arc<Mutex<Option<LineArt>>>> = Lazy::new(|| {
@@ -65,7 +65,7 @@ pub fn startup() {
         console_log!("received");
 
         let mut line_art = line_art_arc.lock().unwrap();
-        *line_art = Some(LineArt::new(500, image, &mut rand::thread_rng()));
+        *line_art = Some(LineArt::new(POINTS, image, &mut rand::thread_rng()));
         let mut annealer = annealer_arc.lock().unwrap();
         *annealer = Some(Annealer::new(0.5, 0.000005));
     });

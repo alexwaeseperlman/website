@@ -7,11 +7,13 @@
   "files": [
     "line_art_bg.wasm",
     "line_art.js",
+    "line_art_bg.js",
     "line_art.d.ts"
   ],
   "module": "line_art.js",
   "types": "line_art.d.ts",
   "sideEffects": [
+    "./line_art.js",
     "./snippets/*"
   ]
 }
