@@ -1,0 +1,47 @@
+[package]
+name = "audio"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+realfft = "3.4.0"
+console_error_panic_hook = { version = "0.1.7", optional = true }
+wasm-bindgen = "0.2.100"
+tract = "0.21.12"
+tract-onnx = "0.21.12"
+getrandom = { version = "0.2.16", features = ["js"] }
+js-sys = "0.3.77"
+
+[dependencies.web-sys]
+version = "0.3.77"
+features = [
+  'AudioContext',
+  'AudioDestinationNode',
+  'AudioNode',
+  'AudioParam',
+  'MediaDevices',
+  'MediaStream',
+  'Worker',
+  'Window',
+  'MessageEvent',
+  'Navigator',
+  'MediaStreamConstraints',
+  'MediaStreamAudioSourceNode',
+  'GpuLoadOp',
+  'GpuRenderPassColorAttachment',
+  'WorkerNavigator',
+  'Navigator',
+  'GpuCanvasContext', 
+  "Document",
+  "Navigator",
+  "Node",
+  "NodeList",
+]
