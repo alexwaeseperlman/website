@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Why are leap years defined as they are?</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+
+
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/"></a></h1>
+      <div class="menu-link">
+            <div class="menu-link-label">Why are leap years defined as they are?</div>
+            <div class="content selected is-open">
+                <div class="content-container">
+                    <p>
+                        A year, numbered \(n\) is defined to be a leap year if \(400\) divides \(n\),
+                        or \(4\) divides \(n\) and \(100\) doesn't divide \(n\).
+                        Leap years have an extra
+                        day, February 29th, which makes them \(366\) days long instead of \(365\).
+                    </p>
+                    <p>
+                        For some reason (that I don't remember), a few days ago while travelling with a friend
+                        I started thinking about why these specific rules were chosen, and if there 
+                        could potentially be a better set. Unfortunately 
+                        this meant that I was totally zoned out of the conversation for a while, and maybe
+                        missed out on a bit of Lisbon.
+                        This post goes does some reverse engineering that I think it interesting,
+                        although take it with a grain of salt because I made a point of doing it from first principles.
+                        Here were my conclusions:
+                    </p>
+                    <p>
+                        First, let's recall why leap years exist in the first place.
+                        Imagine we are an early humans.
+                        From our perspective time is like a continuous number line, and we are a single point on that line,
+                        always moving forward.
+                        It's not hard to imagine that we would want to develop a language for referring to specific points on this line.
+                        For example, we might want to say "I planted this crop at time \(x\)", and the specifics of \(x\)
+                        are important to us, to have an idea of when to harvest.
+                        The goal is to develop a language for referring to specific points on this line. Let's consider some requirements:
+                    </p>
+                    <ul>
+                        <li>
+                            We want to be able to refer to specific points in time with in absolute terms, that don't change.
+                            For example, we don't want a system where events are described as "\(x\) days ago" or "\(y\) days from now",
+                            because these descriptions change over time.
+                            Otherwise we'd have to remember to update the events we're referring to continuously.
+                        </li>
+                        <li>
+                            We want our system to be based on easily measurable quantities. This early human 
+                            can't measure the vibrations of a quartz crystal, but they can see the sun.
+                        </li>
+                        <li>
+                            It should be possible to refer to a point with varying levels of granularity. 
+                            For example, there's not much difference between "I planted this tree in 54321 BC, Jan. 23, at 1:23pm$,
+                            and "I planted this tree in 54321 BC, Jan. 23rd", or even "I planted this tree in 54321 BC", depending on 
+                            the context. This is important because people need to remember these points in time, and discarding unnecessary information
+                            will make that easier.
+                        </li>
+                        <li>
+                            It should be accessible and consistent for everyone. 
+                            We can't define our calendar in terms of oscillations of a specific pendulum,
+                            because most people would never get to see that one pendulum, so they wouldn't know
+                            the current time.
+                        </li>
+                    </ul>
+                    <p>
+                        Let's think about some units of time that would be available to us as early humans. Obviously it is very 
+                        easy to measure time in days, because our environment changes drastically over the course of a day.
+                        We are also able to measure time in years, because the climate changes over the course of a year.
+                        Also, this one didn't stick in our calendar, but we can measure time in cycles of the moon, by simply observing it.
+                        I can't think of any other units that are this consistent, subject to the constraints above.
+                    </p>
+                    <p>
+                        So naturally, we can use the number of days since a specific point in time to determine the day, and subdivisions of the day, like hours, minutes, and seconds to get more precision.
+                        But that isn't sufficient. Nobody can remember the number of days since a specific point in time. 
+                        People don't say "I planted this tree on day 738082" (although I think we actually could get used to this system).
+                        I think we decided to add years to our calendar because they are a useful quantity to have on hand.
+                        Knowing the year, and the position in that year, that the tree was planted on, tells us information
+                        like the season, which might be useful to us.
+                    </p>
+                    <p>
+                        It is well known that the earth revolves around the sun, and also around itself.
+                        As individuals on the surface of the earth, we are deeply affected by both of these astronomical phenomena.
+                        The angle of the earths orbit causes our climate to significantly change over the course of each year (seasons),
+                        and the earths rotation causes the climate to change significantly over the course of each day (day and night).
+                        At some point in our history, we developed a calendar to let us refer to specific points in time, and we decided to use 
+                        years and days to do so. Let's consider some requirements:
+                    </p>
+                    <p>
+                        Our goal here is understand why time is indexed by the combination of years and days, so that we can 
+                        understand why leap years are defined as they are. But it might help to consider some other possible ways
+                        to index time. First, let's consider some requirements:
+                    </p>
+                    <p>
+                        Counting time in days is an obvious choice. First, 
+
+
+                        They exist because 
+                        a year doesn't have exactly \(365\) days in it - it has approximately \(365.2437\dots\).
+                        It's not surprising that the length of a day doesn't cleanly divide the length of a year,
+                        given that these quantities are not really linked by any physical phenomena, 
+                        the chance that one would be an integer multiple of the other is very low.
+                        The issue is that we want our calendars to represent points in time using both days and years,
+                        because they are both easily measurable quantities from the perspective of a human, and they are useful 
+                        in our day to day lives.
+                    </p>
+                    <p>
+                        The simplest solution would be to just round down the number of days in a year to \(365\).
+                        Then our calendar can say a year is every \(365\) days, which is approximately true.
+                        But each year would be \(0.2437\dots\) days too short, which over time would accumulate,
+                        and after a few hundred years the seasons would completely flip.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+  </div>
+</body>
+</html>

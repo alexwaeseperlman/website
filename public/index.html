@@ -1,23 +1,15 @@
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
-  rel="stylesheet" />
-<link rel="stylesheet" href="index.css" />
-<link rel="stylesheet" href="flip-card.css" />
-<meta name="viewport" content="width=device-width, user-scalable=no" />
-<style>
-  .menu-link>.content {
-    max-height: 0;
-  }
-</style>
+---
+layout: default
+title: Home
+stylesheets:
+  - /index.css
+  - /flip-card.css
+---
 
-<div id="root">
-  <div id="main-container">
-    <h1><a href="index.html">Alex Waese-Perlman</a></h1>
-    <div class="menu-link" id="about-me">
+<div class="menu-link" id="about-me">
       <a class="menu-link-label">About me</a>
       <div class="content">
-        <div class="content-container" style="position:relative;">
+        <div class="content-container is-relative">
           <div id="line-art-canvas-container">
           </div>
           <p>
@@ -49,6 +41,9 @@
           </p>
           <p>
             <a href="figgie_equity/index.html">Figgie equity calculator</a>
+          </p>
+          <p>
+            <a href="map/index.html">Map projector</a>
           </p>
         </div>
       </div>
@@ -110,10 +105,8 @@
         <img src="x.svg" />
       </a>
     </div>
-  </div>
-</div>
 <script src="line_art/line_art.js" type="module"></script>
-<image src="line-art-image.jpeg" id="line-art-image" style="display:none;" />
+<img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
   import { lineArt } from './line_art/line_art.js';
   document.addEventListener('readystatechange', () => {
@@ -218,7 +211,7 @@
 
   setInterval(() => {
     if (selected == null || selected.id != 'about-me') {
-      killLineArt();
+      if (window.killLineArt) window.killLineArt();
     }
   }, 100);
 

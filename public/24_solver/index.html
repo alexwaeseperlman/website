@@ -1,16 +1,13 @@
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap"
-  rel="stylesheet" />
-<link rel="stylesheet" href="../index.css" />
-<meta name="viewport" content="width=device-width, user-scalable=no" />
+---
+layout: default
+title: 24 solver
+stylesheets:
+  - /index.css
+---
 
-<div id="root">
-  <div id="main-container">
-    <h1><a href="../">Alex Waese-Perlman</a></h1>
-    <div class="menu-link">
+<div class="menu-link">
       <div class="menu-link-label">24 solver</div>
-      <div class="content selected" style="max-height: none">
+      <div class="content selected is-open">
         <div class="content-container">
           <p>
             24 is a game played with a deck of cards. In one round 4 cards are
@@ -34,14 +31,13 @@
     </div>
     <div class="menu-link" id="solutions" onclick="toggleSolutions()">
       <div class="menu-link-label">Show Solutions</div>
-      <div class="content" style="max-height: 0px">
+      <div class="content">
         <div class="content-container">
           <ul id="output">
           </ul>
         </div>
       </div>
-  </div>
-</div>
+    </div>
 
 <script>
   const cardElements = [document.getElementById('card1'), document.getElementById('card2'), document.getElementById('card3'), document.getElementById('card4')];
@@ -162,8 +158,9 @@
       cards.push(Math.floor(i / 4) + 1);
     }
     for (const card of cardElements) {
-      card.value = cards[Math.floor(Math.random() * cards.length)];
-      cards.splice(cards.indexOf(card.value), 1);
+      const cardValue = cards[Math.floor(Math.random() * cards.length)];
+      card.value = cardValue;
+      cards.splice(cards.indexOf(cardValue), 1);
     }
     handleCardChange();
   }

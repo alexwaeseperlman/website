@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Realtime audio processing in-browser with a neural network</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+
+
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/"></a></h1>
+      <script type="module">
+    import { setupAudio } from "/writing/string_protagonist/audio.js";
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Elements references
+        const visualizer = document.getElementById('audio-visualizer');
+        const micButton = document.getElementById('mic-button');
+        const soundClipsContainer = document.getElementById('sound-clips');
+        
+        let audioContext = null;
+        let currentSource = null;
+        let currentSetup = null;
+        let canvas = null;
+        let ctx = null;
+        let audioInitialized = false;
+        let currentClip = null; // Track currently playing clip
+        let microphoneActive = false; // Track microphone state
+        let audioBufferSources = {}; // Store AudioBufferSourceNodes by clip path
+        
+        // Initialize audio system after user interaction
+        const initializeAudio = async () => {
+            if (audioInitialized) return true;
+            
+            try {
+                console.log("Initializing audio system...");
+                
+                // Check if we're in a secure context (needed for microphone access)
+                if (!window.isSecureContext) {
+                    console.warn("Page is not running in a secure context. Microphone access may be restricted.");
+                }
+                
+                // Create audio context after user gesture
+                audioContext = new AudioContext({
+                    latencyHint: "interactive",
+                    sampleRate: 44100,
+                });
+                
+                // Force resume the audio context - important for some browsers
+                if (audioContext.state !== "running") {
+                    console.log("Attempting to resume AudioContext...");
+                    await audioContext.resume();
+                    console.log(`AudioContext state after resume: ${audioContext.state}`);
+                }
+                
+                // Debug info about browser
+                console.log("Browser information:", {
+                    userAgent: navigator.userAgent,
+                    audioContextSupport: !!window.AudioContext || !!window.webkitAudioContext,
+                    audioWorkletSupport: !!(audioContext.audioWorklet)
+                });
+                
+                // Show loading message
+                visualizer.innerHTML = '<div id="loading-indicator">Initializing audio system...</div>';
+                
+                // Create visualizer canvas
+                canvas = document.createElement('canvas');
+                canvas.width = visualizer.clientWidth;
+                canvas.height = 200;
+                visualizer.appendChild(canvas);
+                ctx = canvas.getContext('2d');
+                
+                // Remove loading indicator
+                const loadingIndicator = document.getElementById('loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.remove();
+                }
+                
+                audioInitialized = true;
+                console.log('Audio system initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('Failed to initialize audio:', error);
+                handleInitError(`Error initializing audio: ${error.message}`);
+                return false;
+            }
+        };
+        
+        // Handle initialization errors
+        function handleInitError(message) {
+            const loadingIndicator = document.getElementById('loading-indicator');
+            if (loadingIndicator) {
+                loadingIndicator.textContent = `Error: ${message}`;
+                loadingIndicator.style.color = 'red';
+            } else {
+                const errorIndicator = document.createElement('div');
+                errorIndicator.id = 'loading-indicator';
+                errorIndicator.textContent = `Error: ${message}`;
+                errorIndicator.style.color = 'red';
+                visualizer.appendChild(errorIndicator);
+            }
+            
+            // For microphone errors, add a suggestion to try sound clips
+            if (message.includes("microphone")) {
+                const fallbackMsg = document.createElement('div');
+                fallbackMsg.textContent = 'Try using the sound clips instead';
+                fallbackMsg.style.color = '#666';
+                fallbackMsg.style.marginTop = '10px';
+                fallbackMsg.style.fontSize = '14px';
+                visualizer.appendChild(fallbackMsg);
+            }
+        }
+        
+        // Callback to update visualizer
+        const updateVisualizer = (probabilities) => {
+            if (!ctx) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const barWidth = canvas.width / probabilities.length;
+            const maxHeight = canvas.height - 10;
+            
+            ctx.fillStyle = 'rgba(0, 119, 204, 0.8)';
+            
+            probabilities.forEach((value, index) => {
+                const height = value * maxHeight;
+                ctx.fillRect(
+                    index * barWidth, 
+                    canvas.height - height, 
+                    barWidth - 1, 
+                    height
+                );
+            });
+        };
+        
+        // Setup microphone input
+        const setupMicrophone = async () => {
+            // Initialize audio if not already done
+            if (!await initializeAudio()) return;
+            
+            try {
+                // Check for MediaDevices API support
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error(
+                        "Your browser doesn't support microphone access. Try using Chrome, Firefox, or Safari. " +
+                        "Make sure you're on HTTPS and have allowed microphone permissions."
+                    );
+                }
+                
+                // Show loading message
+                if (!document.getElementById('mic-loading')) {
+                    const loadingMsg = document.createElement('div');
+                    loadingMsg.id = 'mic-loading';
+                    loadingMsg.textContent = 'Accessing microphone...';
+                    loadingMsg.style.position = 'absolute';
+                    loadingMsg.style.bottom = '10px';
+                    loadingMsg.style.right = '10px';
+                    loadingMsg.style.background = 'rgba(0,0,0,0.7)';
+                    loadingMsg.style.color = 'white';
+                    loadingMsg.style.padding = '5px 10px';
+                    loadingMsg.style.borderRadius = '4px';
+                    loadingMsg.style.fontSize = '12px';
+                    visualizer.appendChild(loadingMsg);
+                }
+                
+                // Log browser capabilities for debugging
+                console.log("Browser media capabilities:", {
+                    hasNavigator: !!navigator,
+                    hasMediaDevices: !!navigator.mediaDevices,
+                    hasGetUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+                    protocol: window.location.protocol,
+                    isSecureContext: window.isSecureContext
+                });
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                    },
+                    video: false
+                });
+                
+                // Clean up previous audio setup
+                if (currentSetup && currentSetup.teardownAudio) {
+                    currentSetup.teardownAudio();
+                }
+                
+                currentSource = audioContext.createMediaStreamSource(stream);
+                
+                try {
+                    // Try to use full analysis with WebAssembly
+                    currentSetup = await setupAudio(audioContext, currentSource, updateVisualizer);
+                } catch (setupError) {
+                    console.warn("Using fallback microphone visualization due to:", setupError);
+                    
+                    // Create a simple analyzer node as fallback
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+                    
+                    currentSource.connect(analyser);
+                    
+                    // Fallback visualization method
+                    const fallbackVisualizer = () => {
+                        if (!ctx) return;
+                        
+                        requestAnimationFrame(fallbackVisualizer);
+                        
+                        analyser.getByteFrequencyData(dataArray);
+                        
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        
+                        const barWidth = canvas.width / bufferLength;
+                        const maxHeight = canvas.height - 10;
+                        
+                        ctx.fillStyle = 'rgba(0, 119, 204, 0.8)';
+                        
+                        for (let i = 0; i < bufferLength; i++) {
+                            const value = dataArray[i] / 255.0;
+                            const height = value * maxHeight;
+                            ctx.fillRect(
+                                i * barWidth, 
+                                canvas.height - height, 
+                                barWidth - 1, 
+                                height
+                            );
+                        }
+                    };
+                    
+                    // Start fallback visualization
+                    fallbackVisualizer();
+                    
+                    // Create a teardown function
+                    currentSetup = {
+                        teardownAudio: () => {
+                            if (currentSource) {
+                                try {
+                                    currentSource.disconnect();
+                                } catch (e) {}
+                            }
+                            if (analyser) {
+                                try {
+                                    analyser.disconnect();
+                                } catch (e) {}
+                            }
+                            
+                            // Stop all tracks in the stream
+                            stream.getTracks().forEach(track => track.stop());
+                        }
+                    };
+                }
+                
+                // Remove loading message
+                const loadingMsg = document.getElementById('mic-loading');
+                if (loadingMsg) loadingMsg.remove();
+                
+                // Make sure we set any active clip buttons to inactive
+                document.querySelectorAll('.clip-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                micButton.textContent = 'Microphone Active';
+                micButton.classList.add('active');
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                
+                // Remove loading message
+                const loadingMsg = document.getElementById('mic-loading');
+                if (loadingMsg) loadingMsg.remove();
+                
+                handleInitError(`Microphone access error: ${error.message}`);
+            }
+        };
+        
+        // Setup sound clip playback
+        const playSound = async (clipPath) => {
+            // Initialize audio if not already done
+            if (!await initializeAudio()) return;
+            
+            try {
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                // Show loading message in visualizer
+                if (!document.getElementById('clip-loading')) {
+                    const loadingMsg = document.createElement('div');
+                    loadingMsg.id = 'clip-loading';
+                    loadingMsg.textContent = 'Loading sound clip...';
+                    loadingMsg.style.position = 'absolute';
+                    loadingMsg.style.bottom = '10px';
+                    loadingMsg.style.right = '10px';
+                    loadingMsg.style.background = 'rgba(0,0,0,0.7)';
+                    loadingMsg.style.color = 'white';
+                    loadingMsg.style.padding = '5px 10px';
+                    loadingMsg.style.borderRadius = '4px';
+                    loadingMsg.style.fontSize = '12px';
+                    visualizer.appendChild(loadingMsg);
+                }
+                
+                // Clean up previous audio setup
+                if (currentSetup && currentSetup.teardownAudio) {
+                    currentSetup.teardownAudio();
+                }
+                
+                // Create new audio source from file
+                console.log(`Loading sound clip: ${clipPath}`);
+                const response = await fetch(clipPath);
+                if (!response.ok) {
+                    throw new Error(`Failed to load audio clip: ${response.status} ${response.statusText}`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                // Create and configure audio source
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                try {
+                    // Create media stream for analysis
+                    const streamDest = audioContext.createMediaStreamDestination();
+                    source.connect(streamDest);
+                    source.connect(audioContext.destination); // Connect to speakers
+                    
+                    // Setup audio processor
+                    const audioSource = audioContext.createMediaStreamSource(streamDest.stream);
+                    currentSource = audioSource;
+                    
+                    try {
+                        // Try to use setupAudio with the audio analysis
+                        currentSetup = await setupAudio(audioContext, audioSource, updateVisualizer);
+                    } catch (setupError) {
+                        // If there's an AudioWorklet error, use a fallback visualization 
+                        console.warn("Using fallback audio visualization due to:", setupError);
+                        
+                        // Create a simple analyzer node as fallback
+                        const analyser = audioContext.createAnalyser();
+                        analyser.fftSize = 256;
+                        const bufferLength = analyser.frequencyBinCount;
+                        const dataArray = new Uint8Array(bufferLength);
+                        
+                        source.connect(analyser);
+                        
+                        // Fallback visualization method
+                        const fallbackVisualizer = () => {
+                            if (!ctx) return;
+                            
+                            requestAnimationFrame(fallbackVisualizer);
+                            
+                            analyser.getByteFrequencyData(dataArray);
+                            
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            
+                            const barWidth = canvas.width / bufferLength;
+                            const maxHeight = canvas.height - 10;
+                            
+                            ctx.fillStyle = 'rgba(0, 119, 204, 0.8)';
+                            
+                            for (let i = 0; i < bufferLength; i++) {
+                                const value = dataArray[i] / 255.0;
+                                const height = value * maxHeight;
+                                ctx.fillRect(
+                                    i * barWidth, 
+                                    canvas.height - height, 
+                                    barWidth - 1, 
+                                    height
+                                );
+                            }
+                        };
+                        
+                        // Start fallback visualization
+                        fallbackVisualizer();
+                        
+                        // Create a teardown function
+                        currentSetup = {
+                            teardownAudio: () => {
+                                if (source) {
+                                    try {
+                                        source.disconnect();
+                                    } catch (e) {}
+                                }
+                                if (analyser) {
+                                    try {
+                                        analyser.disconnect();
+                                    } catch (e) {}
+                                }
+                            }
+                        };
+                    }
+                    
+                    // Remove loading message
+                    const loadingMsg = document.getElementById('clip-loading');
+                    if (loadingMsg) loadingMsg.remove();
+                    
+                    // Start playback
+                    source.start(0);
+                    
+                    // Update UI
+                    micButton.textContent = 'Use Microphone';
+                    micButton.classList.remove('active');
+                    
+                    // Highlight the active sound clip button
+                    document.querySelectorAll('.clip-button').forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    document.querySelector(`[data-path="${clipPath}"]`).classList.add('active');
+                    
+                    console.log(`Sound clip playing: ${clipPath}`);
+                } catch (setupError) {
+                    console.error('Error setting up audio processor:', setupError);
+                    throw new Error(`Error processing audio: ${setupError.message}`);
+                }
+            } catch (error) {
+                console.error('Error playing sound clip:', error);
+                
+                // Remove loading message
+                const loadingMsg = document.getElementById('clip-loading');
+                if (loadingMsg) loadingMsg.remove();
+                
+                // Show error in visualizer
+                handleInitError(`Error playing sound clip: ${error.message}`);
+            }
+        };
+        
+        // Setup sound clips buttons
+        const clips = [
+            { name: 'Riff', path: '/writing/string_protagonist/sound-clips/Riff.m4a' },
+            { name: 'F#7add11', path: '/writing/string_protagonist/sound-clips/Fsharp7add11.m4a' },
+            { name: 'Am', path: '/writing/string_protagonist/sound-clips/A minor acoustic.m4a' },
+            { name: 'E major', path: '/writing/string_protagonist/sound-clips/E major acoustic.m4a' }
+        ];
+        
+        clips.forEach(clip => {
+            const button = document.createElement('button');
+            button.textContent = clip.name;
+            button.classList.add('clip-button');
+            button.dataset.path = clip.path;
+            button.addEventListener('click', () => playSound(clip.path));
+            soundClipsContainer.appendChild(button);
+        });
+        
+        // Microphone button event
+        micButton.addEventListener('click', setupMicrophone);
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (canvas) {
+                canvas.width = visualizer.clientWidth;
+            }
+        });
+        
+        // Display info message in visualizer
+        const infoMsg = document.createElement('div');
+        infoMsg.textContent = 'Click a sound clip or microphone button to start';
+        infoMsg.style.position = 'absolute';
+        infoMsg.style.top = '50%';
+        infoMsg.style.left = '50%';
+        infoMsg.style.transform = 'translate(-50%, -50%)';
+        infoMsg.style.textAlign = 'center';
+        infoMsg.style.color = '#666';
+        infoMsg.style.fontFamily = 'Roboto, sans-serif';
+        visualizer.appendChild(infoMsg);
+    });
+</script>
+<style>
+    #audio-visualizer {
+        width: 100%;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin: 20px 0;
+        overflow: hidden;
+        min-height: 200px;
+        position: relative;
+    }
+    
+    #loading-indicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: 'Roboto', sans-serif;
+        color: #666;
+    }
+    
+    .audio-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 20px 0;
+    }
+    
+    #sound-clips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
+    }
+    
+    button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background-color: #007ACC;
+        color: white;
+        cursor: pointer;
+        font-family: 'Roboto', sans-serif;
+    }
+    
+    button:hover:not(:disabled) {
+        background-color: #005999;
+    }
+    
+    button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+    }
+    
+    button.active {
+        background-color: #00AA00;
+    }
+    
+    .clip-button {
+        background-color: #555;
+    }
+    
+    .clip-button:hover:not(:disabled) {
+        background-color: #333;
+    }
+</style>
+
+        <div class="menu-link">
+            <div class="menu-link-label">Realtime audio processing in-browser with a neural network: how my team came second in the 2024 McGill CodeJam Hackathon</div>
+            <div class="content selected is-open">
+                <div class="content-container">
+                    <p>
+                        In 2024, I participated in the McGill CodeJam hackathon, a standard 36 hour hackathon.
+                        I was on a team with \(3\) others: <a href="https://louisroylangevin.github.io">Louis-Roy Langevin</a>, 
+                        <a href="https://github.com/ddgithubb">Daniel Dai</a>,
+                        and <a href="https://www.linkedin.com/in/shiyanl">Shiyan Liu</a>.
+                        Louis invited me to join his team because we are both interested in music, and they were 
+                        planning on doing something related to music. 
+                        I had been learning web-assembly, and I thought that doing something with
+                        web-assembly might make us more likely to win, I guess because it's a buzzword and can sound impressive.
+                        I also thought it would be cool to do something involving the Fast Fourier Transform,
+                        honestly also with the intention of dazzling the judges with long math words.
+                    </p>
+                    <p>
+                        Somehow we landed on the idea of building guitar hero with real guitars, with me having
+                        overconfidently claimed that I could detect what notes were being played by simply
+                        measuring the highest amplitude frequencies in a Fourier transform of the audio signal
+                        (spoiler: it is not that simple). I told the rest of the team that I could get it
+                        working in a few hours, and immediately got to work.
+                        I built a simple web page that would take in audio from the microphone, compute the
+                        Fourier transform, and display the results. 
+                        After a few hours, I had a simple demo, which is running below.
+                    </p>
+                    
+                    <h2>Audio Visualizer Demo</h2>
+                    <div id="audio-visualizer"></div>
+                    <div class="audio-controls">
+                        <button id="mic-button">Use Microphone</button>
+                        <div>
+                            <p>Sound Clips:</p>
+                            <div id="sound-clips"></div>
+                        </div>
+                    </div>
+                    
+                    <h2>Fourier transforms</h2>
+                    <p>
+
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+  </div>
+</body>
+</html>

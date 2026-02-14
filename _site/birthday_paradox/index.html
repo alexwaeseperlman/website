@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Birthday paradox calculator</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/">Alex Waese-Perlman</a></h1>
+      <div class="menu-link">
+      <div class="menu-link-label">Birthday paradox calculator</div>
+      <div class="content selected is-open">
+        <div class="content-container">
+          <p>
+            The birthday paradox is the unexpectedly high probability of two
+            people sharing a birthday in a group.
+          </p>
+          <p>
+            This calculator allows large numbers of people and days. It's useful
+            for determining the probability of a hash collision. Use the check on
+            the left to select the independent variable.
+          </p>
+          <form>
+            <div class="input-row">
+              <input type="radio" name="independent" id="num-people" value="num-people" checked
+                onchange="handleIndependentChange(this);" /><label for="num-people">Number of people: </label>
+              <input disabled id="num-people-val" type="number" value="23" oninput="handleDataChange();" />
+            </div>
+            <div class="input-row">
+              <input type="radio" name="independent" id="num-days" value="num-days"
+                onchange="handleIndependentChange(this);" /><label for="num-days">Number of days in a year:
+              </label><input id="num-days-val" type="number" value="365" oninput="handleDataChange();" />
+            </div>
+            <div class="input-row">
+              <input type="radio" name="independent" value="prob-collision" id="prob-collision"
+                onchange="handleIndependentChange(this);" /><label for="prob-collision">Probability of a collision:
+              </label><input id="prob-collision-val" type="number" value="0.5" maxlength="9" min="0"
+                oninput="handleDataChange();" />
+            </div>
+          </form>
+
+          <p>
+            It's able to handle large numbers (over 50 digits) by working with
+            logarithms and using the
+            <a href="https://en.wikipedia.org/wiki/Stirling%27s_approximation#Versions_suitable_for_calculators">
+              Stirling approximation
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+<script src="https://cdn.jsdelivr.net/npm/decimal.js-light@2.5.1/decimal.min.js"></script>
+
+<script>
+  let independent = "num-people";
+
+  function handleIndependentChange(button) {
+    document.getElementById("num-people-val").disabled = false;
+    document.getElementById("num-days-val").disabled = false;
+    document.getElementById("prob-collision-val").disabled = false;
+    document.getElementById(button.id + "-val").disabled = true;
+    independent = button.id;
+  }
+  const worker = new Worker("worker.js");
+
+  const pi = new Decimal(
+    "3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117067982148086513282306647093844609550582231725359408128481117450284102701938521105559644622948954930381964428810975665933446128475648233786783165271201909145648566923460348610454326648213393607260249141273"
+  );
+  const blankIsZero = (s) => (s == "" ? "0" : s);
+  function handleDataChange() {
+    const numPeopleComponent = document.querySelector("#num-people-val");
+    const numPeople = new Decimal(blankIsZero(numPeopleComponent.value));
+    const numDaysComponent = document.querySelector("#num-days-val");
+    const numDays = new Decimal(blankIsZero(numDaysComponent.value));
+    const probCollisionComponent = document.querySelector(
+      "#prob-collision-val"
+    );
+    const probCollision = new Decimal(
+      blankIsZero(probCollisionComponent.value)
+    );
+
+    if (numPeople.lt(0)) numPeopleComponent.classList.add("error");
+    else numPeopleComponent.classList.remove("error");
+
+    if (numDays.lt(0)) numDaysComponent.classList.add("error");
+    else numDaysComponent.classList.remove("error");
+
+    if (probCollision.lt(0) || probCollision.gt(1)) {
+      probCollisionComponent.classList.add("error");
+    } else {
+      probCollisionComponent.classList.remove("error");
+    }
+
+    if (independent == "prob-collision") {
+      worker.postMessage({
+        type: "prob-collision",
+        numPeople: numPeopleComponent.value,
+        numDays: numDaysComponent.value,
+      });
+    }
+    if (independent == "num-people") {
+      worker.postMessage({
+        type: "num-people",
+        numDays: numDaysComponent.value,
+        probCollision: probCollisionComponent.value,
+      });
+    }
+    if (independent == "num-days") {
+      worker.postMessage({
+        type: "num-days",
+        numPeople: numPeopleComponent.value,
+        probCollision: probCollisionComponent.value,
+      });
+    }
+  }
+  worker.onmessage = (e) => {
+    if (e.data.type == "num-people" && independent == "num-people") {
+      document.querySelector("#num-people-val").value = e.data.value;
+    }
+
+    if (e.data.type == "prob-collision" && independent == "prob-collision") {
+      document.querySelector("#prob-collision-val").value = e.data.value;
+    }
+
+    if (e.data.type == "num-days" && independent == "num-days") {
+      document.querySelector("#num-days-val").value = e.data.value;
+    }
+  };
+</script>
+
+    </div>
+  </div>
+</body>
+</html>

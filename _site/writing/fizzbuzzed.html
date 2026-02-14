@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>The story of FizzBuzzed, a drinking and programming contest</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+
+
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/">Alex Waese-Perlman</a></h1>
+      <div class="menu-link">
+            <div class="menu-link-label">The story of FizzBuzzed, a drinking and programming contest</div>
+            <div class="content selected is-open">
+                <div class="content-container">
+                    <p>
+                        Almost two years ago, the McGill competitive programming club, Compute McGill
+                        (formerly Compete McGill), had the idea to host a drinking and programming contest,
+                        inspired by <a href="https://youtu.be/uxKmDWDUZ5A?si=GCxw2ROAAubmG4Be">the drinking 
+                        game from the movie "The Social Network"</a>.
+                        One of our execs came up with the very clever idea to name it "FizzBuzzed",
+                        a reference to <a href="https://en.wikipedia.org/wiki/Fizz_buzz">the programming
+                        problem "FizzBuzz"</a>, a common interview question.
+                    </p>
+                    <p>
+                        Since then, we've hosted the event four times, and learned a lot from each attempt.
+                        Each iteration had slightly different rules, and the most recent one was the most
+                        successful by far. I am about to graduate which means that I won't be around to continue
+                        hosting events like this, so I thought it would be useful to write a post about the lessons we learned,
+                        so that future generations can avoid some of the pitfalls that we ran into. Hopefully this will even be
+                        helpful to clubs at other universities as well!
+                    </p>
+                    <p>
+                        Also, I want to say that I don't condone binge drinking. It's important to host events
+                        that are safe and fun for everyone. Bar tenders are trained to spot people who are too drunk
+                        and refuse service to anyone who is too intoxicated. We also made sure people understood that 
+                        they could stop drinking at any point, and brought some snacks to help people sober up.
+                    </p>
+                    
+                    <p>
+                        First, let's talk about the rules. For each event, the general structure was the same:
+                        <ul>
+                            <li>
+                                The event is split into some number of rounds of increasing difficulty.
+                            </li>
+                            <li>
+                                Before each round, participants are given a drink (sometimes shots and sometimes beer).
+                            </li>
+                        </ul>
+                        The variables that differed between events were:
+                        <ul>
+                            <li>
+                                Total number of problems, their style, and their difficulty.
+                            </li>
+                            <li>
+                                Total number of drinks, and how they were distributed.
+                            </li>
+                            <li>
+                                Team sizes.
+                            </li>
+                            <li>
+                                The venue and problem platform.
+                            </li>
+                        </ul>
+                        Below is an analysis of each event.
+                    </p>
+                    <h2>FizzBuzzed 1.0</h2>
+                    <p>
+                        The first attempt had around 20 participants (participating solo), and we hosted it in
+                        Tipsy Cow, a bar near McGill. In it we realized that first, getting the problem setting right is crucial to 
+                        the success of the event, and second, getting the problem setting right is extremely difficult. 
+                        The structure was made up of 6 rounds of one problem each. Each competitor was given a shot after each round, except
+                        for the last, and they were allowed to skip the shot after one round of their choice. This meant that people were drinking 
+                        4 shots over the course of the event. Also, the overall structure was like a race, as in you had 
+                        to finish a round before you could start the next one.
+                    </p>
+                    <p>
+                        The exec who set the problems said that his goal was basically to 
+                        set problems that would be challenging to the ICPC team.
+                        I still remember one of the last problems
+                        <a href="https://open.kattis.com/problems/fakescoreboard">from the contest</a>,
+                        which had us finding a lexicographically minimal flow in a graph, requiring us to implement a modified flow algorithm,
+                        while drunk (obviously no one solved it). I think several people solved none, or only one problem,
+                        which was very frustrating for them, and was exacerbated by the fact that 
+                        you couldn't even attempt the next problem until you finished the current one. 
+                        Overall the feedback from this event was pretty negative,
+                        and it was a bit embarrassing, but we still had a vision so we decided to try again.
+                    </p>
+                    <h2>FizzBuzzed 2.0</h2>
+                    <p>
+                        The second attempt was similar. Also solo, and held at Tipsy Cow, 
+                        although I think with fewer people (around 15 I think?).
+                        I think the problems were a bit more balanced. This time we added a system for skipping problems.
+                        If I remember correctly the deal was you could roll a 6-sided die, and if you rolled a 6 you could skip a problem,
+                        but for any other number you had to do 10 times that many pushups. Also I think people were able to solve 
+                        problems out of order this time, meaning they weren't separated into rounds.
+                        This meant that even if you didn't know how to solve a problem, you could still
+                        move on to the next one.
+                    </p>
+                    <p>
+                        This solved a lot of the issues from the first event, and overall the feedback was more positive, but there were still some
+                        issues. The biggest one was that the problems were still too hard. Ideally, the problems should be such that
+                        everyone solves a few of them, and most people solve all of them. Also, 4 shots is a lot, 
+                        but somehow it wasn't enough to get that feeling of solving problems in increasing levels of <em>impairment</em>.
+                        Maybe this was because the contest was moving too fast, so the shots weren't really kicking in before attempting 
+                        the next problem, or maybe it just wasn't enough alcohol. And last, I don't think we realized it at the time,
+                        but it wasn't social enough. Part of the fun should be the excitement of solving problems together,
+                        and cheering people on, but we didn't really have that.
+                    </p>
+                    <h2>FizzBuzzed "Fizz" (3.0)</h2>
+                    <p>
+                        The third attempt was a bit more casual. One of our former execs,
+                        had graduated and his roommates had moved out, so he
+                        had his apartment to himself. He offered to host the event there, and we tried it.
+                        Although this time it was mostly just our friends. I think around 10 people participated.
+                        He had a couple new ideas: instead of 6 individual problems, there were 3 rounds of 2 problems each.
+                        The structure was like a race again, where people start rounds individually, 
+                        but you could solve the problems within a round in any order you wanted.
+                        Also, instead of shots, we split the drinks into 3 beers and 3 shots.
+                        Before each round, you drank a shot, and you received a beer to drink during the round (which 
+                        should be finished before you start the next round).
+                    </p>
+                    <p>
+                        This was way more fun than the first two for a few reasons. First, it ended up being a lot more social.
+                        I think this is because people felt more comfortable talking to each other in a more casual setting. 
+                        Also, the addition of the beer made the event more fun, and
+                        the fact that people drank more made the end more chaotic and fun.
+                        Here we finally got to experience that feeling of debugging code while drunk, which is truly a unique experience.
+                        The only real issues were that the end was pretty disorganized, so there isn't a clear winner (people were just
+                        working together on the problems, which was actually really fun), and I accidentally set a problem that was too hard,
+                        although one person solved it eventually.
+                    </p>
+                    <h2>FizzBuzzed 4.0</h2>
+                    <p>
+                        The fourth attempt was unique, since this time we hosted it in collaboration with ECSESS,
+                        an organization for engineering students at McGill. We hosted it at
+                        Bar Milton-Parc, a different bar near McGill which had a vibe that fit the event better.
+                        This time we tried to formalize the social aspect of the event, by having people compete in teams of 2. Some people 
+                        even came with more than 2.
+                        This time we made the problems much easier. 
+                        We still had 3 rounds of 2, with the shots and beers, but now each round had a specified
+                        start time, so it was not a race. You would just get your drinks at the start of each round, and then solve as 
+                        many problems as you could.
+                    </p>
+                    <p>
+                        This was also our most popular round, with over 30 people participating. We hosted it on vjudge and I still have the
+                        problems since it was recent. Here are the contest links (these are all existing problems,
+                        but I rewrote the problem statements to make them fit the theme):
+                        <ul>
+                            <li>
+                                <a href="https://vjudge.net/contest/701284">Round 1</a>
+                            </li>
+                            <li>
+                                <a href="https://vjudge.net/contest/701287">Round 2</a>
+                            </li>
+                            <li>
+                                <a href="https://vjudge.net/contest/701291">Round 3</a>
+                            </li>
+                            <li>
+                                <a href="https://vjudge.net/contest/701313">Bonus problem (I added a bonus during the contest after there was an issue in a problem in round 2)</a>
+                            </li>
+                        </ul>
+                        Before setting these problems I had a hypothesis that the best problems would be ones that focus on implementation,
+                        since it's hard to be clever while drunk. After talking to the contestants though,
+                        there didn't seem to be a strong preference for any particular style of problem.
+                        One thing I think is important is that they should never require book code (prewritten algorithms),
+                        and ideally they should require minimal knowledge of the 'meta'.
+                    </p>
+                    <p>
+                        Vjudge is a platform for making contests out of problems that are hosted on various competitive programming sites,
+                        and it's mostly great, but it ended up causing us some problems. For one, it's hard to get people to register -
+                        they don't support external logins, so people had to create an account just to participate. Also,
+                        in order to submit to problems hosted on kattis, people have to manually add their kattis session token to the vjudge account,
+                        which a lot of people didn't know how to do, so I had to go around helping them. Last, it seems like for some 
+                        codeforces problems, but not all, you also have to manually add your codeforces session token. If you are going to
+                        use vjudge, I recommend testing every problem with a fresh account, and taking note of exactly what you needed to do
+                        to submit to each problem.
+                    </p>
+                    <p>
+                        I think the only real issue with FizzBuzzed 4.0 was that people had some issues using vjudge. In previous contests
+                        we had used kattis, but vjudge is nicer because it lets you host problems from other sites, and it lets 
+                        you rewrite the problem statements. We also had some trouble getting drinks to everyone on time while they were coding,
+                        which meant that people weren't taking shots at the same time. 
+                        For the future it would be fun to do a group shot right before each 
+                        round starts, and have everyone ready to go at once with beers.
+                    </p>
+                    <h2>Conclusion</h2>
+                    <p>
+                        The goal of this post was to share all the information we learned, so that FizzBuzzed can continue to evolve.
+                        I think that hosting these gimmicky competitive programming events is a great way to build a community
+                        and get people excited about learning, but I also think that they tend to be a lot harder
+                        to organize than your average university social event or even hackathon. You have to manage a lot of things,
+                        like problem setting, the technical infrastructure around judging, and making sure everyone has a computer, 
+                        all in addition to the standard social event stuff like finding a venue, advertising, etc.
+                        All of that being said, I think the effort pays off, and it's a lot of fun to host and take part in.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+  </div>
+</body>
+</html>

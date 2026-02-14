@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Map projector</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+<link rel="stylesheet" href="/map/map.css" />
+
+
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/">Alex Waese-Perlman</a></h1>
+      <div class="menu-link">
+  <div class="menu-link-label">Map projector</div>
+  <div class="content selected is-open">
+    <div class="content-container">
+      <p>
+        Pan by dragging the map. Switch between Mercator and Equirectangular projections,
+        and add markers defined in spherical coordinates. You can also drag equator handles A or B
+        to rotate the earth directly.
+      </p>
+      <div id="map-tool-layout">
+        <div id="map-viewport">
+          <div id="map-canvas-wrap">
+            <canvas id="map-canvas"></canvas>
+          </div>
+          <div id="map-status"></div>
+        </div>
+
+        <div id="map-controls">
+          <div id="projection-row">
+            <label for="projection-select">Projection:</label>
+            <select id="projection-select">
+              <option value="mercator">Mercator</option>
+              <option value="equirectangular">Equirectangular</option>
+              <option value="sinusoidal">Sinusoidal</option>
+              <option value="mollweide">Mollweide</option>
+              <option value="eckert4">Eckert IV</option>
+              <option value="winkelTripel">Winkel Tripel</option>
+            </select>
+          </div>
+
+          <button id="add-marker-btn">Add marker</button>
+          <p class="helper-text" id="add-marker-help">Click "Add marker" to place a new marker.</p>
+
+          <div id="marker-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { feature } from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
+
+  const WORLD_ATLAS_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+  const DEG2RAD = Math.PI / 180;
+  const RAD2DEG = 180 / Math.PI;
+  const MAX_MERCATOR_LAT = 85.05112878 * DEG2RAD;
+
+  const canvas = document.getElementById("map-canvas");
+  const ctx = canvas.getContext("2d");
+  const markerListEl = document.getElementById("marker-list");
+  const addMarkerBtn = document.getElementById("add-marker-btn");
+  const addMarkerHelp = document.getElementById("add-marker-help");
+  const projectionSelect = document.getElementById("projection-select");
+  const statusEl = document.getElementById("map-status");
+
+  const state = {
+    worldFeatures: [],
+    projection: "mercator",
+    centerLat: 0,
+    centerLon: 0,
+    viewRotation: 0,
+    zoom: 1,
+    markers: [],
+    handles: [
+      { id: "A", lat: 0, lon: -50 * DEG2RAD },
+      { id: "B", lat: 0, lon: 55 * DEG2RAD },
+    ],
+    addMode: false,
+    hoverMarker: null,
+    pointer: {
+      dragging: false,
+      dragHandleId: null,
+      fixedHandleId: null,
+      fixedHandleLockLon: null,
+      fixedHandleScreenX: null,
+      fixedHandleScreenY: null,
+      dragDistance: 0,
+      lastX: 0,
+      lastY: 0,
+    },
+    viewport: {
+      width: 800,
+      height: 500,
+    },
+    needsRender: true,
+    transition: {
+      active: false,
+      from: null,
+      to: null,
+      startTime: 0,
+      duration: 500,
+    },
+  };
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function getTransitionT() {
+    if (!state.transition.active) return null;
+    const elapsed = performance.now() - state.transition.startTime;
+    const raw = Math.min(1, elapsed / state.transition.duration);
+    return easeInOutCubic(raw);
+  }
+
+  const projectionMath = {
+    mercator: {
+      xExtent: 2 * Math.PI,
+      yExtent: 2 * mercatorLatToY(MAX_MERCATOR_LAT),
+      forwardRadians(lat, lon) {
+        return { x: wrapLonRad(lon), y: mercatorLatToY(lat) };
+      },
+      inverseRadians(x, y) {
+        return { lon: wrapLonRad(x), lat: mercatorYToLat(y) };
+      },
+    },
+    equirectangular: {
+      xExtent: 2 * Math.PI,
+      yExtent: Math.PI,
+      forwardRadians(lat, lon) {
+        return { x: wrapLonRad(lon), y: lat };
+      },
+      inverseRadians(x, y) {
+        return { lon: wrapLonRad(x), lat: clampLatRad(y) };
+      },
+    },
+    sinusoidal: {
+      xExtent: 2 * Math.PI,
+      yExtent: Math.PI,
+      forwardRadians(lat, lon) {
+        return { x: wrapLonRad(lon) * Math.cos(lat), y: lat };
+      },
+      inverseRadians(x, y) {
+        const lat = clampLatRad(y);
+        const cosLat = Math.cos(lat);
+        if (Math.abs(cosLat) < 1e-9) return { lon: 0, lat };
+        return { lon: wrapLonRad(x / cosLat), lat };
+      },
+    },
+    mollweide: {
+      xExtent: 2 * Math.PI,
+      yExtent: Math.PI,
+      forwardRadians(lat, lon) {
+        // Newton iteration to solve 2θ + sin(2θ) = π sin(lat)
+        let theta = lat;
+        const target = Math.PI * Math.sin(lat);
+        for (let i = 0; i < 20; i++) {
+          const dt = -(2 * theta + Math.sin(2 * theta) - target) / (2 + 2 * Math.cos(2 * theta));
+          theta += dt;
+          if (Math.abs(dt) < 1e-10) break;
+        }
+        const x = (2 * Math.SQRT2 / Math.PI) * wrapLonRad(lon) * Math.cos(theta);
+        const y = Math.SQRT2 * Math.sin(theta);
+        return { x, y };
+      },
+      inverseRadians(x, y) {
+        const theta = Math.asin(Math.max(-1, Math.min(1, y / Math.SQRT2)));
+        const cosTheta = Math.cos(theta);
+        const lon = Math.abs(cosTheta) < 1e-9 ? 0 : wrapLonRad((Math.PI * x) / (2 * Math.SQRT2 * cosTheta));
+        const sinLat = (2 * theta + Math.sin(2 * theta)) / Math.PI;
+        const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
+        return { lon, lat };
+      },
+    },
+    eckert4: {
+      xExtent: 2 * Math.PI,
+      yExtent: Math.PI,
+      forwardRadians(lat, lon) {
+        // Newton iteration: θ + sin(2θ)/2 + 2sin(θ) = (2 + π/2)·sin(lat)
+        const C = 2 + Math.PI / 2;
+        let theta = lat / 2;
+        const target = C * Math.sin(lat);
+        for (let i = 0; i < 20; i++) {
+          const f = theta + Math.sin(2 * theta) / 2 + 2 * Math.sin(theta) - target;
+          const fp = 1 + Math.cos(2 * theta) + 2 * Math.cos(theta);
+          if (Math.abs(fp) < 1e-12) break;
+          const dt = -f / fp;
+          theta += dt;
+          if (Math.abs(dt) < 1e-10) break;
+        }
+        const k = 2 / Math.sqrt(Math.PI * C);
+        const x = k * wrapLonRad(lon) * (1 + Math.cos(theta));
+        const y = 2 * k * Math.sqrt(Math.PI) * Math.sin(theta);
+        return { x, y };
+      },
+      inverseRadians(x, y) {
+        const C = 2 + Math.PI / 2;
+        const k = 2 / Math.sqrt(Math.PI * C);
+        const sinTheta = Math.max(-1, Math.min(1, y / (2 * k * Math.sqrt(Math.PI))));
+        const theta = Math.asin(sinTheta);
+        const cosTheta = Math.cos(theta);
+        const lon = Math.abs(1 + cosTheta) < 1e-9 ? 0 : wrapLonRad(x / (k * (1 + cosTheta)));
+        const sinLat = (theta + Math.sin(2 * theta) / 2 + 2 * Math.sin(theta)) / C;
+        const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
+        return { lon, lat };
+      },
+    },
+    winkelTripel: {
+      xExtent: 2 * Math.PI,
+      yExtent: Math.PI,
+      forwardRadians(lat, lon) {
+        const halfLon = wrapLonRad(lon) / 2;
+        const cosLat = Math.cos(lat);
+        const alpha = Math.acos(Math.max(-1, Math.min(1, cosLat * Math.cos(halfLon))));
+        const sincAlpha = Math.abs(alpha) < 1e-9 ? 1 : Math.sin(alpha) / alpha;
+        // Aitoff
+        const aitX = 2 * cosLat * Math.sin(halfLon) / sincAlpha;
+        const aitY = Math.sin(lat) / sincAlpha;
+        // Average with equirectangular
+        const x = (aitX + wrapLonRad(lon) * Math.cos(Math.acos(2 / Math.PI))) / 2;
+        const y = (aitY + lat) / 2;
+        return { x, y };
+      },
+      inverseRadians(x, y) {
+        // Newton iteration for Winkel Tripel inverse
+        let lon = x, lat = y;
+        for (let i = 0; i < 25; i++) {
+          const fwd = projectionMath.winkelTripel.forwardRadians(lat, lon);
+          const errX = fwd.x - x;
+          const errY = fwd.y - y;
+          if (Math.abs(errX) < 1e-9 && Math.abs(errY) < 1e-9) break;
+          // Numerical Jacobian
+          const eps = 1e-6;
+          const fxp = projectionMath.winkelTripel.forwardRadians(lat, lon + eps);
+          const fyp = projectionMath.winkelTripel.forwardRadians(lat + eps, lon);
+          const dxdlon = (fxp.x - fwd.x) / eps;
+          const dxdlat = (fyp.x - fwd.x) / eps;
+          const dydlon = (fxp.y - fwd.y) / eps;
+          const dydlat = (fyp.y - fwd.y) / eps;
+          const det = dxdlon * dydlat - dxdlat * dydlon;
+          if (Math.abs(det) < 1e-12) break;
+          lon -= (dydlat * errX - dxdlat * errY) / det;
+          lat -= (-dydlon * errX + dxdlon * errY) / det;
+          lat = clampLatRad(lat);
+        }
+        return { lon: wrapLonRad(lon), lat: clampLatRad(lat) };
+      },
+    },
+  };
+
+  window.mapProjectionMath = Object.fromEntries(
+    Object.entries(projectionMath).map(([name, proj]) => [name, {
+      forward: (latDeg, lonDeg) => {
+        const p = proj.forwardRadians(latDeg * DEG2RAD, lonDeg * DEG2RAD);
+        return { x: p.x * RAD2DEG, y: p.y * RAD2DEG };
+      },
+      inverse: (xDeg, yDeg) => {
+        const p = proj.inverseRadians(xDeg * DEG2RAD, yDeg * DEG2RAD);
+        return { lat: p.lat * RAD2DEG, lon: p.lon * RAD2DEG };
+      },
+    }])
+  );
+
+  projectionSelect.value = state.projection;
+  projectionSelect.addEventListener("change", () => {
+    const newProj = projectionSelect.value;
+    if (newProj === state.projection) return;
+    state.transition.from = state.projection;
+    state.transition.to = newProj;
+    state.transition.startTime = performance.now();
+    state.transition.active = true;
+    state.projection = newProj;
+    requestRender();
+  });
+
+  addMarkerBtn.addEventListener("click", () => {
+    state.addMode = !state.addMode;
+    if (!state.addMode) state.hoverMarker = null;
+    refreshAddModeUi();
+    requestRender();
+  });
+
+  function refreshAddModeUi() {
+    addMarkerBtn.classList.toggle("active", state.addMode);
+    addMarkerBtn.textContent = state.addMode ? "Cancel add marker" : "Add marker";
+    addMarkerHelp.textContent = state.addMode
+      ? "Add marker mode: move your mouse over the map and click to place."
+      : 'Click "Add marker" to place a new marker.';
+  }
+
+  function requestRender() {
+    state.needsRender = true;
+  }
+
+  function wrapLonRad(lon) {
+    let v = lon;
+    while (v > Math.PI) v -= 2 * Math.PI;
+    while (v < -Math.PI) v += 2 * Math.PI;
+    return v;
+  }
+
+  function clampLatRad(lat) {
+    const max = (Math.PI / 2) - 1e-10;
+    return Math.max(-max, Math.min(max, lat));
+  }
+
+  function clampMercatorLatRad(lat) {
+    return Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+  }
+
+  function mercatorLatToY(lat) {
+    const clamped = clampMercatorLatRad(lat);
+    return Math.log(Math.tan(Math.PI / 4 + clamped / 2));
+  }
+
+  function mercatorYToLat(y) {
+    return clampMercatorLatRad(2 * Math.atan(Math.exp(y)) - Math.PI / 2);
+  }
+
+  function shortestPeriodicDelta(value, period) {
+    if (!Number.isFinite(period) || period <= 0) return value;
+    return value - Math.round(value / period) * period;
+  }
+
+  function localFromXY(x, y, projectionName = state.projection) {
+    const scale = getScale();
+    const localX = (x - state.viewport.width / 2) / scale;
+    const localY = -(y - state.viewport.height / 2) / scale;
+    const t = getTransitionT();
+    if (t != null) {
+      const fromLL = projectionMath[state.transition.from].inverseRadians(localX, localY);
+      const toLL = projectionMath[state.transition.to].inverseRadians(localX, localY);
+      return {
+        lat: fromLL.lat + (toLL.lat - fromLL.lat) * t,
+        lon: wrapLonRad(fromLL.lon + shortestPeriodicDelta(toLL.lon - fromLL.lon, 2 * Math.PI) * t),
+      };
+    }
+    const baseProjection = projectionMath[projectionName];
+    return baseProjection.inverseRadians(localX, localY);
+  }
+
+  function getScaleForProjection(projName) {
+    const proj = projectionMath[projName];
+    return Math.min(
+      state.viewport.width / proj.xExtent,
+      state.viewport.height / proj.yExtent
+    ) * state.zoom;
+  }
+
+  function getScale() {
+    const t = getTransitionT();
+    if (t == null) return getScaleForProjection(state.projection);
+    const sFrom = getScaleForProjection(state.transition.from);
+    const sTo = getScaleForProjection(state.transition.to);
+    return sFrom + (sTo - sFrom) * t;
+  }
+
+  function latLonToVector(lat, lon) {
+    const cosLat = Math.cos(lat);
+    return {
+      x: cosLat * Math.cos(lon),
+      y: cosLat * Math.sin(lon),
+      z: Math.sin(lat),
+    };
+  }
+
+  function vectorToLatLon(vector) {
+    const len = Math.hypot(vector.x, vector.y, vector.z) || 1;
+    const x = vector.x / len;
+    const y = vector.y / len;
+    const z = vector.z / len;
+    return {
+      lat: clampLatRad(Math.asin(z)),
+      lon: wrapLonRad(Math.atan2(y, x)),
+    };
+  }
+
+  function getCenterBasis(centerLat, centerLon) {
+    const lat0 = centerLat;
+    const lon0 = centerLon;
+    const sinLat = Math.sin(lat0);
+    const cosLat = Math.cos(lat0);
+    const sinLon = Math.sin(lon0);
+    const cosLon = Math.cos(lon0);
+
+    return {
+      up: { x: cosLat * cosLon, y: cosLat * sinLon, z: sinLat },
+      east: { x: -sinLon, y: cosLon, z: 0 },
+      north: { x: -sinLat * cosLon, y: -sinLat * sinLon, z: cosLat },
+    };
+  }
+
+  function rotateToViewWithCenter(lat, lon, centerLat, centerLon, viewRotation = 0) {
+    const vector = latLonToVector(lat, lon);
+    const basis = getCenterBasis(centerLat, centerLon);
+    const vx = vector.x * basis.up.x + vector.y * basis.up.y + vector.z * basis.up.z;
+    let vy = vector.x * basis.east.x + vector.y * basis.east.y + vector.z * basis.east.z;
+    let vz = vector.x * basis.north.x + vector.y * basis.north.y + vector.z * basis.north.z;
+
+    if (viewRotation !== 0) {
+      const cosR = Math.cos(viewRotation);
+      const sinR = Math.sin(viewRotation);
+      const newVy = vy * cosR - vz * sinR;
+      const newVz = vy * sinR + vz * cosR;
+      vy = newVy;
+      vz = newVz;
+    }
+
+    return vectorToLatLon({ x: vx, y: vy, z: vz });
+  }
+
+  function rotateFromViewWithCenter(localLat, localLon, centerLat, centerLon, viewRotation = 0) {
+    const basis = getCenterBasis(centerLat, centerLon);
+    const local = latLonToVector(localLat, localLon);
+
+    let lx = local.x, ly = local.y, lz = local.z;
+
+    if (viewRotation !== 0) {
+      const cosR = Math.cos(viewRotation);
+      const sinR = Math.sin(viewRotation);
+      const newLy = ly * cosR + lz * sinR;
+      const newLz = -ly * sinR + lz * cosR;
+      ly = newLy;
+      lz = newLz;
+    }
+
+    const world = {
+      x: lx * basis.up.x + ly * basis.east.x + lz * basis.north.x,
+      y: lx * basis.up.y + ly * basis.east.y + lz * basis.north.y,
+      z: lx * basis.up.z + ly * basis.east.z + lz * basis.north.z,
+    };
+
+    return vectorToLatLon(world);
+  }
+
+  function rotateFromView(localLat, localLon) {
+    return rotateFromViewWithCenter(localLat, localLon, state.centerLat, state.centerLon, state.viewRotation);
+  }
+
+  function projectLatLonWithCenter(lat, lon, centerLat, centerLon, viewRotation = 0, projectionName = state.projection) {
+    const local = rotateToViewWithCenter(lat, lon, centerLat, centerLon, viewRotation);
+    const scale = getScale();
+    const t = getTransitionT();
+
+    if (t != null) {
+      const fromXY = projectionMath[state.transition.from].forwardRadians(local.lat, local.lon);
+      const toXY = projectionMath[state.transition.to].forwardRadians(local.lat, local.lon);
+      const blendX = fromXY.x + (toXY.x - fromXY.x) * t;
+      const blendY = fromXY.y + (toXY.y - fromXY.y) * t;
+      return {
+        x: state.viewport.width / 2 + blendX * scale,
+        y: state.viewport.height / 2 - blendY * scale,
+      };
+    }
+
+    const baseProjection = projectionMath[projectionName];
+    const world = baseProjection.forwardRadians(local.lat, local.lon);
+    return {
+      x: state.viewport.width / 2 + world.x * scale,
+      y: state.viewport.height / 2 - world.y * scale,
+    };
+  }
+
+  function projectLatLonRad(lat, lon, projectionName = state.projection) {
+    return projectLatLonWithCenter(lat, lon, state.centerLat, state.centerLon, state.viewRotation, projectionName);
+  }
+
+  function unprojectXY(x, y, projectionName = state.projection) {
+    const local = localFromXY(x, y, projectionName);
+    return rotateFromView(local.lat, local.lon);
+  }
+
+  function getEventPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  }
+
+  canvas.addEventListener("pointerdown", (event) => {
+    const p = getEventPoint(event);
+    const handleHit = state.addMode ? null : getHandleAtPoint(p.x, p.y);
+
+    if (!handleHit) {
+      state.pointer.dragging = false;
+      state.pointer.dragHandleId = null;
+      return;
+    }
+
+    state.pointer.dragging = true;
+    state.pointer.dragHandleId = handleHit.id;
+    const fixedHandle = state.handles.find((handle) => handle.id !== handleHit.id) || null;
+    state.pointer.fixedHandleId = fixedHandle ? fixedHandle.id : null;
+    if (fixedHandle) {
+      state.pointer.fixedHandleLockLon = fixedHandle.lon;
+      const fixedProjected = projectLatLonRad(fixedHandle.lat, fixedHandle.lon);
+      state.pointer.fixedHandleScreenX = fixedProjected.x;
+      state.pointer.fixedHandleScreenY = fixedProjected.y;
+    } else {
+      state.pointer.fixedHandleLockLon = null;
+      state.pointer.fixedHandleScreenX = null;
+      state.pointer.fixedHandleScreenY = null;
+    }
+    state.pointer.dragDistance = 0;
+    state.pointer.lastX = p.x;
+    state.pointer.lastY = p.y;
+
+    canvas.classList.add("dragging");
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    const p = getEventPoint(event);
+
+    if (state.pointer.dragging) {
+      const dx = p.x - state.pointer.lastX;
+      const dy = p.y - state.pointer.lastY;
+      state.pointer.dragDistance += Math.abs(dx) + Math.abs(dy);
+      state.pointer.lastX = p.x;
+      state.pointer.lastY = p.y;
+
+      updateHandlesAndCenterFromScreenspace(p.x, p.y);
+
+      requestRender();
+    }
+
+    if (state.addMode) {
+      state.hoverMarker = unprojectXY(p.x, p.y);
+      requestRender();
+    }
+  });
+
+  canvas.addEventListener("pointerup", (event) => {
+    const p = getEventPoint(event);
+
+    if (!state.pointer.dragging) {
+      if (state.addMode) {
+        const target = unprojectXY(p.x, p.y);
+        addMarker(target.lat, target.lon);
+      }
+      return;
+    }
+
+    const isClick = state.pointer.dragDistance < 3;
+    state.pointer.dragging = false;
+    state.pointer.dragHandleId = null;
+    state.pointer.fixedHandleId = null;
+    state.pointer.fixedHandleLockLon = null;
+    state.pointer.fixedHandleScreenX = null;
+    state.pointer.fixedHandleScreenY = null;
+    canvas.classList.remove("dragging");
+    canvas.releasePointerCapture(event.pointerId);
+
+    if (isClick && state.addMode && state.hoverMarker) {
+      addMarker(state.hoverMarker.lat, state.hoverMarker.lon);
+    }
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    if (state.addMode && !state.pointer.dragging) {
+      state.hoverMarker = null;
+      requestRender();
+    }
+  });
+
+  /* ── 3-vector helpers ── */
+  function dot3(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+  function cross3(a, b) {
+    return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+  }
+  function scale3(v, s) { return { x: v.x * s, y: v.y * s, z: v.z * s }; }
+  function sub3(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
+
+  /**
+   * Triad solver: given two handle-on-equator world points and their target
+   * screen positions, find the unique 3-DOF rotation (centerLat, centerLon,
+   * viewRotation) that maps both correctly, plus the dragged handle's longitude.
+   */
+  function solveRotationFromHandles(fixedLon, fixedSX, fixedSY, cursorX, cursorY, currentDragLon) {
+    const pB = latLonToVector(0, fixedLon);
+
+    const localB = localFromXY(fixedSX, fixedSY);
+    const qB = latLonToVector(localB.lat, localB.lon);
+    const localA = localFromXY(cursorX, cursorY);
+    const qA = latLonToVector(localA.lat, localA.lon);
+
+    // Angle-preservation constraint: cos(dragLon - fixedLon) = qA · qB
+    const qDot = Math.max(-1, Math.min(1, dot3(qA, qB)));
+    const angleSep = Math.acos(qDot);
+    const cand1 = wrapLonRad(fixedLon + angleSep);
+    const cand2 = wrapLonRad(fixedLon - angleSep);
+    const d1 = Math.abs(shortestPeriodicDelta(cand1 - currentDragLon, 2 * Math.PI));
+    const d2 = Math.abs(shortestPeriodicDelta(cand2 - currentDragLon, 2 * Math.PI));
+    const dragLon = d1 <= d2 ? cand1 : cand2;
+    const pA = latLonToVector(0, dragLon);
+
+    // Build orthonormal bases via Gram-Schmidt (Triad method)
+    const e1 = pB;
+    const pApBdot = dot3(pA, e1);
+    const e2raw = sub3(pA, scale3(e1, pApBdot));
+    const e2len = Math.hypot(e2raw.x, e2raw.y, e2raw.z);
+    if (e2len < 1e-9) return null;
+    const e2 = scale3(e2raw, 1 / e2len);
+    const e3 = cross3(e1, e2);
+
+    const f1 = qB;
+    const qAqBdot = dot3(qA, f1);
+    const f2raw = sub3(qA, scale3(f1, qAqBdot));
+    const f2len = Math.hypot(f2raw.x, f2raw.y, f2raw.z);
+    if (f2len < 1e-9) return null;
+    const f2 = scale3(f2raw, 1 / f2len);
+    const f3 = cross3(f1, f2);
+
+    // R = F * E^T   (maps world → view;  R * e_k = f_k)
+    const comp = (v, i) => (i === 0 ? v.x : i === 1 ? v.y : v.z);
+    const R = Array.from({ length: 3 }, (_, i) =>
+      Array.from({ length: 3 }, (_, j) =>
+        comp(f1, i) * comp(e1, j) + comp(f2, i) * comp(e2, j) + comp(f3, i) * comp(e3, j)
+      )
+    );
+
+    // Extract center: center_world = R^T * [1,0,0] = first row of R
+    const centerWorld = { x: R[0][0], y: R[0][1], z: R[0][2] };
+    const centerLL = vectorToLatLon(centerWorld);
+
+    // Extract viewRotation: R's 2nd row = cosθ·east − sinθ·north (in world coords)
+    const eastActual = { x: R[1][0], y: R[1][1], z: R[1][2] };
+    const canonical = getCenterBasis(centerLL.lat, centerLL.lon);
+    const cosTheta = dot3(eastActual, canonical.east);
+    const sinTheta = -dot3(eastActual, canonical.north);  // negate: row·north = -sinθ
+    const viewRotation = Math.atan2(sinTheta, cosTheta);
+
+    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation, dragLon };
+  }
+
+  function getHandleById(id) {
+    return state.handles.find((handle) => handle.id === id) || null;
+  }
+
+  function pinHandlesToEquator() {
+    for (const handle of state.handles) {
+      handle.lat = 0;
+      handle.lon = wrapLonRad(handle.lon);
+    }
+  }
+
+  function updateHandlesAndCenterFromScreenspace(cursorX, cursorY) {
+    const draggedHandle = getHandleById(state.pointer.dragHandleId);
+    if (!draggedHandle) return;
+    const fixedHandle = getHandleById(state.pointer.fixedHandleId);
+    if (!fixedHandle) return;
+
+    const fixedLon = state.pointer.fixedHandleLockLon;
+    const fixedSX = state.pointer.fixedHandleScreenX;
+    const fixedSY = state.pointer.fixedHandleScreenY;
+    if (fixedLon == null || fixedSX == null || fixedSY == null) return;
+
+    const result = solveRotationFromHandles(
+      fixedLon, fixedSX, fixedSY,
+      cursorX, cursorY,
+      draggedHandle.lon
+    );
+    if (!result) return;
+
+    state.centerLat = result.centerLat;
+    state.centerLon = result.centerLon;
+    state.viewRotation = result.viewRotation;
+    draggedHandle.lat = 0;
+    draggedHandle.lon = result.dragLon;
+    fixedHandle.lat = 0;
+    fixedHandle.lon = fixedLon;
+  }
+
+  function getHandleAtPoint(x, y) {
+    const hitRadius = 12;
+    for (const handle of state.handles) {
+      const p = projectLatLonRad(handle.lat, handle.lon);
+      const distance = Math.hypot(x - p.x, y - p.y);
+      if (distance <= hitRadius) return handle;
+    }
+    return null;
+  }
+
+  function addMarker(lat, lon) {
+    state.markers.push({
+      id: crypto.randomUUID(),
+      lat,
+      lon,
+      color: "#0079ac",
+      shape: "circle",
+      size: 8,
+      rotation: 0,
+      count: 6,
+    });
+    state.addMode = false;
+    state.hoverMarker = null;
+    refreshAddModeUi();
+    renderMarkerList();
+    requestRender();
+  }
+
+  function removeMarker(id) {
+    state.markers = state.markers.filter((marker) => marker.id !== id);
+    renderMarkerList();
+    requestRender();
+  }
+
+  function renderMarkerList() {
+    markerListEl.innerHTML = "";
+
+    if (state.markers.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "helper-text";
+      empty.textContent = "No markers yet.";
+      markerListEl.appendChild(empty);
+      return;
+    }
+
+    state.markers.forEach((marker, index) => {
+      const card = document.createElement("div");
+      card.className = "marker-card";
+
+      const titleRow = document.createElement("div");
+      titleRow.className = "marker-title-row";
+
+      const title = document.createElement("div");
+      title.className = "marker-title";
+      title.textContent = `Marker ${index + 1}`;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "small-btn";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => removeMarker(marker.id));
+
+      titleRow.appendChild(title);
+      titleRow.appendChild(removeBtn);
+      card.appendChild(titleRow);
+
+      const position = document.createElement("div");
+      position.className = "marker-position";
+      position.textContent = `lat ${formatNumber(marker.lat * RAD2DEG, 3)}, lon ${formatNumber(marker.lon * RAD2DEG, 3)}`;
+      card.appendChild(position);
+
+      card.appendChild(buildRow("Color", buildColorInput(marker, "color")));
+      card.appendChild(buildRow("Shape", buildShapeInput(marker)));
+
+      if (marker.shape === "circle" || marker.shape === "square") {
+        card.appendChild(buildRow("Size (°)", buildNumberInput(marker, "size", 0.2, 90, 0.2)));
+      }
+
+      if (marker.shape === "square" || marker.shape === "lines" || marker.shape === "line") {
+        card.appendChild(buildRow("Rotation (°)", buildNumberInput(marker, "rotation", -360, 360, 1)));
+      }
+
+      if (marker.shape === "lines") {
+        card.appendChild(buildRow("Line count", buildNumberInput(marker, "count", 1, 64, 1)));
+      }
+
+      markerListEl.appendChild(card);
+    });
+  }
+
+  function buildRow(labelText, inputEl) {
+    const row = document.createElement("div");
+    row.className = "marker-row";
+
+    const label = document.createElement("label");
+    label.textContent = labelText;
+
+    row.appendChild(label);
+    row.appendChild(inputEl);
+    return row;
+  }
+
+  function buildColorInput(marker, key) {
+    const input = document.createElement("input");
+    input.className = "marker-color";
+    input.type = "color";
+    input.value = marker[key];
+    input.addEventListener("input", () => {
+      marker[key] = input.value;
+      requestRender();
+    });
+    return input;
+  }
+
+  function buildShapeInput(marker) {
+    const select = document.createElement("select");
+    select.className = "marker-select";
+
+    const shapes = ["circle", "square", "lines", "line"];
+    for (const shape of shapes) {
+      const option = document.createElement("option");
+      option.value = shape;
+      option.textContent = shape;
+      select.appendChild(option);
+    }
+    select.value = marker.shape;
+    select.addEventListener("change", () => {
+      marker.shape = select.value;
+      renderMarkerList();
+      requestRender();
+    });
+    return select;
+  }
+
+  function buildNumberInput(marker, key, min, max, step) {
+    const input = document.createElement("input");
+    input.className = "marker-number";
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = marker[key];
+    input.addEventListener("input", () => {
+      const value = Number(input.value);
+      if (!Number.isFinite(value)) return;
+      marker[key] = Math.max(min, Math.min(max, value));
+      requestRender();
+    });
+    return input;
+  }
+
+  function destinationPoint(lat, lon, bearing, angularDistance) {
+    const sinLat = Math.sin(lat);
+    const cosLat = Math.cos(lat);
+    const sinDist = Math.sin(angularDistance);
+    const cosDist = Math.cos(angularDistance);
+
+    const nextLat = Math.asin(
+      sinLat * cosDist + cosLat * sinDist * Math.cos(bearing)
+    );
+
+    const nextLon = lon + Math.atan2(
+      Math.sin(bearing) * sinDist * cosLat,
+      cosDist - sinLat * Math.sin(nextLat)
+    );
+
+    return { lat: nextLat, lon: wrapLonRad(nextLon) };
+  }
+
+  function drawProjectedPolyline(points, color, lineWidth = 2) {
+    if (points.length === 0) return;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+
+    let prev = null;
+    let prevLocalLon = null;
+    for (const point of points) {
+      const projected = projectLatLonRad(point.lat, point.lon);
+      const local = rotateToViewWithCenter(point.lat, point.lon, state.centerLat, state.centerLon, state.viewRotation);
+
+      if (!prev) {
+        ctx.moveTo(projected.x, projected.y);
+      } else {
+        const crossesSeam = Math.abs(local.lon - prevLocalLon) > Math.PI;
+        if (crossesSeam) ctx.moveTo(projected.x, projected.y);
+        else ctx.lineTo(projected.x, projected.y);
+      }
+      prev = projected;
+      prevLocalLon = local.lon;
+    }
+
+    ctx.stroke();
+  }
+
+  function drawGreatCircle(lat, lon, bearing, color) {
+    const steps = 360;
+    const points = [];
+
+    for (let i = 0; i <= steps; i++) {
+      const distance = -Math.PI + (2 * Math.PI * i) / steps;
+      points.push(destinationPoint(lat, lon, bearing, distance));
+    }
+
+    drawProjectedPolyline(points, color, 1.8);
+  }
+
+  function drawMarker(marker, isPreview = false) {
+    const color = isPreview ? "#005f7f" : marker.color;
+    const rotation = marker.rotation * DEG2RAD;
+    const sizeRad = Math.max(0.2, marker.size) * DEG2RAD;
+
+    if (marker.shape === "circle") {
+      const steps = 96;
+      const points = [];
+      for (let i = 0; i <= steps; i++) {
+        const bearing = (2 * Math.PI * i) / steps;
+        points.push(destinationPoint(marker.lat, marker.lon, bearing, sizeRad));
+      }
+      drawProjectedPolyline(points, color, 2);
+      return;
+    }
+
+    if (marker.shape === "square") {
+      const points = [];
+      const cornerDistance = sizeRad / Math.sqrt(2);
+      for (let i = 0; i < 4; i++) {
+        const bearing = rotation + Math.PI / 4 + i * (Math.PI / 2);
+        points.push(destinationPoint(marker.lat, marker.lon, bearing, cornerDistance));
+      }
+      points.push(points[0]);
+      drawProjectedPolyline(points, color, 2);
+      return;
+    }
+
+    if (marker.shape === "lines") {
+      const count = Math.max(1, Math.floor(marker.count));
+      for (let i = 0; i < count; i++) {
+        const bearing = rotation + (Math.PI * i) / count;
+        drawGreatCircle(marker.lat, marker.lon, bearing, color);
+      }
+      return;
+    }
+
+    if (marker.shape === "line") {
+      drawGreatCircle(marker.lat, marker.lon, rotation, color);
+    }
+  }
+
+  function drawWorld() {
+    ctx.strokeStyle = "#0079ac";
+    ctx.lineWidth = 1;
+
+    for (const featureItem of state.worldFeatures) {
+      if (featureItem.geometry.type === "Polygon") {
+        for (const ring of featureItem.geometry.coordinates) {
+          drawGeoRing(ring);
+        }
+      } else if (featureItem.geometry.type === "MultiPolygon") {
+        for (const polygon of featureItem.geometry.coordinates) {
+          for (const ring of polygon) {
+            drawGeoRing(ring);
+          }
+        }
+      }
+    }
+  }
+
+  function drawGeoRing(ring) {
+    ctx.beginPath();
+    let prev = null;
+    let prevLocalLon = null;
+
+    for (const [lonDeg, latDeg] of ring) {
+      const lat = latDeg * DEG2RAD;
+      const lon = lonDeg * DEG2RAD;
+      const p = projectLatLonRad(lat, lon);
+      const local = rotateToViewWithCenter(lat, lon, state.centerLat, state.centerLon, state.viewRotation);
+      if (!prev) {
+        ctx.moveTo(p.x, p.y);
+      } else {
+        const crossesSeam = Math.abs(local.lon - prevLocalLon) > Math.PI;
+        if (crossesSeam) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      prev = p;
+      prevLocalLon = local.lon;
+    }
+
+    ctx.stroke();
+  }
+
+  function drawCrosshairMarker(lat, lon) {
+    const p = projectLatLonRad(lat, lon);
+    ctx.strokeStyle = "#005f7f";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 8, p.y);
+    ctx.lineTo(p.x + 8, p.y);
+    ctx.moveTo(p.x, p.y - 8);
+    ctx.lineTo(p.x, p.y + 8);
+    ctx.stroke();
+  }
+
+  function drawHandles() {
+    pinHandlesToEquator();
+
+    const handleColor = "#005f7f";
+    const activeColor = "#0079ac";
+
+    for (const handle of state.handles) {
+      const p = projectLatLonRad(handle.lat, handle.lon);
+      const isActive = state.pointer.dragging && state.pointer.dragHandleId === handle.id;
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isActive ? activeColor : handleColor;
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isActive ? activeColor : handleColor;
+      ctx.font = "bold 12px Roboto";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(handle.id, p.x, p.y - 14);
+    }
+  }
+
+  function drawFrame() {
+    if (!state.needsRender) return;
+    state.needsRender = false;
+
+    ctx.clearRect(0, 0, state.viewport.width, state.viewport.height);
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, state.viewport.width, state.viewport.height);
+
+    drawWorld();
+    drawHandles();
+
+    for (const marker of state.markers) {
+      drawMarker(marker);
+    }
+
+    if (state.addMode && state.hoverMarker) {
+      drawMarker({
+        ...state.hoverMarker,
+        color: "#005f7f",
+        shape: "circle",
+        size: 6,
+        rotation: 0,
+        count: 6,
+      }, true);
+      drawCrosshairMarker(state.hoverMarker.lat, state.hoverMarker.lon);
+    }
+  }
+
+  function animationLoop() {
+    if (state.transition.active) {
+      const elapsed = performance.now() - state.transition.startTime;
+      if (elapsed >= state.transition.duration) {
+        state.transition.active = false;
+      }
+      requestRender();
+    }
+    drawFrame();
+    requestAnimationFrame(animationLoop);
+  }
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    state.viewport.width = rect.width;
+    state.viewport.height = rect.height;
+
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    requestRender();
+  }
+
+  function formatNumber(value, digits = 2) {
+    return Number(value).toFixed(digits);
+  }
+
+  async function loadWorldData() {
+    statusEl.textContent = "Loading world map...";
+
+    try {
+      const response = await fetch(WORLD_ATLAS_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const topo = await response.json();
+      const countries = feature(topo, topo.objects.countries);
+      state.worldFeatures = countries.features;
+      statusEl.textContent = "";
+      requestRender();
+    } catch (error) {
+      statusEl.textContent = `Failed to load world data: ${error.message}`;
+    }
+  }
+
+  window.addEventListener("resize", resizeCanvas);
+
+  pinHandlesToEquator();
+  refreshAddModeUi();
+  renderMarkerList();
+  resizeCanvas();
+  requestRender();
+  animationLoop();
+  await loadWorldData();
+</script>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,180 @@
+#map-tool-layout {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+#map-viewport {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#map-canvas-wrap {
+  width: 100%;
+  min-height: 420px;
+  border: 2px solid #0001;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+#map-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+
+#map-canvas.dragging {
+  cursor: grabbing;
+}
+
+#map-controls {
+  flex: 1;
+  min-width: 280px;
+  border: 2px solid #0001;
+  border-radius: 8px;
+  background: white;
+  padding: 12px;
+  box-sizing: border-box;
+  color: #0079ac;
+}
+
+#projection-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+#projection-select {
+  font-family: "Roboto Slab";
+  border: 2px solid #0079ac;
+  border-radius: 8px;
+  background: #f6fdff;
+  color: #0079ac;
+  height: 40px;
+  padding: 0 8px;
+}
+
+.marker-select {
+  font-family: "Roboto Slab";
+  border: 2px solid #0079ac;
+  border-radius: 4px;
+  background: #f6fdff;
+  color: #0079ac;
+  height: 26px;
+  padding: 0 4px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+#add-marker-btn {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+#add-marker-btn.active {
+  background-color: #005f7f;
+}
+
+.helper-text {
+  margin: 0 0 12px;
+  color: black;
+  font-size: 15px;
+}
+
+#marker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.marker-card {
+  border: 2px solid #0001;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #f6fdff;
+  color: #0079ac;
+}
+
+.marker-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.marker-title {
+  font-family: "Roboto Slab";
+  font-size: 15px;
+}
+
+.small-btn {
+  font-size: 13px;
+  height: 26px;
+  padding: 0 8px;
+}
+
+.marker-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.marker-row label {
+  min-width: 72px;
+  color: black;
+  font-size: 13px;
+}
+
+.marker-number {
+  width: 80px;
+  height: 26px;
+  font-size: 13px;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+.marker-color {
+  width: 36px;
+  height: 26px;
+  border: 2px solid #0079ac;
+  border-radius: 4px;
+  background: #f6fdff;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.marker-position {
+  font-size: 12px;
+  color: black;
+}
+
+#map-status {
+  color: black;
+  min-height: 22px;
+}
+
+@media screen and (max-width: 900px) {
+  #map-tool-layout {
+    flex-direction: column;
+  }
+
+  #map-controls {
+    min-width: 0;
+  }
+
+  #marker-list {
+    max-height: none;
+  }
+}

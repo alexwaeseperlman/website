@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>{{ page.title | default: site.title }}</title>
+  {% include head.html %}
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="{{ '/' | relative_url }}">{{ site.author_name }}</a></h1>
+      {{ content }}
+    </div>
+  </div>
+</body>
+</html>

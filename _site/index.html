@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Home</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+<link rel="stylesheet" href="/flip-card.css" />
+
+
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/">Alex Waese-Perlman</a></h1>
+      <div class="menu-link" id="about-me">
+      <a class="menu-link-label">About me</a>
+      <div class="content">
+        <div class="content-container is-relative">
+          <div id="line-art-canvas-container">
+          </div>
+          <p>
+            I graduated from McGill University in 2025 with a BSc in Computer Science and Mathematics.
+            I currently work as a software engineer in New York.
+         </p>
+          <p>
+            I have some other cool projects, including a data visualization tool
+            for biologists. These are all linked to on my
+            <a href="https://github.com/alexwaeseperlman">GitHub</a>.
+          </p>
+          <p>
+            (Also, notice that the visualization of my face in this section is different every time you open it.
+            It's generated using a simulated annealing implementation in web-assembly.)
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu-link">
+      <a class="menu-link-label">Stuff</a>
+      <div class="content">
+        <div class="content-container">
+          <p>
+            <a href="birthday_paradox/index.html">Birthday paradox</a>
+          </p>
+          <p>
+            <a href="24_solver/index.html">24 solver</a>
+          </p>
+          <p>
+            <a href="figgie_equity/index.html">Figgie equity calculator</a>
+          </p>
+          <p>
+            <a href="map/index.html">Map projector</a>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu-link">
+      <a class="menu-link-label">Posts</a>
+      <div class="content">
+        <div class="content-container">
+          <p>
+            <ul>
+              <!--<li>
+                <a href="writing/string_protagonist/index.html">Realtime audio processing in-browser with a neural network: 
+                  how my team came second in the 2024 McGill CodeJam Hackathon (March 30, 2025)</a>
+              </li>-->
+              <li>
+                <a href="writing/fizzbuzzed.html">Lessons learned from hosting a drinking and programming contest (March 19, 2025)</a>
+              </li>
+              <li>
+                <a href="writing/how_many_girls.html">3 different solutions
+                  to a surprisingly hard problem from my probability course's practice final (Dec. 11, 2024)
+                </a>
+              </li>
+            </ul>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="menu-link">
+      <a class="menu-link-label">Friends</a>
+      <div class="content">
+        <div class="content-container">
+          <ul>
+            <li>
+              <a href="https://moeezm.ca">Moeez Muhammad</a>
+            </li>
+            <li>
+              <a href="https://willzahary.com">Will Zahary</a>
+            </li>
+            <li>
+              <a href="https://louisroylangevin.github.io">Louis-Roy (King Louis) Langevin</a>
+            </li>
+            <li>
+              <a href="https://joshuadallacqua.com">Josh Dallacqua</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="media-icons">
+      <a class="media-icon" href="mailto:alex@alexwp.com">
+        <img src="gmail.svg" />
+      </a> 
+      <a class="media-icon" href="https://github.com/alexwaeseperlman">
+        <img src="github.svg" />
+      </a>
+      <a class="media-icon" href="https://twitter.com/squishybanana04">
+        <img src="x.svg" />
+      </a>
+    </div>
+<script src="line_art/line_art.js" type="module"></script>
+<img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
+<script type="module">
+  import { lineArt } from './line_art/line_art.js';
+  document.addEventListener('readystatechange', () => {
+    const canvasContainer = document.getElementById("line-art-canvas-container");
+    const canvas = document.createElement('canvas');
+    canvasContainer.appendChild(canvas);
+
+    const image = document.getElementById("line-art-image");
+    window.worker = null
+    let shapedImage = null;
+    let lineArtLoaded = false;
+    let imageLoaded = false;
+    window.restartLineArt = function restartLineArt() {
+      console.log('restart', worker)
+      if (window.worker == null) {
+        if (!imageLoaded) {
+          setTimeout(() => {
+            restartLineArt();
+          }, 100)
+          return;
+        }
+        lineArtLoaded = false;
+        [window.worker, shapedImage] = lineArt(image, (data) => {
+          lineArtLoaded = true;
+          canvas.getContext("2d").putImageData(data, 0, 0);
+        });
+        setTimeout(() => {
+          forcePostMessage(shapedImage);
+        }, 10);
+      }
+      else {
+        worker.postMessage(shapedImage);
+      }
+    }
+    function forcePostMessage(msg) {
+      if (!lineArtLoaded) {
+        window.worker.postMessage(msg);
+        console.log('retry')
+        setTimeout(() => {
+          forcePostMessage(msg);
+        }, 300)
+      }
+    }
+    window.killLineArt = () => {
+      if (window.worker) window.worker.terminate();
+      window.worker = null;
+      let ctx = canvas.getContext('2d')
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    image.onload = () => {
+      console.log('load')
+      imageLoaded = true;
+      canvas.width = image.width;
+      canvas.height = image.height;
+    }
+    if (image.complete) {
+      image.onload();
+    }
+  });
+</script>
+
+<script type="module">
+  const menuLinks = Array.from(document.querySelectorAll(".menu-link"));
+  const labels = Array.from(document.querySelectorAll(".menu-link-label"));
+  let selected = null;
+  labels.forEach((label) => {
+    label.addEventListener("click", () => {
+      const par = label.parentElement;
+      if (selected) {
+        close(selected.querySelector(".content"));
+        selected.classList.toggle("selected");
+      }
+      if (par == selected) selected = null;
+      else selected = par;
+      if (par.id != 'about-me' || selected == null) {
+        if (window.killLineArt) killLineArt();
+      }
+      if (par.id == 'about-me' && selected) {
+        forceRestartLineArt();
+      }
+      if (selected) {
+        open(selected.querySelector(".content"));
+        selected.classList.toggle("selected");
+      }
+    });
+  });
+  function open(content) {
+    content.style.maxHeight = content.scrollHeight + "px";
+  }
+
+  function forceRestartLineArt() {
+    if (!window.restartLineArt) {
+      setTimeout(() => {
+        forceRestartLineArt();
+      }, 100)
+    }
+    else {
+      window.restartLineArt();
+    }
+  }
+
+  setInterval(() => {
+    if (selected == null || selected.id != 'about-me') {
+      if (window.killLineArt) window.killLineArt();
+    }
+  }, 100);
+
+  window.onresize = () => {
+    if (selected) {
+      open(selected.querySelector(".content"));
+    }
+  }
+
+  function close(content) {
+    content.style.maxHeight = 0;
+  }
+</script>
+
+    </div>
+  </div>
+</body>
+</html>

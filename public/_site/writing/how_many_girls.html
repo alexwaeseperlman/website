@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Probability course practice final problem</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, user-scalable=no" />
+<link rel="icon" href="/x.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab&family=Roboto:wght@400;900&display=swap" rel="stylesheet" />
+
+
+<link rel="stylesheet" href="/index.css" />
+
+
+
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+
+</head>
+<body>
+  <div id="root">
+    <div id="main-container">
+      <h1><a href="/"></a></h1>
+      <div class="menu-link">
+            <div class="menu-link-label">A problem from my probability course's practice final</div>
+            <div class="content selected is-open">
+                <div class="content-container">
+                    <p>
+                    Let \(N\) be a random variable representing the number of children that a family has.
+                    The probability mass function of \(N\) is given by
+                    \[
+                        \mathbb{P}(N=k) = \begin{cases}
+                            1 - \alpha\frac{p}{1-p} & \text{if } k = 0 \\
+                            \alpha p^k & \text{if } k \geq 1 \\
+                        \end{cases}
+                    \]
+                    The problem tells us that each child has probability \(\frac{1}{2}\) of being a girl,
+                    and asks us to find the probability mass function of \(G\), the number
+                    of girls the family has.
+                    </p>
+                    <p>
+                        I had a few different approaches to this problem, and I find it interesting 
+                        that they all lead to the same solution. The solution given to us by the professor
+                        is the first one I'll present, and while it's probably the most easy to come up with,
+                        it doesn't give much insight into the problem. Also, approach \(3\) will shock and amaze you.
+                    </p>
+                    <p>
+                        The point of this post is to help build
+                        intuition on conditional probability and generating functions.
+                        I guess the target audience would be to people who already have taken a probability course,
+                        and know what conditional probability and generating functions are.
+                    </p>
+
+                    <h2>Approach 1: Summing a series</h2>
+                    <p>
+                        The only information we are given is the probability of the family having \(k\) children,
+                        for all \(k\), and that each child has a probability of \(\frac{1}{2}\) of being
+                        a girl. This leads to the simple observation that given \(N = k\),
+                        \(G\) is binomially distributed with parameters \(k\) and \(\frac{1}{2}\).
+                        In other words,
+                        \[
+                            \mathbb{P}(G = g | N = k) = \binom{k}{g} \left(\frac{1}{2}\right)^g \left(1 - \frac{1}{2}\right)^{k-g} = \binom{k}{g} \left(\frac{1}{2}\right)^k
+                        \]
+                        So by the law of total probability, if \(g \geq 1\) then
+                        \begin{align*}
+                            \mathbb{P}(G = g) &= \sum_{k=g}^\infty \mathbb{P}(G = g | N = k) \mathbb{P}(N = k)\\
+                            &= \sum_{k=g}^\infty \binom{k}{g} \left(\frac{1}{2}\right)^k \alpha p^k\\
+                            &= \alpha \sum_{k=g}^\infty \binom{k}{g} \left(\frac{p}{2}\right)^k
+                        \end{align*}
+                        Here, whoever was writing the solution pulled the following identity out of their hat (apparently GitHub 
+                        copilot also knows this identity):
+                        \[
+                            \sum_{k=g}^\infty \binom{k}{g} x^k = \frac{x^g}{(1-x)^{g+1}}
+                        \]
+                        I'll give some proofs of this at the end of this page.
+                    </p>
+                    <p>
+                        With this identity the rest of the problem is easy:
+                        Simply apply it, with \(x = \frac{p}{2}\), to get
+                        \[
+                            \mathbb{P}(G = g) = \alpha \frac{\left(\frac{p}{2}\right)^g}{\left(1 - \frac{p}{2}\right)^{g+1}}
+                        \]
+                        Now we just need to handle the case where \(g = 0\). We use the same sum, which this time is a geometric series:
+                        \begin{align*}
+                            \mathbb{P}(G = 0) &= \sum_{k=0}^\infty \binom{k}{0} \left(\frac{1}{2}\right)^k \mathbb{P}(N = k) \\
+                            &= \sum_{k=0}^\infty \left(\frac{1}{2}\right)^k\mathbb{P}(N = k) \\
+                            &= 1 - \alpha \frac{p}{1-p} + \sum_{k=1}^\infty \alpha \left(\frac{p}{2}\right)^k \\
+                            &= 1 - \alpha \frac{p}{1-p} + \alpha \frac{\frac{p}{2}}{1 - \frac{p}{2}}\\
+                            &= 1 - \alpha\frac{p}{(1-p)(2-p)}
+                        \end{align*}
+                        And now we know the probability for all values of \(g\).
+                    </p>
+                    <h2>Approach 2: Understanding the problem</h2>
+                    <p>
+                        Approach 2 is to look at the distribution, try to understand what's going on intuitively, and then make that formal.
+                        It is much more error prone because making ad-hoc observations can lead to mistakes, but maybe we'll learn something.
+                        Also this writeup is longer than it needs to be, but the idea is to build intuition.
+                    </p>
+                    <p>
+                        The first thing we notice is that this distribution looks somewhat like an geometric distribution.
+                        The question is, what similarities does it have to a sequence of weighted coin flips?
+                    </p>
+                    <p>
+                        Notice that 
+                        \begin{align*}
+                            \mathbb{P}(N = k|N\geq 1) &= \frac{\mathbb{P}(N = k)}{1 - \mathbb{P}(N = 0)}\\
+                                &= \frac{\alpha p^k}{\alpha\frac{p}{1-p}}\\
+                                &= p^{k-1}(1-p)
+                        \end{align*}
+                        This is exactly the probability of getting \(k-1\) heads in a row, followed by a tails,
+                        where the probability of heads is \(p\).
+                        Or in the context of this problem, we can say that after each child, the family has a probability \(p\) of having another child,
+                        and probability \(1-p\) of stopping having children. 
+                        Note that this exactly is a geometric distribution with parameter \(p\).
+                    </p>
+                    <p>
+                        But the overall distribution isn't a geometric distribution, so the first child must be different from the rest.
+                        This is what the parameter \(\alpha\) is for. The probability of having a first child is 
+                        \[
+                            \mathbb{P}(N \geq 1) = 1 - \mathbb{P}(N = 0) = \alpha\frac{p}{1-p}
+                        \]
+                        and the probability of having each subsequent child is \(p\).
+                    </p>
+                    <p>
+                        It becomes slightly easier to think about if we make all of the children equal. We can split the \(\mathbb{P}(N = 0)\) case 
+                        into two events for which \(N\) is still \(0\).
+                        Instead of having the first child be different, we say that the family first makes the decision to <i>start</i> having children,
+                        and then each child is born with probability \(p\). Call the event that they start having children \(S\).
+                        Since \(\mathbb{P}(N \geq 1) = \frac{\alpha p}{1-p}\), and \(\mathbb{P}(N \geq 1 | S)\) should be \(p\),
+                        we can say that \(\mathbb{P}(S) = \frac{\alpha}{1-p}\).
+                    </p>
+                    <p>
+                        Now note that in the context of this problem there are actually \(3\) possible outcomes for each child: 
+                        the family has a boy, the family has a girl, or the family stops having children.
+                        This is like a weighted dice-roll with three outcomes.
+                        The first two outcomes happen with probability \(\frac{p}{2}\) each, and the last happens with probability \(1 - p\).
+                        To find the probability mass function of \(G\), the key observation
+                        is that we <i>don't care</i> about children 
+                        that are boys. If the family has a boy, we just ignore them and move on to the next child.
+                        In other words, we can condition the roll on the fact that it was not a boy.
+                    </p>
+                    <p>
+                        Then, the probability that the family has girl given that they are having children is
+                        \begin{align*}
+                            \mathbb{P}(G \geq k+1 | G\geq k,S) &= \mathbb{P}(\text{The next roll is girl}|\text{The next roll is not boy})\\
+                            &= \frac{\frac{p}{2}}{1 - \frac{p}{2}}\\
+                        \end{align*}
+                        So by the same logic as the geometric distribution,
+                        \begin{align*}
+                            \mathbb{P}(G = k | S) &= \left(\frac{\frac{p}{2}}{1-\frac{p}{2}}\right)^k\left(1 - \frac{\frac{p}{2}}{1-\frac{p}{2}}\right)\\
+                            &= \frac{\left(\frac{p}{2}\right)^k}{\left(1 - \frac{p}{2}\right)^{k}}\frac{1-p}{1 - \frac{p}{2}}\\
+                            &= \frac{\left(\frac{p}{2}\right)^k}{\left(1 - \frac{p}{2}\right)^{k+1}}\left(1-p\right)
+                        \end{align*}
+                        So for \(k \geq 1\),
+                        \begin{align*}
+                            \mathbb{P}(G = k) &= \mathbb{P}(G = k | S)\mathbb{P}(S)\\
+                            &= \frac{\alpha}{1-p}\frac{\left(\frac{p}{2}\right)^k}{\left(1 - \frac{p}{2}\right)^{k+1}}\left(1-p\right)\\
+                            &= \alpha\frac{\left(\frac{p}{2}\right)^k}{\left(1 - \frac{p}{2}\right)^{k+1}}
+                        \end{align*}
+                        And for \(k = 0\),
+                        \begin{align*}
+                            \mathbb{P}(G = 0) &= \mathbb{P}(G = 0 | S)\mathbb{P}(S) + \mathbb{P}(\neg S)\\
+                            &= \frac{\alpha}{1-p}\frac{1-p}{1 - \frac{p}{2}} + 1 - \frac{\alpha}{1-p}\\
+                            &= 1 - \alpha\frac{p}{(1-p)(2-p)}
+                        \end{align*}
+                    </p>
+                    <h2>Approach 3: Generating functions magic</h2>
+                    <p>
+                        I'm not going to try that hard to formalize this, but surprisingly what I'm about to do is 
+                        actually a valid way to solve the problem, and completely legal.
+                    </p>
+                    <p>
+                        The probability generating function of \(N\) is defined as the power series, where its exponents are the possible values of \(N\),
+                        and its coefficients are the probabilities of those values.
+                        So
+                        \begin{align*}
+                            g_N(x) &= \sum_{k=0}^\infty \mathbb{P}(N = k)x^k\\
+                            &= 1 - \alpha\frac{p}{1-p} + \sum_{k=1}^\infty \alpha p^k x^k\\
+                            &= 1 - \alpha\frac{p}{1-p} + \alpha \frac{px}{1 - px}
+                        \end{align*}
+                        The idea here is that if we take the coefficient of \(x^k\) in \(g_N(x)\), we get \(\mathbb{P}(N = k)\).
+                        One way to think of it is that each \(x^k\) term in the series corresponds to \(k\) copies of \(x\),
+                        and that the initial distribution is \(g_N(\textbf{child})\) (meaning \(x\) is substituted for a child),
+                        which becomes a super-position of various numbers of children.
+                        Another way to think of it is that the series is a super-position of the possible values of \(N\),
+                        which are integers, which makes the series an element of the group ring of \(\mathbb{Z}\) (just ignore this sentence
+                        if it didn't make sense).
+                    </p>
+                    <p>
+                        All of that nonsense is to justify what I'm about to do: if \(g_N(\textbf{child})\) is a super position 
+                        of the possible numbers of children, we can instead put \(\frac{1}{2}\textbf{boy} + \frac{1}{2}\textbf{girl}\) in for a child
+                        (a super-position with one half probability of being a boy, and one half probability of being a girl).
+                        Now we get 
+                        \[
+                            g_N\left(\frac{1}{2}\textbf{boy} + \frac{1}{2}\textbf{girl}\right) = 1 - \alpha\frac{p}{1-p} + 
+                            \alpha \frac{p\left(\frac{1}{2}\textbf{boy} + \frac{1}{2}\textbf{girl}\right)}{1 - p\left(\frac{1}{2}\textbf{boy} + \frac{1}{2}\textbf{girl}\right)}
+                        \]
+                        Now to get \(\mathbb{P}(G = k)\), we just need to take the coefficient
+                        of \(\textbf{girl}^k\) in this expression. And we can do this by finding the constant term of \(k\)th derivative of the expression
+                        with respect to \(\textbf{girl}\) (and dividing by \(k!\) to get rid of the power rule factors). 
+                        Note that we are kind of just abusing the fact that there is a nice algorithm
+                        for finding derivatives, and \(\textbf{girl}\) is not really a continuous variable, but it works. Also note that
+                        \(\textbf{boy}\) is a constant with respect to \(\textbf{girl}\), so we can just replace it with \(\textbf{girl}^0=1\) (because
+                        a boy is \(0\) girls). Also let's let \(x = \textbf{girl}\) for simplicity.
+                    </p>
+                    <p>
+                        So we want to find
+                        \begin{align*}
+                            \frac{d^k}{dx^k}\frac{g_N\left(\frac{1}{2} + \frac{1}{2}x\right)}{k!} &= 
+                            \frac{d^k}{dx^k}\frac{1 - \alpha\frac{p}{1-p} + \alpha \frac{p\left(\frac{1}{2}+\frac{1}{2}x\right)}{1 - p\left(\frac{1}{2} + \frac{1}{2}x\right)}}{k!}\\
+                        \end{align*}
+                        and evaluate it at \(x = 0\) to get the constant term.
+                        This function has some weird constant terms, so let's handle the \(\mathbb{P}(G = 0)\) case first:
+                        \begin{align*}
+                            \frac{d^0}{dx^0}_{x=0}g_N\left(\frac{1}{2} + \frac{1}{2}x\right) &= g_N\left(\frac{1}{2}\right)\\
+                            &= 1 - \alpha\frac{p}{1-p} + \alpha \frac{p\left(\frac{1}{2}\right)}{1 - p\left(\frac{1}{2}\right)}\\
+                            &= 1 - \alpha\frac{p}{(1-p)(2-p)}
+                        \end{align*}
+
+                        Now we can find the other terms:
+                        \begin{align*}
+                            \frac{1}{k!}\frac{d^k}{dx^k}g_N\left(\frac{1}{2} + \frac{1}{2}x\right) &= 
+                            \frac{1}{k!}
+                                \frac{d^k}{dx^k}\left(1 - \alpha\frac{p}{1-p} + \alpha \frac{p\left(\frac{1}{2}+\frac{1}{2}x\right)}{1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)}\right)\\
+                                &= \frac{1}{k!}
+                                \frac{d^k}{dx^k}\left(\alpha \frac{p\left(\frac{1}{2}+\frac{1}{2}x\right)}{1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)}\right)\\
+                                &= \frac{1}{k!}
+                                \alpha\frac{d^k}{dx^k}\left(\frac{1}{1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)}-1\right)\\
+                                &= \frac{1}{k!}
+                                \alpha\frac{d^k}{dx^k}\left(\frac{1}{1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)}\right)\\
+                                &= \frac{1}{k!}
+                                \alpha\frac{d^k}{dx^k}\left(1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)\right)^{-1}\\
+                                &= 
+                                \alpha\left(1 -
+                                p\left(\frac{1}{2} + \frac{1}{2}x\right)\right)^{-(k+1)}\left(\frac{p}{2}\right)^k\\
+                        \end{align*}
+                        Subbing \(x=0\), we see our familiar expression:
+                        \begin{align*}
+                            \frac{1}{k!}\frac{d^k}{dx^k}_{x=0}g_N\left(\frac{1}{2} + \frac{1}{2}x\right) &=
+                            \alpha\left(1 -
+                            p\frac{1}{2}\right)^{-(k+1)}\left(\frac{p}{2}\right)^k\\
+                            &= \alpha\frac{\left(\frac{p}{2}\right)^k}{\left(1 - \frac{p}{2}\right)^{k+1}}
+                        \end{align*}
+                        So somehow this approach also gives the same answer.
+                    </p>
+                    <h2>Appendix: Proofs of the sum from approach 1</h2>
+                    <p>
+                        I had two ideas for a proof of the sum, so I guess we're continuing the theme of having different solutions.
+                    </p>
+                    <h3>Proof 1: Hockey stick identity</h3>
+                    <p>
+                        We have the sum 
+                        \begin{align*}
+                            S_g = \sum_{k=g}^\infty \binom{k}{g} x^k
+                        \end{align*}
+                        The hockey stick identity states that
+                        \[
+                            \sum_{\ell=g}^{k-1} \binom{\ell}{g-1} = \binom{k}{g}
+                        \]
+                        So we can rewrite the sum as
+                        \begin{align*}
+                            S_g = \sum_{k=g}^\infty \sum_{\ell=g-1}^{k-1} \binom{\ell}{g-1} x^k &= \sum_{\ell=g-1}^\infty \sum_{k=\ell+1}^\infty \binom{\ell}{g-1} x^k\\
+                            &= \sum_{\ell=g-1}^\infty\binom{\ell}{g-1} \sum_{k=\ell+1}^\infty x^k\\
+                            &= \sum_{\ell=g-1}^\infty\binom{\ell}{g-1} \frac{x^{\ell+1}}{1-x}\\
+                            &= \frac{x}{1-x}\sum_{\ell=g-1}^\infty\binom{\ell}{g-1} x^\ell\\
+                            &= \frac{x}{1-x}S_{g-1}
+                        \end{align*}
+                        And 
+                        \begin{align*}
+                            S_0 = \sum_{k=0}^\infty x^k = \frac{1}{1-x}
+                        \end{align*}
+                        So 
+                        \[
+                            S_g = x^g\left(1-x\right)^{-(g+1)}
+                        \]
+                    </p>
+                    <h3>Proof 2: Negative binomial coefficients</h3>
+                    <p>
+                        \begin{align*}
+                            S_g = \sum_{k=g}^\infty \binom{k}{g} x^k &= \sum_{k=g}^\infty \frac{k!}{g!(k-g)!}x^k\\
+                            &= \frac{x^g}{g!} \sum_{k=g}^\infty \frac{k!}{(k-g)!}x^{k-g}\\
+                        \end{align*}
+                        Now, remembering power rule, observe that the \(g\)th derivative of \(x^k\) is \(k(k-1)\cdots(k-g+1)x^{k-g}\).
+                        This is the same as the term in our sum, so
+                        \begin{align*}
+                            S_g &= \frac{x^g}{g!} \sum_{k=g}^\infty \frac{k!}{(k-g)!}x^{k-g}\\
+                            &= \frac{x^g}{g!} \sum_{k=g}^\infty \frac{d^g}{dx^g}x^k\\
+                            &= \frac{x^g}{g!} \frac{d^g}{dx^g}\sum_{k=g}^\infty x^k\\
+                            &= \frac{x^g}{g!} \frac{d^g}{dx^g}\sum_{k=0}^\infty x^k\\
+                            &= \frac{x^g}{g!} \frac{d^g}{dx^g}\frac{1}{1-x}\\
+                            &= \frac{x^g}{g!} \frac{g!}{(1-x)^{g+1}}\\
+                            &= \frac{x^g}{(1-x)^{g+1}}
+                        \end{align*}
+                        Note that we could extend the sum to go start from zero because the \(g\)th derivative of \(x^n\) is zero for \(n < g\).
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+  </div>
+</body>
+</html>
