@@ -215,6 +215,38 @@ mjx-container {
 }
 
 @media screen and (max-width: 600px) {
+  #root {
+    padding: 16px 4vw;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .menu-link-label {
+    font-size: 22px;
+    min-height: 32px;
+  }
+
+  .content {
+    font-size: 15px;
+  }
+
+  .content-container {
+    padding: 10px;
+  }
+
+  button {
+    font-size: 16px;
+    height: 34px;
+    padding: 0 12px;
+  }
+
+  input {
+    font-size: 16px;
+    height: 34px;
+  }
+
   #line-art-canvas-container {
     float: none;
     display: flex;
