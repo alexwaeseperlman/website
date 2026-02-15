@@ -1011,10 +1011,6 @@ stylesheets:
 
     const handleColor = "#005f7f";
     const activeColor = "#0079ac";
-    const touch = isTouchDevice();
-    const radius = touch ? 12 : 7;
-    const fontSize = touch ? 15 : 12;
-    const labelOffset = touch ? 20 : 14;
 
     for (const handle of state.handles) {
       const p = projectLatLonRad(handle.lat, handle.lon);
@@ -1024,15 +1020,15 @@ stylesheets:
       ctx.strokeStyle = isActive ? activeColor : handleColor;
       ctx.fillStyle = "white";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
+      ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = isActive ? activeColor : handleColor;
-      ctx.font = `bold ${fontSize}px Roboto`;
+      ctx.font = "bold 12px Roboto";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(handle.id, p.x, p.y - labelOffset);
+      ctx.fillText(handle.id, p.x, p.y - 14);
     }
   }
 
