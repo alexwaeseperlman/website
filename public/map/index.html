@@ -80,10 +80,11 @@ stylesheets:
     pointer: {
       dragging: false,
       dragHandleId: null,
-      fixedHandleId: null,
-      fixedHandleLockLon: null,
-      fixedHandleScreenX: null,
-      fixedHandleScreenY: null,
+      dragHandleLon: null,
+      freeHandleId: null,
+      freeHandleLon: null,
+      freeHandleScreenX: null,
+      freeHandleScreenY: null,
       dragDistance: 0,
       lastX: 0,
       lastY: 0,
@@ -490,17 +491,14 @@ stylesheets:
 
     state.pointer.dragging = true;
     state.pointer.dragHandleId = handleHit.id;
-    const fixedHandle = state.handles.find((handle) => handle.id !== handleHit.id) || null;
-    state.pointer.fixedHandleId = fixedHandle ? fixedHandle.id : null;
-    if (fixedHandle) {
-      state.pointer.fixedHandleLockLon = fixedHandle.lon;
-      const fixedProjected = projectLatLonRad(fixedHandle.lat, fixedHandle.lon);
-      state.pointer.fixedHandleScreenX = fixedProjected.x;
-      state.pointer.fixedHandleScreenY = fixedProjected.y;
-    } else {
-      state.pointer.fixedHandleLockLon = null;
-      state.pointer.fixedHandleScreenX = null;
-      state.pointer.fixedHandleScreenY = null;
+    state.pointer.dragHandleLon = handleHit.lon;
+    const freeHandle = state.handles.find((h) => h.id !== handleHit.id) || null;
+    state.pointer.freeHandleId = freeHandle ? freeHandle.id : null;
+    if (freeHandle) {
+      state.pointer.freeHandleLon = freeHandle.lon;
+      const fp = projectLatLonRad(freeHandle.lat, freeHandle.lon);
+      state.pointer.freeHandleScreenX = fp.x;
+      state.pointer.freeHandleScreenY = fp.y;
     }
     state.pointer.dragDistance = 0;
     state.pointer.lastX = p.x;
@@ -545,10 +543,11 @@ stylesheets:
     const isClick = state.pointer.dragDistance < 3;
     state.pointer.dragging = false;
     state.pointer.dragHandleId = null;
-    state.pointer.fixedHandleId = null;
-    state.pointer.fixedHandleLockLon = null;
-    state.pointer.fixedHandleScreenX = null;
-    state.pointer.fixedHandleScreenY = null;
+    state.pointer.dragHandleLon = null;
+    state.pointer.freeHandleId = null;
+    state.pointer.freeHandleLon = null;
+    state.pointer.freeHandleScreenX = null;
+    state.pointer.freeHandleScreenY = null;
     canvas.classList.remove("dragging");
     canvas.releasePointerCapture(event.pointerId);
 
@@ -573,40 +572,43 @@ stylesheets:
   function sub3(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
 
   /**
-   * Triad solver: given two handle-on-equator world points and their target
-   * screen positions, find the unique 3-DOF rotation (centerLat, centerLon,
-   * viewRotation) that maps both correctly, plus the dragged handle's longitude.
+   * Triad solver — given two equator handles' screen positions and one known
+   * world lon, find the unique 3-DOF rotation (centerLat, centerLon, viewRotation)
+   * plus the other handle's world lon.
+   *
+   * knownLon/knownSX/knownSY: handle with fixed world lon, known screen pos.
+   * otherSX/otherSY/currentOtherLon: handle whose screen is fixed but world lon slides.
    */
-  function solveRotationFromHandles(fixedLon, fixedSX, fixedSY, cursorX, cursorY, currentDragLon) {
-    const pB = latLonToVector(0, fixedLon);
+  function solveRotationFromHandles(knownLon, knownSX, knownSY, otherSX, otherSY, currentOtherLon) {
+    const pK = latLonToVector(0, knownLon);
 
-    const localB = localFromXY(fixedSX, fixedSY);
-    const qB = latLonToVector(localB.lat, localB.lon);
-    const localA = localFromXY(cursorX, cursorY);
-    const qA = latLonToVector(localA.lat, localA.lon);
+    const localK = localFromXY(knownSX, knownSY);
+    const qK = latLonToVector(localK.lat, localK.lon);
+    const localO = localFromXY(otherSX, otherSY);
+    const qO = latLonToVector(localO.lat, localO.lon);
 
-    // Angle-preservation constraint: cos(dragLon - fixedLon) = qA · qB
-    const qDot = Math.max(-1, Math.min(1, dot3(qA, qB)));
+    // Angle between the two view vectors = angle between the two world vectors
+    const qDot = Math.max(-1, Math.min(1, dot3(qK, qO)));
     const angleSep = Math.acos(qDot);
-    const cand1 = wrapLonRad(fixedLon + angleSep);
-    const cand2 = wrapLonRad(fixedLon - angleSep);
-    const d1 = Math.abs(shortestPeriodicDelta(cand1 - currentDragLon, 2 * Math.PI));
-    const d2 = Math.abs(shortestPeriodicDelta(cand2 - currentDragLon, 2 * Math.PI));
-    const dragLon = d1 <= d2 ? cand1 : cand2;
-    const pA = latLonToVector(0, dragLon);
+    const cand1 = wrapLonRad(knownLon + angleSep);
+    const cand2 = wrapLonRad(knownLon - angleSep);
+    const d1 = Math.abs(shortestPeriodicDelta(cand1 - currentOtherLon, 2 * Math.PI));
+    const d2 = Math.abs(shortestPeriodicDelta(cand2 - currentOtherLon, 2 * Math.PI));
+    const otherLon = d1 <= d2 ? cand1 : cand2;
+    const pO = latLonToVector(0, otherLon);
 
     // Build orthonormal bases via Gram-Schmidt (Triad method)
-    const e1 = pB;
-    const pApBdot = dot3(pA, e1);
-    const e2raw = sub3(pA, scale3(e1, pApBdot));
+    const e1 = pK;
+    const pOpKdot = dot3(pO, e1);
+    const e2raw = sub3(pO, scale3(e1, pOpKdot));
     const e2len = Math.hypot(e2raw.x, e2raw.y, e2raw.z);
     if (e2len < 1e-9) return null;
     const e2 = scale3(e2raw, 1 / e2len);
     const e3 = cross3(e1, e2);
 
-    const f1 = qB;
-    const qAqBdot = dot3(qA, f1);
-    const f2raw = sub3(qA, scale3(f1, qAqBdot));
+    const f1 = qK;
+    const qOqKdot = dot3(qO, f1);
+    const f2raw = sub3(qO, scale3(f1, qOqKdot));
     const f2len = Math.hypot(f2raw.x, f2raw.y, f2raw.z);
     if (f2len < 1e-9) return null;
     const f2 = scale3(f2raw, 1 / f2len);
@@ -620,22 +622,18 @@ stylesheets:
       )
     );
 
-    // Extract center: center_world = R^T * [1,0,0] = first row of R
+    // Extract center from first row of R
     const centerWorld = { x: R[0][0], y: R[0][1], z: R[0][2] };
     const centerLL = vectorToLatLon(centerWorld);
 
-    // Extract viewRotation: R's 2nd row = cosθ·east − sinθ·north (in world coords)
+    // Extract viewRotation from second row of R
     const eastActual = { x: R[1][0], y: R[1][1], z: R[1][2] };
     const canonical = getCenterBasis(centerLL.lat, centerLL.lon);
     const cosTheta = dot3(eastActual, canonical.east);
-    const sinTheta = -dot3(eastActual, canonical.north);  // negate: row·north = -sinθ
+    const sinTheta = -dot3(eastActual, canonical.north);
     const viewRotation = Math.atan2(sinTheta, cosTheta);
 
-    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation, dragLon };
-  }
-
-  function getHandleById(id) {
-    return state.handles.find((handle) => handle.id === id) || null;
+    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation, otherLon };
   }
 
   function pinHandlesToEquator() {
@@ -646,34 +644,38 @@ stylesheets:
   }
 
   function updateHandlesAndCenterFromScreenspace(cursorX, cursorY) {
-    const draggedHandle = getHandleById(state.pointer.dragHandleId);
-    if (!draggedHandle) return;
-    const fixedHandle = getHandleById(state.pointer.fixedHandleId);
-    if (!fixedHandle) return;
-
-    const fixedLon = state.pointer.fixedHandleLockLon;
-    const fixedSX = state.pointer.fixedHandleScreenX;
-    const fixedSY = state.pointer.fixedHandleScreenY;
-    if (fixedLon == null || fixedSX == null || fixedSY == null) return;
+    const dragLon = state.pointer.dragHandleLon;
+    const freeSX = state.pointer.freeHandleScreenX;
+    const freeSY = state.pointer.freeHandleScreenY;
+    const freeHandleId = state.pointer.freeHandleId;
+    const currentFreeLon = state.pointer.freeHandleLon;
+    if (dragLon == null || freeSX == null || freeSY == null || currentFreeLon == null) return;
 
     const result = solveRotationFromHandles(
-      fixedLon, fixedSX, fixedSY,
-      cursorX, cursorY,
-      draggedHandle.lon
+      dragLon, cursorX, cursorY,
+      freeSX, freeSY,
+      currentFreeLon
     );
     if (!result) return;
 
     state.centerLat = result.centerLat;
     state.centerLon = result.centerLon;
     state.viewRotation = result.viewRotation;
-    draggedHandle.lat = 0;
-    draggedHandle.lon = result.dragLon;
-    fixedHandle.lat = 0;
-    fixedHandle.lon = fixedLon;
+
+    // Update the free handle's world lon (it slides along equator)
+    const freeHandle = state.handles.find((h) => h.id === freeHandleId);
+    if (freeHandle) {
+      freeHandle.lon = result.otherLon;
+      state.pointer.freeHandleLon = result.otherLon;
+    }
+  }
+
+  function isTouchDevice() {
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   }
 
   function getHandleAtPoint(x, y) {
-    const hitRadius = 12;
+    const hitRadius = isTouchDevice() ? 24 : 12;
     for (const handle of state.handles) {
       const p = projectLatLonRad(handle.lat, handle.lon);
       const distance = Math.hypot(x - p.x, y - p.y);
@@ -1009,6 +1011,10 @@ stylesheets:
 
     const handleColor = "#005f7f";
     const activeColor = "#0079ac";
+    const touch = isTouchDevice();
+    const radius = touch ? 12 : 7;
+    const fontSize = touch ? 15 : 12;
+    const labelOffset = touch ? 20 : 14;
 
     for (const handle of state.handles) {
       const p = projectLatLonRad(handle.lat, handle.lon);
@@ -1018,15 +1024,15 @@ stylesheets:
       ctx.strokeStyle = isActive ? activeColor : handleColor;
       ctx.fillStyle = "white";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+      ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = isActive ? activeColor : handleColor;
-      ctx.font = "bold 12px Roboto";
+      ctx.font = `bold ${fontSize}px Roboto`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(handle.id, p.x, p.y - 14);
+      ctx.fillText(handle.id, p.x, p.y - labelOffset);
     }
   }
 
