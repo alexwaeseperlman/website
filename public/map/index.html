@@ -11,9 +11,10 @@ stylesheets:
   <div class="content selected is-open">
     <div class="content-container">
       <p>
-        Pan by dragging the map. Switch between Mercator and Equirectangular projections,
-        and add markers defined in spherical coordinates. You can also drag equator handles A or B
-        to rotate the earth directly.
+        Every flat map distorts the globe. Drag the equator handles to rotate the earth
+        and see how familiar shapes warp under different projections—a good way to build
+        intuition for what countries and continents actually look like. You can also place
+        markers to track specific points as you switch projections.
       </p>
       <div id="map-tool-layout">
         <div id="map-viewport">
@@ -963,6 +964,34 @@ stylesheets:
     ctx.stroke();
   }
 
+  function drawEquator() {
+    const steps = 360;
+    ctx.strokeStyle = "#0079ac";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+
+    let prev = null;
+    let prevLocalLon = null;
+    for (let i = 0; i <= steps; i++) {
+      const lon = -Math.PI + (2 * Math.PI * i) / steps;
+      const p = projectLatLonRad(0, lon);
+      const local = rotateToViewWithCenter(0, lon, state.centerLat, state.centerLon, state.viewRotation);
+      if (!prev) {
+        ctx.moveTo(p.x, p.y);
+      } else {
+        const crossesSeam = Math.abs(local.lon - prevLocalLon) > Math.PI;
+        if (crossesSeam) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      prev = p;
+      prevLocalLon = local.lon;
+    }
+
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   function drawCrosshairMarker(lat, lon) {
     const p = projectLatLonRad(lat, lon);
     ctx.strokeStyle = "#005f7f";
@@ -1010,6 +1039,7 @@ stylesheets:
     ctx.fillRect(0, 0, state.viewport.width, state.viewport.height);
 
     drawWorld();
+    drawEquator();
     drawHandles();
 
     for (const marker of state.markers) {
