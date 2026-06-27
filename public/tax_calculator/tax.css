@@ -1,0 +1,158 @@
+.tax-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(150px, 210px) minmax(220px, 360px);
+  gap: 16px;
+  align-items: end;
+  margin: 20px 0;
+  max-width: 940px;
+}
+
+.tax-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tax-field label,
+.tax-small-label {
+  color: #0079ac;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.tax-field select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  background-color: #f6fdff;
+  color: black;
+  font-family: "Roboto Slab";
+  font-size: 18px;
+  outline: none;
+  padding: 0 8px;
+}
+
+.tax-field input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.fx-settings {
+  margin: 20px 0 0;
+  max-width: 720px;
+  border: 2px solid #0001;
+  border-radius: 6px;
+  padding: 12px;
+  background-color: #f6fdff;
+}
+
+.fx-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.fx-rate-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fx-rate-field input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  font-size: 16px;
+}
+
+.tax-output {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tax-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.tax-metric {
+  border: 2px solid #0001;
+  border-radius: 6px;
+  padding: 12px;
+  background-color: #f6fdff;
+}
+
+.tax-metric-value {
+  display: block;
+  margin-top: 4px;
+  color: #0079ac;
+  font-family: "Roboto";
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.tax-breakdown {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+}
+
+.tax-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.tax-breakdown th,
+.tax-breakdown td {
+  border-bottom: 1px solid #0001;
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tax-breakdown th:last-child,
+.tax-breakdown td:last-child {
+  text-align: right;
+}
+
+.tax-detail-list,
+.tax-source-list {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.tax-detail-list li,
+.tax-source-list li {
+  margin: 4px 0;
+}
+
+.tax-note {
+  margin: 0;
+}
+
+.tax-muted {
+  color: #555;
+  font-size: 14px;
+}
+
+@media screen and (max-width: 700px) {
+  .tax-form,
+  .tax-summary,
+  .fx-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-metric-value {
+    font-size: 24px;
+  }
+
+  .tax-breakdown {
+    font-size: 14px;
+    min-width: 620px;
+  }
+}

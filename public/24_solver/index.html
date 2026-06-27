@@ -57,13 +57,15 @@ stylesheets:
   type val = {
     value: number,
     expr: string,
-    op: string
+    key: string,
+    op: string,
+    parts: { sign: number, val: val }[] | null
   }
     vals: val[]
   */
   function solve(vals) {
     if (vals.length == 1 && Math.abs(vals[0].value - 24) < eps) {
-      return [vals[0].expr];
+      return [vals[0]];
     }
     const out = []
     for (let i = 0; i < vals.length; i++) {
@@ -78,28 +80,65 @@ stylesheets:
             cur.push(vals[k]);
           }
 
-          const lhs = { ...vals[i] }, rhs = { ...vals[j] };
+          const lhs = vals[i], rhs = vals[j];
           if (op == '/' && Math.abs(rhs.value) < eps) continue;
 
-          // never apply subtraction to subtraction
-          if (op == '-' && (rhs.op == '-' || rhs.op == '+')) continue;
-          // never apply division to division
-          if (op == '/' && (rhs.op == '/' || rhs.op == '*')) continue;
-          // never apply multiplication to the middle of a sequence of multiplications
-          if (op == '*' && ((lhs.op == '*' && rhs.op == '*') || i > j)) continue;
-          // never apply addition to two additions
-          if (op == '+' && ((lhs.op == '+' && rhs.op == '+') || i > j)) continue;
-
-          // apply brackets if necessary
-          if (op == '/' || op == '*') {
-            if (lhs.op == '+' || lhs.op == '-') lhs.expr = '(' + lhs.expr + ')';
-            if (rhs.op == '+' || rhs.op == '-') rhs.expr = '(' + rhs.expr + ')';
+          // build subtraction and division chains from the left
+          if (op == '-' && rhs.op == '+') continue;
+          if (op == '/' && rhs.op == '*') continue;
+          // addition and multiplication are commutative; only keep the sorted order
+          if (op == '+' || op == '*') {
+            const order = lhs.key.localeCompare(rhs.key) || lhs.expr.localeCompare(rhs.expr);
+            if (order > 0 || (order == 0 && i > j)) continue;
           }
+
+          const chainOp = op == '+' || op == '-' ? '+' : '*';
+          const rhsSign = op == '+' || op == '*' ? 1 : -1;
+          const parts = [];
+
+          for (const side of [
+            { sign: 1, val: lhs },
+            { sign: rhsSign, val: rhs }
+          ]) {
+            if (side.val.op == chainOp) {
+              for (const part of side.val.parts) {
+                parts.push({
+                  sign: side.sign * part.sign,
+                  val: part.val
+                });
+              }
+            } else {
+              parts.push(side);
+            }
+          }
+          parts.sort((a, b) => {
+            if (a.sign != b.sign) return b.sign - a.sign;
+            return a.val.key.localeCompare(b.val.key) || a.val.expr.localeCompare(b.val.expr);
+          });
+
+          let expr = '';
+          let key = chainOp + '[';
+          for (let l = 0; l < parts.length; l++) {
+            const prefix = chainOp == '+' ? (parts[l].sign > 0 ? '+' : '-') : (parts[l].sign > 0 ? '*' : '/');
+            let partExpr = parts[l].val.expr;
+            if (chainOp == '*' && parts[l].val.op == '+') partExpr = '(' + partExpr + ')';
+
+            if (l == 0 && prefix == '+') expr += partExpr;
+            else if (l == 0 && prefix == '*') expr += partExpr;
+            else if (l == 0 && prefix == '/') expr += '1/' + partExpr;
+            else expr += prefix + partExpr;
+
+            if (l > 0) key += ',';
+            key += prefix + parts[l].val.key;
+          }
+          key += ']';
 
           const val = {
             value: apply[op](lhs.value, rhs.value),
-            expr: lhs.expr + op + rhs.expr,
-            op: op
+            expr: expr,
+            key: key,
+            op: chainOp,
+            parts: parts
           };
 
           // never need to go negative - if we do, we can just swap the order of the operands
@@ -125,12 +164,15 @@ stylesheets:
       vals.push({
         value: card,
         expr: card.toString(),
-        op: ''
+        key: `n:${card.toString().padStart(2, '0')}`,
+        op: '',
+        parts: null
       });
     }
-    const exprs = new Set();
+    vals.sort((a, b) => a.key.localeCompare(b.key) || a.expr.localeCompare(b.expr));
+    const exprs = new Map();
     for (const out of solve(vals)) {
-      exprs.add(out);
+      exprs.set(out.key, out.expr);
     }
     const output = document.getElementById('output');
     output.innerHTML = '';
@@ -139,7 +181,7 @@ stylesheets:
       output.innerHTML = 'No solutions';
       countStr = `(none found)`;
     }
-    for (const expr of exprs) {
+    for (const expr of [...exprs.values()].sort()) {
       output.innerHTML += `<li>${expr}</li>`;
     }
     toggleSolutions(solutionsOpen);

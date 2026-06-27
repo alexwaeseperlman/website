@@ -1,0 +1,44 @@
+---
+layout: default
+title: Tax calculator
+stylesheets:
+  - /index.css
+  - /tax_calculator/tax.css
+---
+
+<div class="menu-link">
+  <div class="menu-link-label">Tax calculator</div>
+  <div class="content selected is-open">
+    <div class="content-container">
+      <p>
+        A simple yearly income tax calculator for a single filer with ordinary
+        employment income. It ignores capital gains, dependents, itemized
+        deductions, and payroll taxes unless a listed income-tax rule needs a
+        simple employment-income amount.
+      </p>
+
+      <form id="tax-form" class="tax-form">
+        <div class="tax-field">
+          <label for="income">Yearly income</label>
+          <input id="income" name="income" type="number" min="0" step="1000" value="100000" inputmode="decimal" />
+        </div>
+
+        <div class="tax-field">
+          <label for="currency">Currency</label>
+          <select id="currency" name="currency"></select>
+        </div>
+
+        <div class="tax-field">
+          <label for="location">Location</label>
+          <select id="location" name="location"></select>
+        </div>
+      </form>
+
+      <div id="tax-output" class="tax-output" aria-live="polite"></div>
+
+      <div id="fx-settings" class="fx-settings"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="{{ '/tax_calculator/tax-calculator.js' | relative_url }}"></script>

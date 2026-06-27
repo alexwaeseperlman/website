@@ -1,1 +1,6 @@
 target
+_site/
+public/_site/
+.jekyll-cache/
+public/.jekyll-cache/
+.DS_Store
