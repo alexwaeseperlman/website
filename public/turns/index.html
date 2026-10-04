@@ -139,13 +139,23 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 <link rel="icon" type="image/png" href="icon-192.png">
 <script>
   // Set your GoatCounter code here (the part before .goatcounter.com). Leave as is to disable analytics.
-  window.TURNS_CONFIG = { goatcounter: 'REPLACE_WITH_YOUR_CODE' };
+  // Set your Google Analytics 4 measurement ID (G-XXXXXXXXXX) the same way.
+  window.TURNS_CONFIG = { goatcounter: 'REPLACE_WITH_YOUR_CODE', ga4: 'REPLACE_WITH_YOUR_ID' };
   (function(){
     var c = (window.TURNS_CONFIG || {}).goatcounter;
     if (!c || c.indexOf('REPLACE') === 0) return;
     var s = document.createElement('script'); s.async = true; s.src = 'https://gc.zgo.at/count.js';
     s.setAttribute('data-goatcounter', 'https://' + c + '.goatcounter.com/count');
     document.head.appendChild(s);
+  })();
+  (function(){
+    var id = (window.TURNS_CONFIG || {}).ga4;
+    if (!id || id.indexOf('REPLACE') === 0) return;
+    var s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + id;
+    document.head.appendChild(s);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){ dataLayer.push(arguments); };
+    gtag('js', new Date()); gtag('config', id);
   })();
   if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
 </script>
@@ -407,18 +417,19 @@ function reach(i, adj){
   while (st.length){ const x = st.pop(); for (const y of adj[x]) if (!seen.has(y)){ seen.add(y); st.push(y); } }
   return seen;
 }
-// ---- analytics: a no-op unless the page is hosted with a GoatCounter code (window.TURNS_CONFIG.goatcounter)
+// ---- analytics: a no-op unless the page is hosted with a GoatCounter code or GA4 ID (window.TURNS_CONFIG)
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const startedThisVisit = new Set();
-function track(path){
+function track(path, event, params){
   try{ if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: 'turns/' + path, title: path, event: true }); }catch(e){}
+  try{ if (window.gtag) gtag('event', event, Object.assign({ level: L.name, level_index: li + 1 }, params, event === 'level_quit' ? { transport_type: 'beacon' } : {})); }catch(e){}
 }
-function trackQuit(){ if (L && !solved && history.length > 0) track(`quit/${slug(L.name)}/${history.length}`); }
+function trackQuit(){ if (L && !solved && history.length > 0) track(`quit/${slug(L.name)}/${history.length}`, 'level_quit', { moves: history.length }); }
 addEventListener('pagehide', trackQuit);
 function loadLevel(i){
   if (L && LEVELS[i] !== L) trackQuit();
   li = Math.max(0, Math.min(LEVELS.length-1, i)); L = LEVELS[li];
-  if (!startedThisVisit.has(L.name)){ startedThisVisit.add(L.name); track(`start/${slug(L.name)}`); }
+  if (!startedThisVisit.has(L.name)){ startedThisVisit.add(L.name); track(`start/${slug(L.name)}`, 'level_start'); }
   P = L.pts.map(p => p.slice()); colors = L.start.map(c => c || 0); links = (L.links||[]).map(l => l.slice()); arrows = (L.arrows||[]).map(l => l.slice());
   sel = new Set(); history = []; solved = false; anim = null; preview = null; born = {}; flipsUsed = 0; hintUsed = false;
   selAmt = P.map(()=>0); selVel = P.map(()=>0); spokeAmt = 0;
@@ -513,7 +524,7 @@ function finishAnim(){
     solved = true; solvedAt = performance.now();
     const before = starsFor(li);
     const b = prog.best[L.name]; if (b === undefined || history.length < b) prog.best[L.name] = history.length;
-    track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`);
+    track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`, 'level_complete', { moves: history.length, par: L.par, at_par: history.length <= L.par, hints_seen: hintSeen(L.name).toString(2).replace(/0/g, '').length });
     solvedStars = { now: starsFor(li), gained: starsFor(li) - before };
     saveProg(); setTimeout(()=>sfx.solve(), 60);
   }
@@ -667,7 +678,7 @@ function renderHints(){
       else if (k === 1) b.innerHTML = '<div class="hchips">' + (L.parMoves||[]).map(([n,add],i) => `<span class="hchip" title="Move ${i+1}">${n}${add ? ' + add' : ''}</span>`).join('') + '</div>';
       else { b.className = 'hb hshapes'; drawHintShapes(b); }
       card.append(b);
-    } else card.querySelector('.reveal').onclick = () => { track(`hint/${slug(L.name)}/${k+1}`); prog.hints[L.name] = hintSeen(L.name) | (1 << k); saveProg(); renderHints(); refresh(); };
+    } else card.querySelector('.reveal').onclick = () => { track(`hint/${slug(L.name)}/${k+1}`, 'hint_reveal', { hint: k + 1 }); prog.hints[L.name] = hintSeen(L.name) | (1 << k); saveProg(); renderHints(); refresh(); };
     box.append(card);
   });
 }
