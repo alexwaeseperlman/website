@@ -576,6 +576,14 @@ function setSel(i, on){
   if (!hadFit && anyFit()) setTimeout(()=>sfx.sym(), 70);
   refresh();
 }
+// keep the selection legal after links/arrows change under it (undo): drop any dot whose
+// link partner or arrow head isn't selected, and with it everything that pulls it in
+function trimSel(){
+  for (let changed = true; changed;){
+    changed = false;
+    for (const i of sel) if (outAdj[i].some(j => !sel.has(j))){ for (const j of reach(i, inAdj)) sel.delete(j); changed = true; break; }
+  }
+}
 function pushHistory(){ history.push({ flips: flipsUsed, colors: colors.slice(), n: P.length, links: links.map(l => l.slice()), arrows: arrows.map(l => l.slice()) }); }
 
 function applyPerm(perm, animSpec){
@@ -648,7 +656,7 @@ function undo(){
   const h = history.pop();
   colors = h.colors; links = h.links; arrows = h.arrows; flipsUsed = h.flips || 0; P.length = h.n; selAmt.length = h.n; selVel.length = h.n;
   for (const i of [...sel]) if (i >= h.n) sel.delete(i);
-  buildComps(); preview = null; solved = false; computeOpts(); sfx.undo(); refresh();
+  buildComps(); trimSel(); preview = null; solved = false; computeOpts(); sfx.undo(); refresh();
 }
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -721,7 +729,7 @@ function tutBuild(){
 function tutState(){
   const T = TUTORIAL[L.name];
   if (!T || tutSkipped || !tutPath) return null;
-  if (solved) return { mode:'done', text:T.done };
+  if (solved || L.goal.every(([i,c]) => colors[i] === c)) return { mode:'done', text:T.done };
   const same = (a,b) => a.length === b.length && a.every((v,i) => v === b[i]);
   let k = -1; tutPath.forEach((c,i) => { if (same(c, colors)) k = i; });
   if (k < 0 || k >= L.sol.length) return { mode:'off', text:'That\'s a different move. Tap Undo to go back and follow the steps.' };
