@@ -427,14 +427,13 @@ try{ const p = JSON.parse(localStorage.getItem(KEY)); if (p && typeof p.cur === 
 // saves from before Challenges moved ahead of Lattices only have an index; shift it to the same level
 if (!prog.curName && prog.cur >= 30 && prog.cur < 50) prog.cur = prog.cur < 40 ? prog.cur + 10 : prog.cur - 10;
 // locking: one star opens the next level; a perfect chapter (every level at par) opens the next chapter.
-// Anything already solved stays open, so players who got ahead before locking existed keep their place.
+// Saved stars are always kept, but they only open levels through these same rules.
 const chLevels = c => LEVELS.map((l,i)=>i).filter(i => LEVELS[i].chapter === CHAPTERS[c]);
 const chStars = c => chLevels(c).reduce((s,i) => s + starsFor(i), 0);
 const chMax = c => chLevels(c).length * 2;
 const chapterEarned = c => c === 0 || chStars(c-1) === chMax(c-1);
-const chapterOpen = c => chapterEarned(c) || chLevels(c).some(i => prog.best[LEVELS[i].name] !== undefined);
+const chapterOpen = c => chapterEarned(c);
 function levelOpen(i){
-  if (prog.best[LEVELS[i].name] !== undefined) return true;
   const c = CHAPTERS.indexOf(LEVELS[i].chapter);
   if (!chapterOpen(c)) return false;
   return i === chLevels(c)[0] || starsFor(i-1) >= 1;
@@ -888,7 +887,7 @@ function renderLevels(){
       b.setAttribute('aria-label', `Level ${ci+1}.${n+1}, ${lv.name}, ` + (ok ? `${st} of 2 stars` : 'locked')); b.title = ok ? lv.name : 'Locked';
       b.innerHTML = thumb(lv) + `<span class="num">${n+1}</span>` + (ok
         ? `<span class="stars"><span class="star${st>=1?' on':''}">★</span><span class="star${st>=2?' on':''}">★</span></span>`
-        : `<span class="stars">${LOCK}</span>`);
+        : `<span class="stars">${LOCK}${st ? `<span class="star on">★</span>`.repeat(st) : ''}</span>`);
       if (ok) b.onclick = () => { if (i !== li) loadLevel(i); go('play'); };
       else b.setAttribute('aria-disabled', 'true');
       grid.append(b);
