@@ -148,6 +148,12 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .home-foot{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;color:var(--grey);font-size:14px}
 .page-head{position:sticky;top:0;z-index:1;background:var(--bg);display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:2px solid var(--border)}
 .page-head h2{flex:1;margin:0;font-weight:400;text-transform:uppercase;color:var(--blue);font-size:22px;line-height:1.2}
+.tile.locked{cursor:default}
+.tile.locked svg.thumb{opacity:.3}
+.tile.locked .num{opacity:.6}
+.lock{width:12px;height:12px;color:var(--grey);vertical-align:-1px}
+.ch-head h3 .lock{width:15px;height:15px;margin-right:6px;vertical-align:-2px}
+.chapter.locked .ch-head h3{color:var(--grey)}
 .page-body{width:100%;max-width:560px;margin:0 auto;padding:0 14px 24px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -420,6 +426,20 @@ const levelLabel = i => { const ch = CHAPTERS.indexOf(LEVELS[i].chapter) + 1;
 try{ const p = JSON.parse(localStorage.getItem(KEY)); if (p && typeof p.cur === 'number') prog = p; }catch(e){}
 // saves from before Challenges moved ahead of Lattices only have an index; shift it to the same level
 if (!prog.curName && prog.cur >= 30 && prog.cur < 50) prog.cur = prog.cur < 40 ? prog.cur + 10 : prog.cur - 10;
+// locking: one star opens the next level; a perfect chapter (every level at par) opens the next chapter.
+// Anything already solved stays open, so players who got ahead before locking existed keep their place.
+const chLevels = c => LEVELS.map((l,i)=>i).filter(i => LEVELS[i].chapter === CHAPTERS[c]);
+const chStars = c => chLevels(c).reduce((s,i) => s + starsFor(i), 0);
+const chMax = c => chLevels(c).length * 2;
+const chapterEarned = c => c === 0 || chStars(c-1) === chMax(c-1);
+const chapterOpen = c => chapterEarned(c) || chLevels(c).some(i => prog.best[LEVELS[i].name] !== undefined);
+function levelOpen(i){
+  if (prog.best[LEVELS[i].name] !== undefined) return true;
+  const c = CHAPTERS.indexOf(LEVELS[i].chapter);
+  if (!chapterOpen(c)) return false;
+  return i === chLevels(c)[0] || starsFor(i-1) >= 1;
+}
+const lastOpen = () => { let k = 0; LEVELS.forEach((_,i) => { if (levelOpen(i)) k = i; }); return k; };
 const curIndex = () => { const i = LEVELS.findIndex(l => l.name === prog.curName); return i >= 0 ? i : Math.min(prog.cur || 0, LEVELS.length-1); };
 // progress lives in the browser AND in the artifact's per-player db, so republishing never wipes it
 let cloudRef = null, cloudTimer = 0;
@@ -574,10 +594,12 @@ function finishAnim(){
   anim = null;
   if (L.goal.every(([i,c]) => colors[i] === c)){
     solved = true; solvedAt = performance.now();
-    const before = starsFor(li);
+    const before = starsFor(li), ci = CHAPTERS.indexOf(L.chapter);
+    const nextWasEarned = ci + 1 < CHAPTERS.length && chapterEarned(ci + 1);
     const b = prog.best[L.name]; if (b === undefined || history.length < b) prog.best[L.name] = history.length;
     track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`, 'level_complete', { moves: history.length, par: L.par, at_par: history.length <= L.par, hints_seen: hintSeen(L.name).toString(2).replace(/0/g, '').length });
-    solvedStars = { now: starsFor(li), gained: starsFor(li) - before };
+    solvedStars = { now: starsFor(li), gained: starsFor(li) - before,
+      unlocked: ci + 1 < CHAPTERS.length && !nextWasEarned && chapterEarned(ci + 1) ? CHAPTERS[ci + 1] : null };
     saveProg(); setTimeout(()=>sfx.solve(), 60);
   }
   computeOpts(); refresh();
@@ -636,6 +658,12 @@ function buildToolbar(){
   }
 }
 
+function lockNote(){
+  if (solvedStars && solvedStars.unlocked) return ` <b>${solvedStars.unlocked} unlocked!</b>`;
+  if (li >= LEVELS.length-1 || levelOpen(li+1)) return '';
+  const ci = CHAPTERS.indexOf(L.chapter);
+  return ` Get all ${chMax(ci)} ★ in ${L.chapter} to unlock ${CHAPTERS[ci+1]} (you have ${chStars(ci)}).`;
+}
 function refresh(){
   if (!opts) computeOpts();
   $('levelBtn').textContent = `${levelLabel(li)} ${L.name}`;
@@ -666,6 +694,7 @@ function refresh(){
       `<span class="chip${k < at ? ' done' : k === at ? ' now' : ''}" title="Move ${k+1}${add ? ', adds points' : ''}">${n}${add ? '+' : ''}</span>`).join('');
   }
   $('nextBtn').hidden = li >= LEVELS.length-1;
+  $('nextBtn').textContent = li < LEVELS.length-1 && !levelOpen(li+1) ? 'Levels' : 'Next level';
   $('preview').hidden = !preview;
 
   const st = $('status'), idx = selIdx(), n = idx.length;
@@ -673,7 +702,7 @@ function refresh(){
     const m = history.length, atPar = m <= L.par;
     st.innerHTML = `<span class="earned" aria-label="${atPar ? 2 : 1} of 2 stars"><span class="star on">★</span><span class="star${atPar ? ' on' : ''}">★</span></span>` +
       (atPar ? `Solved in ${m}. That's par!` : ((hintSeen(L.name) & 1) ? `Solved in ${m}. Par is ${L.par} for the second star.` : `Solved in ${m}. There's a shorter way, for the second star.`)) +
-      (li >= LEVELS.length-1 ? ' That was the last level.' : '');
+      (li >= LEVELS.length-1 ? ' That was the last level.' : '') + lockNote();
     return;
   }
   if (preview && !(opts[preview.tool] && opts[preview.tool][preview.k])) preview = null;
@@ -788,7 +817,7 @@ function drawHintShapes(box){
 }
 $('reset').onclick = () => { anim = null; loadLevel(li); sfx.undo(); };
 $('againBtn').onclick = () => loadLevel(li);
-$('nextBtn').onclick = () => loadLevel(li+1);
+$('nextBtn').onclick = () => { if (levelOpen(li+1)) loadLevel(li+1); else go('levels'); };
 
 function thumb(lv){
   // tiny preview: dots, links/arrows, goal rings
@@ -840,22 +869,28 @@ function thumb(lv){
     o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${c ? 2.4 : 1.7}" fill="${c ? col[c] : 'var(--ink)'}"/>`; });
   return `<svg class="thumb" viewBox="0 0 40 40" aria-hidden="true">${o}</svg>`;
 }
+const LOCK = '<svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>';
 function renderLevels(){
   const list = $('list'); list.innerHTML = '';
   $('total').innerHTML = `<b>${totalStars()}</b> of ${LEVELS.length*2} <span class="star on">★</span>`;
   CHAPTERS.forEach((ch, ci) => {
     const idxs = LEVELS.map((l,i)=>i).filter(i => LEVELS[i].chapter === ch);
     const got = idxs.reduce((s,i)=>s+starsFor(i),0);
-    const sec = document.createElement('section'); sec.className = 'chapter';
-    sec.innerHTML = `<div class="ch-head"><h3>${ci+1}. ${ch}</h3><span class="count">${got} / ${idxs.length*2} <span class="star on">★</span></span></div>
-      <div class="ch-desc">${CH_DESC[ch] || ''}</div><div class="tiles"></div>`;
+    const open = chapterOpen(ci);
+    const sec = document.createElement('section'); sec.className = 'chapter' + (open ? '' : ' locked');
+    sec.innerHTML = `<div class="ch-head"><h3>${open ? '' : LOCK}${ci+1}. ${ch}</h3><span class="count">${got} / ${idxs.length*2} <span class="star on">★</span></span></div>
+      <div class="ch-desc">${open ? (CH_DESC[ch] || '') : `Get all ${chMax(ci-1)} ★ in ${CHAPTERS[ci-1]} to unlock (${chStars(ci-1)} so far).`}</div><div class="tiles"></div>`;
     const grid = sec.querySelector('.tiles');
     idxs.forEach((i, n) => {
       const lv = LEVELS[i], st = starsFor(i);
-      const b = document.createElement('button'); b.className = 'tile' + (i===li ? ' cur' : '');
-      b.setAttribute('aria-label', `Level ${ci+1}.${n+1}, ${lv.name}, ${st} of 2 stars`); b.title = lv.name;
-      b.innerHTML = thumb(lv) + `<span class="num">${n+1}</span><span class="stars"><span class="star${st>=1?' on':''}">★</span><span class="star${st>=2?' on':''}">★</span></span>`;
-      b.onclick = () => { if (i !== li) loadLevel(i); go('play'); };
+      const ok = levelOpen(i);
+      const b = document.createElement('button'); b.className = 'tile' + (i===li ? ' cur' : '') + (ok ? '' : ' locked');
+      b.setAttribute('aria-label', `Level ${ci+1}.${n+1}, ${lv.name}, ` + (ok ? `${st} of 2 stars` : 'locked')); b.title = ok ? lv.name : 'Locked';
+      b.innerHTML = thumb(lv) + `<span class="num">${n+1}</span>` + (ok
+        ? `<span class="stars"><span class="star${st>=1?' on':''}">★</span><span class="star${st>=2?' on':''}">★</span></span>`
+        : `<span class="stars">${LOCK}</span>`);
+      if (ok) b.onclick = () => { if (i !== li) loadLevel(i); go('play'); };
+      else b.setAttribute('aria-disabled', 'true');
       grid.append(b);
     });
     list.append(sec);
@@ -1479,7 +1514,7 @@ stage.addEventListener('pointermove', e=>{
 const endPaint = e => { if (paint && paint.id === e.pointerId) paint = null; };
 stage.addEventListener('pointerup', endPaint); stage.addEventListener('pointercancel', endPaint);
 
-loadLevel(curIndex());
+{ const c = curIndex(); loadLevel(levelOpen(c) ? c : lastOpen()); }
 showScreen();
 </script>
 </body>
