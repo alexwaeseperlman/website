@@ -154,6 +154,30 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .lock{width:12px;height:12px;color:var(--grey);vertical-align:-1px}
 .ch-head h3 .lock{width:15px;height:15px;margin-right:6px;vertical-align:-2px}
 .chapter.locked .ch-head h3{color:var(--grey)}
+.chapter.locked{border:2px dashed var(--border);border-radius:10px;padding:12px 12px 4px}
+.coach{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:2px solid var(--sel);border-radius:10px;
+  padding:8px 10px;margin:2px 0 0;color:var(--ink);min-height:4.6em}
+.coach .ct{flex:1}
+.coach .cs{font-size:12px;font-weight:600;color:var(--sel);text-transform:uppercase;letter-spacing:.04em;display:block}
+.coach button{font-size:13px;padding:2px 8px;border-width:1.5px;flex-shrink:0}
+.coach.ok{border-color:var(--green)} .coach.ok .cs{color:var(--green)}
+.coach.off{border-color:var(--gold)} .coach.off .cs{color:var(--gold)}
+.coached{animation:coach 1.1s ease-in-out infinite;position:relative;z-index:1}
+@keyframes coach{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--sel) 60%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--sel) 0%,transparent)}}
+@media (prefers-reduced-motion: reduce){ .coached{animation:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--sel) 45%,transparent)} }
+.welcome .inner{max-width:420px;border-radius:14px;margin:0 16px;border-bottom:2px solid var(--border)}
+.welcome{align-items:center}
+.welcome p{margin:8px 0}
+.welcome .demo{display:flex;justify-content:center;margin:6px 0}
+.welcome .demo svg{width:96px;height:96px}
+.welcome .row{justify-content:flex-end;margin-top:12px}
+.howto h3{margin:22px 0 6px;font-size:17px;font-weight:600;color:var(--blue)}
+.howto p{margin:6px 0}
+.howto .ex{display:flex;gap:12px;align-items:center;margin:8px 0}
+.howto .ex svg.thumb{width:84px;max-width:none;flex-shrink:0;border:2px solid var(--border);border-radius:10px;background:var(--field);padding:4px}
+.howto ul{margin:6px 0;padding-left:20px}
+.howto li{margin:4px 0}
+.home-link{background:none;border:0;color:var(--blue);text-decoration:underline;text-underline-offset:3px;padding:4px 8px}
 .page-body{width:100%;max-width:560px;margin:0 auto;padding:0 14px 24px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -219,6 +243,13 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
     <button id="reset">Reset</button>
   </div>
 </div>
+<div class="sheet welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle"><div class="inner">
+  <h2 id="welcomeTitle">Welcome to Turns</h2>
+  <div class="demo" id="welcomeDemo"></div>
+  <p>Get every colored dot into the ring of the same color.</p>
+  <p>You can't move dots one at a time. Instead you select a shape and turn it, and every dot in the shape moves with it.</p>
+  <div class="row"><button id="welcomeGo" class="primary">Show me</button></div>
+</div></div>
 <div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><button id="hclose">Close</button></div><div id="hcards"></div></div></div>
 <section class="screen" id="home" aria-label="Menu">
   <div class="home-inner">
@@ -235,9 +266,17 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
     <div class="home-btns">
       <button id="playBtn" class="big primary"></button>
       <button id="levelsBtn" class="big"></button>
+      <button id="howtoBtn" class="home-link">How to play</button>
     </div>
     <div class="home-foot"><button id="homeSoundBtn" class="icon-btn sound-btn"></button><span id="homeSoundLabel"></span></div>
   </div>
+</section>
+<section class="screen" id="howto" aria-label="How to play">
+  <div class="page-head">
+    <button id="howtoBack" class="icon-btn" aria-label="Back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <h2>How to play</h2>
+  </div>
+  <div class="page-body howto" id="howtoBody"></div>
 </section>
 <section class="screen" id="levels" aria-label="Levels">
   <div class="page-head">
@@ -505,7 +544,7 @@ function loadLevel(i){
   sel = new Set(); history = []; solved = false; anim = null; preview = null; born = {}; flipsUsed = 0; hintUsed = false;
   selAmt = P.map(()=>0); selVel = P.map(()=>0); spokeAmt = 0;
   buildComps(); prog.cur = li; prog.curName = L.name; saveProg();
-  view.s = 0; showHint = false; buildToolbar(); refresh();
+  view.s = 0; showHint = false; tutSkipped = false; tutBuild(); buildToolbar(); refresh(); maybeWelcome();
 }
 const budgetLeft = () => (L.budget||0) - (P.length - L.pts.length);
 let flipsUsed = 0, hintUsed = false;
@@ -657,6 +696,64 @@ function buildToolbar(){
   }
 }
 
+/* ================= tutorial (levels 1.1 and 1.2) ================= */
+// Each step follows the level's own solution: highlight the dots to select, then the button to press.
+const TUTORIAL = {
+  'Square': { steps: [
+      { select: 'Tap the four pulsing dots, or drag across them, to select the square.',
+        turn: 'A square looks the same after a quarter turn, so it can turn. Tap the glowing button.' } ],
+    done: 'That\'s it! Red reached its ring. Solving earns ★, and solving in the fewest moves (par) earns ★★.' },
+  'Two triangles': { steps: [
+      { select: 'Turns only work on shapes that look the same afterwards. Select the top triangle.',
+        turn: 'A triangle turns a third of the way round. Turn it counterclockwise.' },
+      { select: 'Now select the bottom triangle. The two dots in the middle belong to both triangles.',
+        turn: 'Turn it the other way, clockwise.' } ],
+    done: 'You\'ve got it. From here on you\'re on your own. If you get stuck, tap Hint.' }
+};
+let tutSkipped = false, tutPath = null;
+function tutBuild(){
+  // colors after each step of the solution, to tell whether the player is still on it
+  tutPath = null;
+  if (!TUTORIAL[L.name] || !L.sol) return;
+  let c = L.start.map(x => x || 0); tutPath = [c];
+  for (const m of L.sol){ const r = minRot(L.pts, m.s, MINROT[m.t]); const n = c.slice(); for (const i in r.perm) n[r.perm[i]] = c[+i]; c = n; tutPath.push(c); }
+}
+function tutState(){
+  const T = TUTORIAL[L.name];
+  if (!T || tutSkipped || !tutPath) return null;
+  if (solved) return { mode:'done', text:T.done };
+  const same = (a,b) => a.length === b.length && a.every((v,i) => v === b[i]);
+  let k = -1; tutPath.forEach((c,i) => { if (same(c, colors)) k = i; });
+  if (k < 0 || k >= L.sol.length) return { mode:'off', text:'That\'s a different move. Tap Undo to go back and follow the steps.' };
+  const step = T.steps[k] || T.steps[T.steps.length-1], want = L.sol[k].s;
+  const extra = [...sel].filter(i => !want.includes(i));
+  if (extra.length) return { mode:'select', k, want, text:'Only the pulsing dots. Tap a dot again to unselect it.' };
+  if (want.every(i => sel.has(i))) return { mode:'turn', k, tool:L.sol[k].t, text:step.turn };
+  return { mode:'select', k, want, text:step.select };
+}
+function renderCoach(){
+  const t = tutState();
+  for (const b of document.querySelectorAll('.coached')) b.classList.remove('coached');
+  if (!t) return false;
+  // the tutorial points at one button, so drop the generic "new button" pulse
+  for (const b of $('tools').querySelectorAll('.new')) b.classList.remove('new');
+  const T = TUTORIAL[L.name], n = T.steps.length;
+  const label = t.mode === 'done' ? 'Done' : t.mode === 'off' ? 'Oops' : n > 1 ? `Tutorial · step ${t.k+1} of ${n}` : 'Tutorial';
+  $('hint').innerHTML = `<div class="coach${t.mode === 'done' ? ' ok' : t.mode === 'off' ? ' off' : ''}"><div class="ct"><span class="cs">${label}</span>${t.text}</div>` +
+    (t.mode === 'done' ? '' : '<button id="tutSkip">Skip</button>') + '</div>';
+  const sk = $('tutSkip'); if (sk) sk.onclick = () => { tutSkipped = true; track('tutorial/skip', 'tutorial_skip'); refresh(); };
+  if (t.mode === 'turn'){ const b = $('tools').querySelector(`[data-tool="${t.tool}"]`); if (b) b.classList.add('coached'); }
+  if (t.mode === 'off') $('undo').classList.add('coached');
+  if (t.mode === 'done' && !$('nextBtn').hidden) $('nextBtn').classList.add('coached');
+  return true;
+}
+function maybeWelcome(){
+  if (L.name !== 'Square' || prog.welcomed || screen !== 'play') return;
+  $('welcomeDemo').innerHTML = thumb(LEVELS[0]);
+  $('welcome').classList.add('open'); $('welcomeGo').focus();
+}
+$('welcomeGo').onclick = () => { $('welcome').classList.remove('open'); prog.welcomed = true; saveProg(); };
+
 function lockNote(){
   if (solvedStars && solvedStars.unlocked) return ` <b>${solvedStars.unlocked} unlocked!</b>`;
   if (li >= LEVELS.length-1 || levelOpen(li+1)) return '';
@@ -685,6 +782,8 @@ function refresh(){
       b.setAttribute('aria-label', TOOL_NAME[t] + (o ? ` ${Math.round(Math.abs(o.th)*180/Math.PI)} degrees` : '')); }
   }
   $('solvedRow').hidden = !solved;
+  $('nextBtn').hidden = li >= LEVELS.length-1;
+  renderCoach();
   const hb = $('hintbar'); hb.hidden = true;
   $('hintBtn').setAttribute('aria-pressed', showHint);
   if (false){
@@ -692,7 +791,6 @@ function refresh(){
     hb.innerHTML = '<span>Par solution, dots per move:</span>' + L.parMoves.map(([n,add],k) =>
       `<span class="chip${k < at ? ' done' : k === at ? ' now' : ''}" title="Move ${k+1}${add ? ', adds points' : ''}">${n}${add ? '+' : ''}</span>`).join('');
   }
-  $('nextBtn').hidden = li >= LEVELS.length-1;
   $('nextBtn').textContent = li < LEVELS.length-1 && !levelOpen(li+1) ? 'Levels' : 'Next level';
   $('preview').hidden = !preview;
 
@@ -878,7 +976,9 @@ function renderLevels(){
     const open = chapterOpen(ci);
     const sec = document.createElement('section'); sec.className = 'chapter' + (open ? '' : ' locked');
     sec.innerHTML = `<div class="ch-head"><h3>${open ? '' : LOCK}${ci+1}. ${ch}</h3><span class="count">${got} / ${idxs.length*2} <span class="star on">★</span></span></div>
-      <div class="ch-desc">${open ? (CH_DESC[ch] || '') : `Get all ${chMax(ci-1)} ★ in ${CHAPTERS[ci-1]} to unlock (${chStars(ci-1)} so far).`}</div><div class="tiles"></div>`;
+      <div class="ch-desc">${open ? (CH_DESC[ch] || '') : `Get all ${chMax(ci-1)} ★ in ${CHAPTERS[ci-1]} to unlock (${chStars(ci-1)} so far).`}</div>${open ? '<div class="tiles"></div>' : ''}`;
+    list.append(sec);
+    if (!open) return;
     const grid = sec.querySelector('.tiles');
     idxs.forEach((i, n) => {
       const lv = LEVELS[i], st = starsFor(i);
@@ -892,24 +992,47 @@ function renderLevels(){
       else b.setAttribute('aria-disabled', 'true');
       grid.append(b);
     });
-    list.append(sec);
   });
   const cur = list.querySelector('.tile.cur'); if (cur) cur.scrollIntoView({ block:'center' });
+}
+function renderHowto(){
+  const ex = name => thumb(LEVELS.find(l => l.name === name));
+  $('howtoBody').innerHTML = `
+    <h3>The goal</h3>
+    <div class="ex">${ex('Square')}<p>Get every colored dot into the ring of the same color. Here, red has to reach the red ring.</p></div>
+    <h3>Select a shape</h3>
+    <p>Tap dots, or drag across them, to select them. Tap a selected dot again to unselect it.</p>
+    <h3>Turn it</h3>
+    <p>When your selection is symmetric, the turn buttons light up. A turn moves the shape the smallest amount that leaves it looking the same:</p>
+    <ul><li>a square turns a quarter of the way round,</li><li>a triangle a third,</li><li>three dots evenly spaced in a line, a half.</li></ul>
+    <p>Every dot in the shape moves with it, so plan where the others end up too.</p>
+    <h3>Links</h3>
+    <div class="ex">${ex('Linked')}<p>Linked dots are always selected together, and the link turns with them.</p></div>
+    <h3>Arrows</h3>
+    <div class="ex">${ex('Arrow')}<p>Selecting an arrow's tail selects its head too, but selecting the head doesn't select the tail.</p></div>
+    <h3>Stars and par</h3>
+    <p>Solving a level earns <span class="star on">★</span>. Solving it in the fewest moves possible, called par, earns <span class="star on">★★</span>. Tap Hint to see par and get help.</p>
+    <h3>Unlocking</h3>
+    <ul><li>One star on a level unlocks the next level.</li><li>All 20 stars in a chapter unlock the next chapter.</li></ul>
+    <h3>Buttons</h3>
+    <ul><li><b>Undo</b> takes back your last turn.</li><li><b>Reset</b> starts the level over.</li><li><b>Hint</b> shows par and step-by-step help.</li></ul>`;
 }
 function renderHome(){
   const started = Object.keys(prog.best).length > 0 || li > 0;
   $('playBtn').innerHTML = `<span>${started ? 'Continue' : 'Play'}<small>${levelLabel(li)} ${L.name}</small></span><span class="go" aria-hidden="true">›</span>`;
   $('levelsBtn').innerHTML = `<span>Levels<small>${CHAPTERS.length} chapters</small></span><span class="pill-ish"><span class="star on">★</span> ${totalStars()} / ${LEVELS.length*2}</span>`;
 }
-const SCREENS = ['home', 'levels'];
+const SCREENS = ['home', 'levels', 'howto'];
 let screen = 'play';
 function showScreen(){
   const h = location.hash.slice(1);
-  screen = h === 'levels' || h === 'play' ? h : 'home';
+  screen = h === 'levels' || h === 'play' || h === 'howto' ? h : 'home';
   for (const id of SCREENS) $(id).classList.toggle('on', id === screen);
   if (screen === 'home') renderHome();
   if (screen === 'levels') renderLevels();
-  if (screen !== 'play') $('hsheet').classList.remove('open');
+  if (screen !== 'play'){ $('hsheet').classList.remove('open'); $('welcome').classList.remove('open'); }
+  if (screen === 'play') maybeWelcome();
+  if (screen === 'howto') renderHowto();
 }
 // push for forward navigation so the browser/phone back button retraces it
 const go = to => { if (location.hash.slice(1) !== to) location.hash = to; else showScreen(); };
@@ -920,8 +1043,10 @@ $('levelBtn').onclick = () => go('levels');
 $('playBtn').onclick = () => go('play');
 $('levelsBtn').onclick = () => go('levels');
 $('levelsBack').onclick = () => go('home');
+$('howtoBtn').onclick = () => go('howto');
+$('howtoBack').onclick = () => go('home');
 document.addEventListener('keydown', e => {
-  if (screen !== 'play'){ if (e.key === 'Escape' && screen === 'levels') go('home'); return; }
+  if (screen !== 'play'){ if (e.key === 'Escape' && screen !== 'home') go('home'); return; }
   if (e.key === 'Escape'){ if (preview){ preview = null; refresh(); } }
   if (e.key === 'Enter' && preview) applyPreview();
   if ((e.key === 'z' || e.key === 'u') && !e.metaKey) undo();
@@ -1472,6 +1597,15 @@ function drawFrame(now){
     ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]), (c ? dot : dot*.62)*sc, 0, TAU);
     if (i === hollowAt && !c){ ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.stroke(); }
     else { ctx.fillStyle = c ? PAL[c] : ink; ctx.fill(); }
+  }
+
+  // tutorial: pulse the dots still to be selected
+  const tut = !anim && tutState();
+  if (tut && tut.mode === 'select'){
+    const pulse = (Math.sin(now/260)+1)/2;
+    ctx.strokeStyle = selC; ctx.lineWidth = 2.5; ctx.setLineDash([5,4]); ctx.globalAlpha = .55 + .45*pulse;
+    for (const i of tut.want) if (!sel.has(i)){ ctx.beginPath(); ctx.arc(X(P[i][0]),Y(P[i][1]), dot*(1.55 + .25*pulse), 0, TAU); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
 
   // symmetry center
