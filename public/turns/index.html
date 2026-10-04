@@ -1,0 +1,1401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Turns</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5fafd; --card:#ffffff; --ink:#1a1a1a; --blue:#3f75ad; --border:#e1e8ee;
+  --field:#f5fafd; --grey:#707070; --outline:#1a1a1a; --sel:#3d8fe8;
+  --red:#d64541; --green:#2e9e6b; --gold:#e0a100;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --sel:#5aa9f5; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; }
+}
+:root[data-theme="dark"]{ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --sel:#5aa9f5; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; }
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Roboto Slab",Rockwell,Georgia,serif; font-size:16px; line-height:1.4;
+  display:flex; flex-direction:column; overflow:hidden;
+  -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none;
+}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px 0}
+h1{margin:0;font-weight:400;text-transform:uppercase;color:var(--blue);font-size:22px;line-height:1.2;flex:1}
+.hint{padding:4px 16px 0;color:var(--grey);font-size:15px;min-height:2.8em}
+.hint b{color:var(--blue);font-weight:600}
+button{
+  font:inherit; font-size:15px; color:var(--ink); background:var(--field);
+  border:2px solid var(--outline); border-radius:8px; padding:6px 12px; cursor:pointer;
+}
+button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+button:disabled{opacity:.3;cursor:default}
+button.primary{background:var(--blue);border-color:var(--blue);color:var(--card);font-weight:600}
+.icon-btn{padding:6px 8px;line-height:0}
+#board{flex:1;min-height:0;position:relative}
+#board canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#gl{pointer-events:none}
+#stage{touch-action:none}
+button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.seg{display:flex;border:2px solid var(--outline);border-radius:8px;overflow:hidden;margin-top:6px}
+.seg button{flex:1;border:0;border-radius:0}
+.seg button[aria-pressed="true"]{background:var(--blue);color:var(--card);font-weight:600}
+.dock{background:var(--card);border:2px solid var(--border);border-bottom:0;border-radius:10px 10px 0 0;padding:12px 14px 14px}
+.status{font-weight:600;color:var(--blue);min-height:1.4em}
+.row{display:flex;gap:8px;align-items:center}
+.preview{margin-top:10px}
+.preview[hidden]{display:none}
+.preview .opt{flex:1;text-align:center;font-variant-numeric:tabular-nums;color:var(--grey);font-size:15px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.tool{
+  position:relative; width:58px; height:58px; padding:0; border-radius:12px;
+  display:flex; align-items:center; justify-content:center; border-color:var(--border);
+  transition:transform .15s ease, border-color .2s ease, background .2s ease;
+}
+.tool svg{width:40px;height:40px;overflow:visible}
+.tool:not(:disabled){border-color:var(--sel);background:color-mix(in srgb, var(--sel) 10%, var(--card))}
+.tool:not(:disabled):active{transform:scale(.92)}
+.tool.armed{background:var(--sel);border-color:var(--sel)}
+.tool.armed svg *{stroke:var(--card)!important}
+.tool.armed svg .fill{fill:var(--card)!important}
+.tool.armed svg text{fill:var(--card)!important}
+.tool:disabled{opacity:.35}
+.tool .badge{position:absolute;top:-7px;right:-7px;min-width:22px;height:22px;border-radius:11px;background:var(--ink);color:var(--card);font-size:12px;font-weight:700;line-height:22px;text-align:center;padding:0 5px}
+.tool.new{animation:pulse 1.4s ease-in-out 3}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--sel) 0%,transparent)}50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--sel) 30%,transparent)}}
+@media (prefers-reduced-motion: reduce){ .tool.new{animation:none} .tool{transition:none} }
+.meta-row{margin-top:12px}
+.hintbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font-size:14px;color:var(--grey)}
+.hintbar[hidden]{display:none}
+.chip{min-width:28px;padding:2px 8px;border-radius:12px;border:2px solid var(--border);text-align:center;font-variant-numeric:tabular-nums;color:var(--ink);background:var(--field)}
+.chip.done{opacity:.4}
+.chip.now{border-color:var(--sel);color:var(--sel);font-weight:700}
+.meta{flex:1;color:var(--grey);font-size:15px;font-variant-numeric:tabular-nums}
+.solved-row{margin-top:10px}
+.solved-row[hidden]{display:none}
+.solved-row button{flex:1}
+.hcard{border:2px solid var(--border);border-radius:8px;padding:12px;margin-top:10px}
+.hcard .hh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hcard .ht{font-weight:600;color:var(--blue);font-size:15px}
+.hcard .hs{font-size:13px;color:var(--grey);white-space:nowrap;flex-shrink:0}
+.hcard .reveal{flex-shrink:0}
+.hcard .hb{margin-top:10px;color:var(--ink);font-size:15px}
+.hcard .hd{font-size:13px;color:var(--grey);margin-top:2px}
+.hcard.seen{border-color:var(--blue)}
+.hchips{display:flex;flex-wrap:wrap;gap:6px}
+.hchip{border:1.5px solid var(--border);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums}
+.hshapes{display:flex;flex-wrap:wrap;gap:10px}
+.hshape{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:var(--grey)}
+.hshape canvas{width:76px;height:76px;border:1.5px solid var(--border);border-radius:6px}
+.sheet{position:fixed;inset:0;background:rgba(15,23,32,.35);display:none;align-items:flex-end;justify-content:center;z-index:5}
+.sheet.open{display:flex}
+.sheet .inner{
+  background:var(--card);border:2px solid var(--border);border-bottom:0;border-radius:10px 10px 0 0;
+  width:100%;max-width:560px;max-height:82%;overflow:auto;
+  padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));
+}
+.sheet h2{margin:0 0 4px;font-weight:400;text-transform:uppercase;color:var(--blue);font-size:20px}
+.sheet h3{margin:16px 0 8px;font-size:15px;font-weight:600;color:var(--blue)}
+.sheet-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.total{font-size:15px;color:var(--grey);font-variant-numeric:tabular-nums}
+.total b{color:var(--ink);font-weight:700}
+.chapter{margin-top:20px}
+.ch-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.ch-head h3{margin:0;font-size:17px;font-weight:600;color:var(--blue)}
+.ch-head .count{font-size:14px;color:var(--grey);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ch-desc{font-size:14px;color:var(--grey);margin:2px 0 10px}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 5px;border:2px solid var(--border);border-radius:10px;background:var(--field)}
+.tile.cur{border-color:var(--blue)}
+.tile svg.thumb{width:100%;max-width:52px;aspect-ratio:1;display:block}
+.tile .num{font-size:12px;color:var(--grey);font-variant-numeric:tabular-nums;line-height:1}
+.stars{display:flex;gap:1px;font-size:13px;line-height:1;letter-spacing:0}
+.star{color:var(--border)}
+.star.on{color:var(--gold)}
+.pill{padding:5px 10px;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill .star{color:var(--gold)}
+.earned{display:inline-flex;gap:2px;margin-right:6px;vertical-align:-1px}
+.earned .star{display:inline-block;transform:scale(0);animation:starpop .45s cubic-bezier(.3,1.6,.5,1) forwards}
+.earned .star:nth-child(2){animation-delay:.22s}
+@keyframes starpop{to{transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){ .earned .star{animation:none;transform:none} }
+#levelBtn{max-width:48vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f5fafd">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Turns">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>
+  // Set your GoatCounter code here (the part before .goatcounter.com). Leave as is to disable analytics.
+  window.TURNS_CONFIG = { goatcounter: 'REPLACE_WITH_YOUR_CODE' };
+  (function(){
+    var c = (window.TURNS_CONFIG || {}).goatcounter;
+    if (!c || c.indexOf('REPLACE') === 0) return;
+    var s = document.createElement('script'); s.async = true; s.src = 'https://gc.zgo.at/count.js';
+    s.setAttribute('data-goatcounter', 'https://' + c + '.goatcounter.com/count');
+    document.head.appendChild(s);
+  })();
+  if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
+</script>
+</head>
+<body>
+<header>
+  <h1>Turns</h1>
+  <button id="soundBtn" class="icon-btn" aria-label="Sound and haptics on"></button>
+  <button id="starBtn" class="pill" aria-label="Stars and levels"></button>
+  <button id="levelBtn"></button>
+</header>
+<div class="hint" id="hint"></div>
+<div id="board"><canvas id="gl" aria-hidden="true"></canvas><canvas id="stage" aria-label="Puzzle board. Tap dots to select them."></canvas></div>
+<div class="dock">
+  <div class="status" id="status" aria-live="polite"></div>
+  <div class="row preview" id="preview" hidden>
+    <button id="prevOpt" aria-label="Previous option">‹</button>
+    <span class="opt" id="optLabel"></span>
+    <button id="nextOpt" aria-label="Next option">›</button>
+    <button id="applyOpt" class="primary">Apply</button>
+    <button id="cancelOpt">Cancel</button>
+  </div>
+  <div class="row solved-row" id="solvedRow" hidden>
+    <button id="againBtn">Try again</button>
+    <button id="nextBtn" class="primary">Next level</button>
+  </div>
+  <div class="tools" id="tools"></div>
+  <div class="hintbar" id="hintbar" hidden></div>
+  <div class="row meta-row">
+    <span class="meta" id="meta"></span>
+    <button id="hintBtn" aria-pressed="false">Hint</button>
+    <button id="undo">Undo</button>
+    <button id="reset">Reset</button>
+  </div>
+</div>
+<div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><button id="hclose">Close</button></div><div id="hcards"></div></div></div>
+<div class="sheet" id="sheet"><div class="inner"><div class="sheet-head"><h2>Levels</h2><span class="total" id="total"></span></div><div id="list"></div></div></div>
+<script>
+const LEVELS = [{"chapter":"Turns","name":"Square","hint":"Select all four corners, then turn. A turn is always the smallest one that keeps the shape the same.","pts":[[0,0],[1,0],[1,1],[0,1]],"tools":["ccw","cw"],"start":["r",null,null,null],"goal":[[1,"r"]],"par":1,"parMoves":[[4,0]],"guides":{"polys":[{"c":[0.5,0.5],"r":0.7071,"v":[[1,1],[0,1],[0,0],[1,0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Turns","name":"Two triangles","hint":"Triangles turn a third at a time.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":["r","g",null,null],"goal":[[2,"g"],[3,"r"]],"par":2,"parMoves":[[3,0],[3,0]],"guides":{"polys":[{"c":[0.5,0.2887],"r":0.5773,"v":[[1.0,0.0],[0.5,0.866],[0.0,0.0]]},{"c":[0.5,-0.2887],"r":0.5773,"v":[[0.5,-0.866],[1.0,0.0],[0.0,0.0]]}]},"sol":[{"s":[0,1,2],"t":"ccw"},{"s":[0,1,3],"t":"cw"}]},{"chapter":"Turns","name":"Hexagon","hint":"Hexagons hide triangles and rectangles.","pts":[[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0],[-0.5,-0.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":["r","g",null,null,null,null],"goal":[[0,"g"],[1,"r"]],"par":2,"parMoves":[[3,0],[6,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5,-0.866],[0.5,-0.866],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0]]}]},"sol":[{"s":[0,2,4],"t":"ccw"},{"s":[0,1,2,3,4,5],"t":"cw"}]},{"chapter":"Turns","name":"Grid","hint":"Squares can be tilted.","pts":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],"tools":["ccw","cw"],"start":[null,null,null,null,null,null,null,"g","r"],"goal":[[2,"r"],[3,"g"]],"par":2,"parMoves":[[3,0],[8,0]],"guides":{"lines":[[[0.0,0.0],[2.0,0.0]],[[0.0,0.0],[0.0,2.0]],[[1.0,0.0],[1.0,2.0]],[[2.0,0.0],[2.0,2.0]],[[0.0,1.0],[2.0,1.0]],[[0.0,2.0],[2.0,2.0]]]},"sol":[{"s":[1,4,7],"t":"ccw"},{"s":[0,1,2,3,5,6,7,8],"t":"cw"}]},{"chapter":"Turns","name":"Line","hint":"Three evenly spaced dots in a line turn halfway. The middle one stays put.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0]],"tools":["ccw","cw"],"start":["r","g",null,null,null],"goal":[[1,"r"],[3,"g"]],"par":3,"parMoves":[[3,0],[4,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[4.0,0.0]]]},"sol":[{"s":[0,2,4],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[1,2,3,4],"t":"ccw"}]},{"chapter":"Turns","name":"Clockwise","hint":"No counterclockwise button this time.","pts":[[0,0],[1,0],[1,1],[0,1]],"tools":["cw"],"start":["r",null,null,null],"goal":[[1,"r"]],"par":3,"parMoves":[[4,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,0.5],"r":0.7071,"v":[[1,1],[0,1],[0,0],[1,0]]}]},"sol":[{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"}]},{"chapter":"Turns","name":"House","hint":"A square and a triangle share an edge.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r","g",null,null,null],"goal":[[2,"g"],[3,"r"]],"par":4,"parMoves":[[4,0],[3,0],[4,0],[3,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"cw"}]},{"chapter":"Turns","name":"Roof","hint":"Plan ahead. Every turn goes the same way.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["cw"],"start":["r","g",null,null,null],"goal":[[1,"r"],[4,"g"]],"par":5,"parMoves":[[4,0],[4,0],[4,0],[3,0],[3,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[2,3,4],"t":"cw"}]},{"chapter":"Turns","name":"Pentagon","hint":"Only two shapes can turn here. Combine them.","pts":[[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809],[-0.5878,0.809],[-0.9511,-0.309],[-0.5,-1.866],[0.5,-1.866]],"tools":["ccw","cw"],"start":["r","g",null,null,null,null,null],"goal":[[0,"g"],[1,"r"]],"par":5,"parMoves":[[5,0],[3,0],[5,0],[5,0],[3,0]],"guides":{"polys":[{"c":[0.0,-1.5773],"r":0.5773,"v":[[-0.5,-1.866],[0.5,-1.866],[0.0,-1.0]]},{"c":[0.0,0.0],"r":1.0,"v":[[-0.5878,0.809],[-0.9511,-0.309],[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809]]}]},"sol":[{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,5,6],"t":"cw"}]},{"chapter":"Turns","name":"Commutator","hint":"Swap green and gold without disturbing red.","pts":[[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809],[-0.5878,0.809],[-0.9511,-0.309],[-0.5,-1.866],[0.5,-1.866]],"tools":["ccw","cw"],"start":["r","g","y",null,null,null,null],"goal":[[0,"r"],[1,"y"],[2,"g"]],"par":7,"parMoves":[[5,0],[3,0],[5,0],[3,0],[5,0],[3,0],[5,0]],"guides":{"polys":[{"c":[0.0,-1.5773],"r":0.5773,"v":[[-0.5,-1.866],[0.5,-1.866],[0.0,-1.0]]},{"c":[0.0,0.0],"r":1.0,"v":[[-0.5878,0.809],[-0.9511,-0.309],[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809]]}]},"sol":[{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,5,6],"t":"cw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"}]},{"chapter":"Links","name":"Linked","hint":"Linked dots are always selected together, and the link turns with them. Move this one out of the way.","pts":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],"tools":["ccw","cw"],"start":[null,"r",null,null,null,null,null,null,null],"goal":[[0,"r"]],"par":2,"links":[[4,8]],"parMoves":[[4,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[2.0,0.0]],[[0.0,0.0],[0.0,2.0]],[[1.0,0.0],[1.0,2.0]],[[2.0,0.0],[2.0,2.0]],[[0.0,1.0],[2.0,1.0]],[[0.0,2.0],[2.0,2.0]]]},"sol":[{"s":[1,3,5,7],"t":"ccw"},{"s":[0,2,3,5],"t":"ccw"}]},{"chapter":"Links","name":"Path","hint":"The whole middle row is linked together.","pts":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,null,null,"g"],"goal":[[1,"g"],[5,"r"]],"par":3,"links":[[3,4],[4,5]],"parMoves":[[6,0],[6,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[2.0,0.0]],[[0.0,0.0],[0.0,2.0]],[[1.0,0.0],[1.0,2.0]],[[2.0,0.0],[2.0,2.0]],[[0.0,1.0],[2.0,1.0]],[[0.0,2.0],[2.0,2.0]]]},"sol":[{"s":[0,1,2,3,4,5],"t":"ccw"},{"s":[0,1,2,6,7,8],"t":"ccw"},{"s":[0,1,3,4],"t":"ccw"}]},{"chapter":"Links","name":"Star","hint":"A hub linked to three pieces. The star turns as one.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0],[-0.5,-0.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":[null,"r",null,null,"g",null,null],"goal":[[1,"g"],[4,"r"]],"par":3,"links":[[0,1],[0,3],[0,5]],"parMoves":[[4,0],[3,0],[7,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5,-0.866],[0.5,-0.866],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0]]}]},"sol":[{"s":[0,1,3,5],"t":"ccw"},{"s":[2,4,6],"t":"ccw"},{"s":[0,1,2,3,4,5,6],"t":"ccw"}]},{"chapter":"Links","name":"Big grid","hint":"A bigger grid hides more tilted squares.","pts":[[0,0],[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[3,1],[0,2],[1,2],[2,2],[3,2],[0,3],[1,3],[2,3],[3,3]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,null,null,null,null,null,null,null,null,null,"g"],"goal":[[1,"r"],[11,"g"]],"par":3,"links":[[5,10]],"parMoves":[[4,0],[4,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[3.0,0.0]],[[0.0,0.0],[0.0,3.0]],[[1.0,0.0],[1.0,3.0]],[[2.0,0.0],[2.0,3.0]],[[3.0,0.0],[3.0,3.0]],[[0.0,1.0],[3.0,1.0]],[[0.0,2.0],[3.0,2.0]],[[0.0,3.0],[3.0,3.0]]]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[9,11,13,15],"t":"ccw"},{"s":[1,3,9,11],"t":"cw"}]},{"chapter":"Links","name":"Trio","hint":"Three linked pieces move as one rigid triangle.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0],[-0.5,-0.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":[null,"r",null,null,"g",null,null],"goal":[[1,"r"],[3,"g"]],"par":5,"links":[[0,2],[2,3],[0,3]],"parMoves":[[4,0],[5,0],[4,0],[7,0],[7,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5,-0.866],[0.5,-0.866],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,4,5],"t":"ccw"},{"s":[0,3,4,5],"t":"ccw"},{"s":[0,1,2,3,4,5,6],"t":"ccw"},{"s":[0,1,2,3,4,5,6],"t":"ccw"}]},{"chapter":"Links","name":"Tethered","hint":"The link has to come along for the ride.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,"g"],"goal":[[0,"g"],[2,"r"]],"par":5,"links":[[3,4]],"parMoves":[[3,0],[4,0],[4,0],[3,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[2,3,4],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"}]},{"chapter":"Links","name":"Two pairs","hint":"Two links, two squares.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[1.866,1.5],[1.366,2.366],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,"g"],"goal":[[0,"g"],[4,"r"]],"par":6,"links":[[0,1],[4,5]],"parMoves":[[3,0],[4,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]},{"c":[1.183,1.683],"r":0.7071,"v":[[1.366,2.366],[0.5,1.866],[1.0,1.0],[1.866,1.5]]}]},"sol":[{"s":[2,3,6],"t":"cw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,6],"t":"ccw"},{"s":[2,4,5,6],"t":"ccw"},{"s":[2,4,5,6],"t":"ccw"}]},{"chapter":"Links","name":"Hinge","hint":"Two squares, one hinge, one link.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[1.866,1.5],[1.366,2.366],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,"g"],"goal":[[0,"g"],[5,"r"]],"par":6,"links":[[3,6]],"parMoves":[[3,0],[4,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]},{"c":[1.183,1.683],"r":0.7071,"v":[[1.366,2.366],[0.5,1.866],[1.0,1.0],[1.866,1.5]]}]},"sol":[{"s":[2,3,6],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,6],"t":"ccw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,4,5,6],"t":"cw"}]},{"chapter":"Links","name":"Tangle","hint":"Two links take turns getting in the way.","pts":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,null,null,"g"],"goal":[[3,"g"],[5,"r"]],"par":6,"links":[[2,3],[4,6]],"parMoves":[[4,0],[5,0],[4,0],[4,0],[4,0],[9,0]],"guides":{"lines":[[[0.0,0.0],[2.0,0.0]],[[0.0,0.0],[0.0,2.0]],[[1.0,0.0],[1.0,2.0]],[[2.0,0.0],[2.0,2.0]],[[0.0,1.0],[2.0,1.0]],[[0.0,2.0],[2.0,2.0]]]},"sol":[{"s":[0,2,3,5],"t":"ccw"},{"s":[2,3,4,5,6],"t":"ccw"},{"s":[1,2,3,4],"t":"ccw"},{"s":[0,1,3,4],"t":"ccw"},{"s":[1,2,7,8],"t":"ccw"},{"s":[0,1,2,3,4,5,6,7,8],"t":"cw"}]},{"chapter":"Links","name":"Clockwise link","hint":"Clockwise only, with a link in the roof.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["cw"],"start":["r",null,null,null,"g"],"goal":[[1,"r"],[2,"g"]],"par":6,"links":[[2,4]],"parMoves":[[3,0],[4,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"}]},{"chapter":"Arrows","name":"Arrow","hint":"An arrow drags its head along. Selecting the tail selects the head too, but not the other way around.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,null],"goal":[[1,"r"]],"par":2,"arrows":[[0,4]],"parMoves":[[3,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[2,3,4],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Arrows","name":"Grid arrows","hint":"The center drags two neighbors along.","pts":[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,null,null,"g"],"goal":[[5,"g"],[7,"r"]],"par":3,"arrows":[[4,1],[4,7]],"parMoves":[[4,0],[4,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[2.0,0.0]],[[0.0,0.0],[0.0,2.0]],[[1.0,0.0],[1.0,2.0]],[[2.0,0.0],[2.0,2.0]],[[0.0,1.0],[2.0,1.0]],[[0.0,2.0],[2.0,2.0]]]},"sol":[{"s":[0,2,3,5],"t":"ccw"},{"s":[1,2,7,8],"t":"ccw"},{"s":[1,3,5,7],"t":"ccw"}]},{"chapter":"Arrows","name":"Downstream","hint":"Arrows move with their pieces, so they can end up pointing somewhere new.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[1.9397,-0.342],[1.766,0.6428]],"tools":["ccw","cw"],"start":["r",null,null,null,null],"goal":[[3,"r"]],"par":4,"arrows":[[3,2]],"parMoves":[[3,0],[3,0],[3,0],[3,0]],"guides":{"polys":[{"c":[0.5,0.2887],"r":0.5773,"v":[[1.0,0.0],[0.5,0.866],[0.0,0.0]]},{"c":[1.5686,0.1003],"r":0.5774,"v":[[1.9397,-0.342],[1.766,0.6428],[1.0,0.0]]}]},"sol":[{"s":[0,1,2],"t":"cw"},{"s":[1,3,4],"t":"ccw"},{"s":[0,1,2],"t":"cw"},{"s":[1,3,4],"t":"ccw"}]},{"chapter":"Arrows","name":"Fan out","hint":"One tail, two heads.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,"g"],"goal":[[0,"g"],[3,"r"]],"par":4,"arrows":[[0,1],[0,3]],"parMoves":[[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Arrows","name":"Cycle","hint":"Arrows in a loop pull each other along, just like links.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0],[-0.5,-0.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":[null,"r",null,null,"g",null,null],"goal":[[2,"g"],[6,"r"]],"par":4,"arrows":[[0,2],[2,3],[3,0]],"parMoves":[[4,0],[5,0],[4,0],[7,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5,-0.866],[0.5,-0.866],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,4,5],"t":"ccw"},{"s":[0,3,4,5],"t":"ccw"},{"s":[0,1,2,3,4,5,6],"t":"ccw"}]},{"chapter":"Arrows","name":"Chain of command","hint":"Selecting the top of a chain drags everything below it.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,"g"],"goal":[[1,"g"],[4,"r"]],"par":5,"arrows":[[3,2],[2,1]],"parMoves":[[4,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Arrows","name":"Fan in","hint":"Two arrows point at the roof.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,"g"],"goal":[[1,"g"],[4,"r"]],"par":5,"arrows":[[2,4],[3,4]],"parMoves":[[3,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[2,3,4],"t":"ccw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Arrows","name":"Mixed","hint":"A link and an arrow, chained together.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[1.866,1.5],[1.366,2.366],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,"g"],"goal":[[0,"g"],[2,"r"]],"par":5,"links":[[0,1]],"arrows":[[1,4]],"parMoves":[[3,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]},{"c":[1.183,1.683],"r":0.7071,"v":[[1.366,2.366],[0.5,1.866],[1.0,1.0],[1.866,1.5]]}]},"sol":[{"s":[2,3,6],"t":"cw"},{"s":[2,4,5,6],"t":"cw"},{"s":[2,3,6],"t":"cw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[0,1,2,3],"t":"ccw"}]},{"chapter":"Arrows","name":"Upstream","hint":"Work out which way the arrow needs to point.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["ccw","cw"],"start":["r",null,null,null,"g"],"goal":[[1,"r"],[3,"g"]],"par":6,"arrows":[[1,3]],"parMoves":[[4,0],[3,0],[4,0],[3,0],[4,0],[3,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"ccw"}]},{"chapter":"Arrows","name":"Clockwise arrow","hint":"Clockwise only, and one arrow.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866]],"tools":["cw"],"start":["r",null,null,null,"g"],"goal":[[0,"g"],[3,"r"]],"par":6,"arrows":[[3,1]],"parMoves":[[4,0],[4,0],[4,0],[3,0],[4,0],[4,0]],"guides":{"polys":[{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,2,3],"t":"cw"}]},{"name":"Quarter turns","hint":"Only shapes that survive a 90\u00b0 turn can move: squares.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0],[0,1],[1,1],[2,1],[3,1],[4,1],[0,2],[1,2],[2,2],[3,2],[4,2],[0,3],[1,3],[2,3],[3,3],[4,3],[0,4],[1,4],[2,4],[3,4],[4,4]],"tools":["r90","r-90"],"start":["r",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"goal":[[6,"r"]],"chapter":"Lattices","links":[],"arrows":[],"par":2,"parMoves":[[4,0],[4,0]],"sol":[{"s":[0,1,5,6],"t":"r90"},{"s":[0,1,5,6],"t":"r90"}]},{"name":"Tilted","hint":"The obvious squares are broken. Look for one that leans.","pts":[[0,0],[2,0],[3,0],[4,0],[0,1],[1,1],[2,1],[4,1],[0,2],[1,2],[2,2],[3,2],[4,2],[0,3],[1,3],[3,3],[4,3],[0,4],[2,4],[3,4],[4,4]],"tools":["r90","r-90"],"start":[null,"r",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"goal":[[7,"r"]],"chapter":"Lattices","links":[],"arrows":[],"par":1,"parMoves":[[4,0]],"sol":[{"s":[1,7,9,15],"t":"r90"}]},{"name":"Off the grid","hint":"No small triangle can reach. A bigger one can.","pts":[[-1.0,-1.7321],[0.0,-1.7321],[1.0,-1.7321],[-1.5,-0.866],[-0.5,-0.866],[1.5,-0.866],[-2.0,0.0],[-1.0,0.0],[1.0,0.0],[2.0,0.0],[-1.5,0.866],[-0.5,0.866],[0.5,0.866],[1.5,0.866],[-1.0,1.7321],[0.0,1.7321],[1.0,1.7321]],"tools":["r120","r-120"],"start":[null,null,"r",null,null,null,null,null,null,null,null,null,null,null,null,null,null],"goal":[[16,"r"]],"chapter":"Lattices","links":[],"arrows":[],"par":1,"parMoves":[[3,0]],"sol":[{"s":[2,6,16],"t":"r120"}]},{"chapter":"Lattices","name":"Open board","hint":"A big open board. Quarter turns move squares, any squares.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[0,1],[1,1],[2,1],[3,1],[4,1],[5,1],[6,1],[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[6,2],[0,3],[1,3],[2,3],[3,3],[4,3],[5,3],[6,3],[0,4],[1,4],[2,4],[3,4],[4,4],[5,4],[6,4],[0,5],[1,5],[2,5],[3,5],[4,5],[5,5],[6,5],[0,6],[1,6],[2,6],[3,6],[4,6],[5,6],[6,6]],"tools":["r90","r-90"],"start":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,"g",null,null,null,null,null,null,null,null,null,null,null,null,null,null,"r",null,null,null,null,null,null,null,null,null,"y",null,null,null,null,null,null,null,null,null],"links":[],"arrows":[],"goal":[[0,"r"],[4,"g"],[48,"y"]],"par":5,"parMoves":[[4,0],[8,0],[4,0],[4,0],[4,0]],"sol":[{"s":[17,21,39,43],"t":"r90"},{"s":[8,10,13,27,29,43,46,48],"t":"r-90"},{"s":[2,20,28,46],"t":"r90"},{"s":[0,2,14,16],"t":"r90"},{"s":[0,4,28,32],"t":"r90"}]},{"chapter":"Lattices","name":"Long triangle","hint":"One tether across the board.","pts":[[-1.5,-2.5981],[-0.5,-2.5981],[0.5,-2.5981],[1.5,-2.5981],[-2.0,-1.7321],[-1.0,-1.7321],[0.0,-1.7321],[1.0,-1.7321],[2.0,-1.7321],[-2.5,-0.866],[-1.5,-0.866],[-0.5,-0.866],[0.5,-0.866],[1.5,-0.866],[2.5,-0.866],[-3.0,0.0],[-2.0,0.0],[-1.0,0.0],[0.0,0.0],[1.0,0.0],[2.0,0.0],[3.0,0.0],[-2.5,0.866],[-1.5,0.866],[-0.5,0.866],[0.5,0.866],[1.5,0.866],[2.5,0.866],[-2.0,1.7321],[-1.0,1.7321],[0.0,1.7321],[1.0,1.7321],[2.0,1.7321],[-1.5,2.5981],[-0.5,2.5981],[0.5,2.5981],[1.5,2.5981]],"tools":["r120","r-120"],"start":[null,null,null,"r",null,null,null,null,"g",null,null,null,null,"y",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"links":[[8,34]],"arrows":[],"goal":[[0,"r"],[2,"g"],[1,"y"]],"par":5,"parMoves":[[3,0],[9,0],[12,0],[6,0],[3,0]],"sol":[{"s":[3,6,13],"t":"r120"},{"s":[4,6,8,9,14,23,26,34,35],"t":"r-120"},{"s":[0,1,3,5,9,13,14,20,23,24,29,31],"t":"r-120"},{"s":[0,2,15,20,28,31],"t":"r-120"},{"s":[0,1,5],"t":"r120"}]},{"chapter":"Lattices","name":"Triangle turns","hint":"Ordinary turns again, on a triangle.","pts":[[0.0,0.0],[1.0,0.0],[2.0,0.0],[3.0,0.0],[4.0,0.0],[5.0,0.0],[6.0,0.0],[0.5,0.866],[1.5,0.866],[2.5,0.866],[3.5,0.866],[4.5,0.866],[5.5,0.866],[1.0,1.7321],[2.0,1.7321],[3.0,1.7321],[4.0,1.7321],[5.0,1.7321],[1.5,2.5981],[2.5,2.5981],[3.5,2.5981],[4.5,2.5981],[2.0,3.4641],[3.0,3.4641],[4.0,3.4641],[2.5,4.3301],[3.5,4.3301],[3.0,5.1962]],"tools":["ccw","cw"],"start":[null,null,null,null,null,null,null,null,null,null,null,"g",null,null,null,null,null,"r",null,null,null,null,null,null,null,null,null,null],"links":[[17,1]],"arrows":[[11,17]],"goal":[[6,"r"],[0,"g"]],"par":6,"parMoves":[[4,0],[6,0],[4,0],[4,0],[4,0],[6,0]],"sol":[{"s":[0,1,16,17],"t":"ccw"},{"s":[0,1,7,11,16,17],"t":"ccw"},{"s":[1,7,17,21],"t":"ccw"},{"s":[0,7,16,21],"t":"ccw"},{"s":[0,1,16,17],"t":"ccw"},{"s":[1,3,6,17,19,26],"t":"ccw"}]},{"chapter":"Lattices","name":"Tethered triangles","hint":"Two tethers, every triangle counts.","pts":[[-1.5,-2.5981],[-0.5,-2.5981],[0.5,-2.5981],[1.5,-2.5981],[-2.0,-1.7321],[-1.0,-1.7321],[0.0,-1.7321],[1.0,-1.7321],[2.0,-1.7321],[-2.5,-0.866],[-1.5,-0.866],[-0.5,-0.866],[0.5,-0.866],[1.5,-0.866],[2.5,-0.866],[-3.0,0.0],[-2.0,0.0],[-1.0,0.0],[0.0,0.0],[1.0,0.0],[2.0,0.0],[3.0,0.0],[-2.5,0.866],[-1.5,0.866],[-0.5,0.866],[0.5,0.866],[1.5,0.866],[2.5,0.866],[-2.0,1.7321],[-1.0,1.7321],[0.0,1.7321],[1.0,1.7321],[2.0,1.7321],[-1.5,2.5981],[-0.5,2.5981],[0.5,2.5981],[1.5,2.5981]],"tools":["r120","r-120"],"start":[null,null,"g",null,null,null,null,null,null,null,null,null,null,null,null,null,"y","r",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"links":[[2,36],[16,3]],"arrows":[],"goal":[[15,"r"],[22,"g"],[21,"y"]],"par":6,"parMoves":[[3,0],[3,0],[6,0],[6,0],[9,0],[3,0]],"sol":[{"s":[1,13,17],"t":"r-120"},{"s":[3,16,32],"t":"r-120"},{"s":[6,13,16,28,32,35],"t":"r120"},{"s":[2,3,15,22,32,36],"t":"r-120"},{"s":[5,7,9,13,15,26,28,34,35],"t":"r120"},{"s":[5,21,34],"t":"r120"}]},{"name":"Five by five","hint":"Green commands red, red commands gold, and gold is tied to the far corner.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0],[0,1],[1,1],[2,1],[3,1],[4,1],[0,2],[1,2],[2,2],[3,2],[4,2],[0,3],[1,3],[2,3],[3,3],[4,3],[0,4],[1,4],[2,4],[3,4],[4,4]],"tools":["ccw","cw"],"start":["r",null,null,null,null,null,"g",null,null,null,null,null,"y",null,null,null,null,null,null,null,null,null,null,null,null],"goal":[[24,"r"],[0,"g"],[1,"y"]],"links":[[12,24]],"arrows":[[6,0],[0,12]],"par":8,"parMoves":[[3,0],[5,0],[4,0],[4,0],[6,0],[3,0],[6,0],[4,0]],"chapter":"Lattices","sol":[{"s":[0,12,24],"t":"ccw"},{"s":[0,6,12,18,24],"t":"ccw"},{"s":[1,12,13,24],"t":"ccw"},{"s":[0,1,12,13],"t":"ccw"},{"s":[0,5,6,12,13,18],"t":"ccw"},{"s":[6,12,18],"t":"ccw"},{"s":[5,6,11,18,23,24],"t":"ccw"},{"s":[1,11,13,23],"t":"ccw"}]},{"chapter":"Lattices","name":"Anchored","hint":"A link and an arrow hold things in place.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[0,1],[1,1],[2,1],[3,1],[4,1],[5,1],[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[0,3],[1,3],[2,3],[3,3],[4,3],[5,3],[0,4],[1,4],[2,4],[3,4],[4,4],[5,4],[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]],"tools":["r90","r-90"],"start":[null,null,null,null,null,null,null,null,null,null,null,"r",null,null,null,null,null,null,null,null,null,null,null,null,null,"g",null,null,null,null,null,null,null,null,"y",null],"links":[[34,11]],"arrows":[[25,11]],"goal":[[1,"r"],[10,"g"],[24,"y"]],"par":8,"parMoves":[[4,0],[8,0],[12,0],[12,0],[8,0],[8,0],[8,0],[8,0]],"sol":[{"s":[1,11,24,34],"t":"r90"},{"s":[6,7,10,16,24,30,33,34],"t":"r-90"},{"s":[6,7,10,13,15,16,24,25,27,30,33,34],"t":"r-90"},{"s":[1,2,3,6,10,12,16,18,22,25,26,27],"t":"r90"},{"s":[3,4,7,13,17,23,26,27],"t":"r90"},{"s":[3,4,7,13,17,23,26,27],"t":"r90"},{"s":[0,1,4,10,18,24,27,28],"t":"r90"},{"s":[0,1,4,10,18,24,27,28],"t":"r90"}]},{"chapter":"Lattices","name":"The long way round","hint":"The long way round.","pts":[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[0,1],[1,1],[2,1],[3,1],[4,1],[5,1],[0,2],[1,2],[2,2],[3,2],[4,2],[5,2],[0,3],[1,3],[2,3],[3,3],[4,3],[5,3],[0,4],[1,4],[2,4],[3,4],[4,4],[5,4],[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]],"tools":["r90","r-90"],"start":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,"r","g",null,null,null,null,null,"y"],"links":[[28,1]],"arrows":[[35,28]],"goal":[[2,"r"],[0,"g"],[15,"y"]],"par":10,"parMoves":[[8,0],[8,0],[16,0],[8,0],[8,0],[8,0],[12,0],[8,0],[12,0],[8,0]],"sol":[{"s":[0,1,4,10,18,24,27,28],"t":"r90"},{"s":[1,7,10,11,24,25,28,34],"t":"r-90"},{"s":[0,1,4,5,6,7,10,11,24,25,28,29,30,31,34,35],"t":"r-90"},{"s":[1,2,5,11,19,25,28,29],"t":"r90"},{"s":[1,2,5,11,19,25,28,29],"t":"r90"},{"s":[0,5,8,16,19,27,30,35],"t":"r-90"},{"s":[0,1,3,4,6,10,18,22,24,25,27,28],"t":"r-90"},{"s":[6,7,10,16,24,30,33,34],"t":"r90"},{"s":[7,8,11,15,17,20,22,25,27,31,34,35],"t":"r-90"},{"s":[2,4,6,17,18,29,31,33],"t":"r-90"}]},{"chapter":"Challenges","name":"Lattice","hint":"Clockwise only, and three arrows hold the corners.","pts":[[0.0,0.0],[1.0,0.0],[2.0,0.0],[3.0,0.0],[0.5,0.866],[1.5,0.866],[2.5,0.866],[1.0,1.7321],[2.0,1.7321],[1.5,2.5981]],"tools":["cw"],"start":[null,null,"r",null,"g","y",null,null,null,null],"goal":[[0,"y"],[3,"r"],[8,"g"]],"par":4,"arrows":[[0,1],[3,6],[9,7]],"parMoves":[[3,0],[4,0],[3,0],[4,0]],"guides":{"lines":[[[0.0,0.0],[3.0,0.0]],[[0.0,0.0],[1.5,2.5981]],[[1.0,-0.0],[0.5,0.866]],[[1.0,0.0],[2.0,1.732]],[[2.0,-0.0],[0.9999,1.7321]],[[2.0,0.0],[2.5,0.866]],[[3.0,-0.0],[1.4999,2.598]],[[0.5,0.866],[2.5,0.866]],[[1.0,1.732],[2.0,1.732]]]},"sol":[{"s":[0,1,2],"t":"cw"},{"s":[4,5,7,8],"t":"cw"},{"s":[0,4,7],"t":"cw"},{"s":[3,5,6,7],"t":"cw"}]},{"chapter":"Challenges","name":"Snowflake","hint":"The center drags three petals with it.","pts":[[0.0,0.0],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0],[-0.5,-0.866],[0.5,-0.866],[1.5,0.866],[0.0,1.7321],[-1.5,0.866],[-1.5,-0.866],[0.0,-1.7321],[1.5,-0.866]],"tools":["cw"],"start":["r","g","y",null,null,null,null,null,null,null,null,null,null],"goal":[[6,"r"],[8,"y"],[11,"g"]],"par":4,"links":[[0,1],[0,3],[0,5]],"parMoves":[[4,0],[6,0],[4,0],[7,0]],"guides":{"polys":[{"c":[1.0,0.5773],"r":0.5773,"v":[[1.5,0.866],[0.5,0.866],[1.0,0.0]]},{"c":[1.0,-0.5773],"r":0.5773,"v":[[0.5,-0.866],[1.5,-0.866],[1.0,0.0]]},{"c":[0.0,1.1547],"r":0.5774,"v":[[0.0,1.7321],[-0.5,0.866],[0.5,0.866]]},{"c":[-1.0,0.5773],"r":0.5773,"v":[[-1.5,0.866],[-1.0,0.0],[-0.5,0.866]]},{"c":[-1.0,-0.5773],"r":0.5773,"v":[[-1.5,-0.866],[-0.5,-0.866],[-1.0,0.0]]},{"c":[0.0,-1.1547],"r":0.5774,"v":[[0.0,-1.7321],[0.5,-0.866],[-0.5,-0.866]]},{"c":[0.0,0.0],"r":1.0,"v":[[-0.5,-0.866],[0.5,-0.866],[1.0,0.0],[0.5,0.866],[-0.5,0.866],[-1.0,0.0]]}]},"sol":[{"s":[0,1,3,5],"t":"cw"},{"s":[0,1,3,5,8,9],"t":"cw"},{"s":[1,2,5,11],"t":"cw"},{"s":[0,3,6,8,9,11,12],"t":"cw"}]},{"chapter":"Challenges","name":"Cross","hint":"One arrow is enough to make this hard.","pts":[[1,0],[0,1],[1,1],[2,1],[1,2],[1,3]],"tools":["ccw","cw"],"start":["r","g","y",null,null,null],"goal":[[2,"g"],[3,"r"],[4,"y"]],"par":5,"arrows":[[4,5]],"parMoves":[[3,0],[3,0],[5,0],[3,0],[4,0]],"guides":{"lines":[[[1.0,0.0],[1.0,3.0]],[[0.0,1.0],[2.0,1.0]]]},"sol":[{"s":[1,2,3],"t":"ccw"},{"s":[2,4,5],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[2,4,5],"t":"ccw"},{"s":[0,2,4,5],"t":"ccw"}]},{"chapter":"Challenges","name":"Keel","hint":"A roof, a keel, and two arrows pulling opposite ways.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866],[0.5,-0.866]],"tools":["ccw","cw"],"start":[null,null,null,null,"r","g"],"goal":[[0,"g"],[1,"r"]],"par":5,"arrows":[[1,2],[3,0]],"parMoves":[[4,0],[3,0],[3,0],[4,0],[6,0]],"guides":{"polys":[{"c":[0.5,-0.2887],"r":0.5773,"v":[[0.5,-0.866],[1.0,0.0],[0.0,0.0]]},{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[0,1,2,3],"t":"ccw"},{"s":[2,3,4],"t":"ccw"},{"s":[0,1,5],"t":"cw"},{"s":[0,2,4,5],"t":"ccw"},{"s":[0,1,2,3,4,5],"t":"ccw"}]},{"chapter":"Challenges","name":"Pinwheel","hint":"Each corner drags a tip around.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,-0.866],[1.866,0.5],[0.5,1.866],[-0.866,0.5]],"tools":["ccw","cw"],"start":["r","g","y",null,null,null,null,null],"goal":[[1,"y"],[3,"g"],[6,"r"]],"par":5,"arrows":[[0,7],[1,4],[2,5],[3,6]],"parMoves":[[4,0],[6,0],[3,0],[3,0],[3,0]],"guides":{"polys":[{"c":[0.5,-0.2887],"r":0.5773,"v":[[0.5,-0.866],[1.0,0.0],[0.0,0.0]]},{"c":[-0.2887,0.5],"r":0.5773,"v":[[0.0,1.0],[-0.866,0.5],[0.0,0.0]]},{"c":[1.2887,0.5],"r":0.5773,"v":[[1.866,0.5],[1.0,1.0],[1.0,0.0]]},{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[4,5,6,7],"t":"ccw"},{"s":[1,3,4,5,6,7],"t":"ccw"},{"s":[0,5,6],"t":"cw"},{"s":[0,1,4],"t":"ccw"},{"s":[1,2,5],"t":"ccw"}]},{"chapter":"Challenges","name":"Twin pentagons","hint":"Two pentagons, two arrows across the seam.","pts":[[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809],[-0.5878,0.809],[-0.9511,-0.309],[0.3633,-2.118],[1.5388,-2.118],[1.9021,-1.0]],"tools":["ccw","cw"],"start":[null,null,"r","g",null,"y",null,null],"goal":[[2,"g"],[3,"r"],[6,"y"]],"par":6,"arrows":[[4,0],[7,1]],"parMoves":[[5,0],[4,0],[5,0],[4,0],[5,0],[4,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5878,0.809],[-0.9511,-0.309],[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809]]},{"c":[0.9511,-1.309],"r":1.0,"v":[[1.5388,-2.118],[1.9021,-1.0],[0.9511,-0.309],[0.0,-1.0],[0.3633,-2.118]]}]},"sol":[{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,1,3,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,1,2,5],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,1,3,6],"t":"ccw"}]},{"chapter":"Challenges","name":"Pinwheel cw","hint":"The pinwheel again, but only clockwise.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,-0.866],[1.866,0.5],[0.5,1.866],[-0.866,0.5]],"tools":["cw"],"start":["r","g","y",null,null,null,null,null],"goal":[[4,"r"],[5,"y"],[6,"g"]],"par":6,"arrows":[[0,7],[1,4],[2,5],[3,6]],"parMoves":[[4,0],[3,0],[3,0],[3,0],[3,0],[6,0]],"guides":{"polys":[{"c":[0.5,-0.2887],"r":0.5773,"v":[[0.5,-0.866],[1.0,0.0],[0.0,0.0]]},{"c":[-0.2887,0.5],"r":0.5773,"v":[[0.0,1.0],[-0.866,0.5],[0.0,0.0]]},{"c":[1.2887,0.5],"r":0.5773,"v":[[1.866,0.5],[1.0,1.0],[1.0,0.0]]},{"c":[0.5,1.2887],"r":0.5773,"v":[[0.5,1.866],[0.0,1.0],[1.0,1.0]]},{"c":[0.5,0.5],"r":0.7071,"v":[[1.0,1.0],[0.0,1.0],[0.0,0.0],[1.0,0.0]]}]},"sol":[{"s":[4,5,6,7],"t":"cw"},{"s":[0,5,6],"t":"cw"},{"s":[2,4,7],"t":"cw"},{"s":[2,4,7],"t":"cw"},{"s":[0,1,4],"t":"cw"},{"s":[0,2,4,5,6,7],"t":"cw"}]},{"chapter":"Challenges","name":"Twin pentagons cw","hint":"No links, no arrows. Just two pentagons, clockwise.","pts":[[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809],[-0.5878,0.809],[-0.9511,-0.309],[0.3633,-2.118],[1.5388,-2.118],[1.9021,-1.0]],"tools":["cw"],"start":["r","g","y",null,null,null,null,null],"goal":[[0,"g"],[1,"r"],[7,"y"]],"par":7,"parMoves":[[5,0],[5,0],[5,0],[4,0],[5,0],[5,0],[4,0]],"guides":{"polys":[{"c":[0.0,0.0],"r":1.0,"v":[[-0.5878,0.809],[-0.9511,-0.309],[0.0,-1.0],[0.9511,-0.309],[0.5878,0.809]]},{"c":[0.9511,-1.309],"r":1.0,"v":[[1.5388,-2.118],[1.9021,-1.0],[0.9511,-0.309],[0.0,-1.0],[0.3633,-2.118]]}]},"sol":[{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[2,3,5,6],"t":"cw"},{"s":[0,1,5,6,7],"t":"cw"},{"s":[0,1,5,6,7],"t":"cw"},{"s":[2,4,5,7],"t":"cw"}]},{"chapter":"Challenges","name":"Chain gang","hint":"Red pulls on two arrows at once.","pts":[[6.123233995736766e-17,-1.0],[0.9510565162951535,-0.3090169943749474],[0.5877852522924731,0.8090169943749475],[-0.587785252292473,0.8090169943749475],[-0.9510565162951536,-0.3090169943749473],[-0.49999999999999994,-1.8660254037844386],[0.5000000000000001,-1.8660254037844386]],"tools":["ccw","cw"],"start":["g",null,null,"r",null,"y",null],"goal":[[2,"r"],[0,"g"],[6,"y"]],"links":[],"arrows":[[3,1],[3,6]],"sol":[{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,1,2,3,4],"t":"ccw"},{"s":[0,5,6],"t":"cw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,5,6],"t":"ccw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,1,2,3,4],"t":"cw"},{"s":[0,5,6],"t":"ccw"}],"par":12,"parMoves":[[3,0],[5,0],[3,0],[5,0],[5,0],[3,0],[5,0],[5,0],[3,0],[5,0],[5,0],[3,0]]},{"chapter":"Challenges","name":"Gauntlet","hint":"The finale. Every arrow points somewhere you need to go.","pts":[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.5,1.866025],[0.5,-0.866025]],"tools":["ccw","cw"],"start":["r",null,null,"y","g",null],"goal":[[2,"r"],[4,"g"],[1,"y"]],"links":[],"arrows":[[0,1],[4,2],[3,4]],"sol":[{"s":[0,1,5],"t":"ccw"},{"s":[0,2,4,5],"t":"ccw"},{"s":[0,1,5],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,1,5],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[0,2,4,5],"t":"ccw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,2,3],"t":"cw"},{"s":[2,3,4],"t":"cw"},{"s":[1,3,4,5],"t":"ccw"},{"s":[2,3,4],"t":"cw"},{"s":[0,1,5],"t":"cw"},{"s":[0,2,4,5],"t":"ccw"},{"s":[2,3,4],"t":"ccw"},{"s":[1,3,4,5],"t":"ccw"},{"s":[0,1,2,3,4,5],"t":"ccw"}],"par":17,"parMoves":[[3,0],[4,0],[3,0],[4,0],[3,0],[4,0],[4,0],[3,0],[4,0],[3,0],[4,0],[3,0],[3,0],[4,0],[3,0],[4,0],[6,0]]}];
+const TAU = Math.PI*2, KEY = 'turns-v3', EPS = 2e-3;
+const ROT = { 'r90':90, 'r-90':-90, 'r180':180, 'r120':120, 'r-120':-120, 'r72':72, 'r-72':-72 };
+const MINROT = { 'ccw':1, 'cw':-1 }, ADD_ANGLES = [180,120,90,72,60];
+const TOOL_NAME = { 'ccw':'Turn counterclockwise', 'cw':'Turn clockwise',  'r90':'Turn 90° counterclockwise', 'r-90':'Turn 90° clockwise', 'r180':'Half turn',
+  'r120':'Turn 120° counterclockwise', 'r-120':'Turn 120° clockwise', 'r72':'Turn 72° counterclockwise',
+  'r-72':'Turn 72° clockwise', 'm':'Mirror', 'add':'Add points' };
+const GROUP = { 'ccw':'Turning', 'cw':'Turning',  'r90':'Quarter turns', 'r-90':'Quarter turns', 'r180':'Half turns', 'r120':'Third turns',
+  'r-120':'Third turns', 'r72':'Fifth turns', 'r-72':'Fifth turns', 'm':'Mirror', 'add':'Add points', 'links':'Links' };
+const $ = id => document.getElementById(id);
+const stage = $('stage'), ctx = stage.getContext('2d');
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+/* ================= geometry (mirrors the solver) ================= */
+const keyOf = p => (Math.round(p[0]*1000)/1000) + ',' + (Math.round(p[1]*1000)/1000);
+function centroid(P, idx){ let x=0,y=0; for (const i of idx){ x+=P[i][0]; y+=P[i][1]; } return [x/idx.length, y/idx.length]; }
+function rotP(p,c,th){ const x=p[0]-c[0], y=p[1]-c[1], cs=Math.cos(th), sn=Math.sin(th); return [x*cs-y*sn+c[0], x*sn+y*cs+c[1]]; }
+function reflP(p,c,phi){ const x=p[0]-c[0], y=p[1]-c[1], cs=Math.cos(2*phi), sn=Math.sin(2*phi); return [x*cs+y*sn+c[0], x*sn-y*cs+c[1]]; }
+function findIn(P, idx, q){ for (const j of idx) if (Math.abs(P[j][0]-q[0])<EPS && Math.abs(P[j][1]-q[1])<EPS) return j; return -1; }
+
+function rotPerm(P, idx, deg){
+  if (idx.length < 3) return null;
+  const c = centroid(P, idx), th = deg*Math.PI/180, perm = {};
+  for (const i of idx){ const j = findIn(P, idx, rotP(P[i], c, th)); if (j < 0) return null; perm[i] = j; }
+  if (idx.every(i => perm[i] === i)) return null;
+  return { perm, c, th };
+}
+function mirrorAxes(P, idx){
+  if (idx.length < 3) return [];
+  const c = centroid(P, idx), cands = [];
+  for (const i of idx){ const dx=P[i][0]-c[0], dy=P[i][1]-c[1]; if (Math.hypot(dx,dy) > EPS) cands.push(((Math.atan2(dy,dx)%Math.PI)+Math.PI)%Math.PI); }
+  for (let a=0;a<idx.length;a++) for (let b=a+1;b<idx.length;b++){
+    const A=P[idx[a]], B=P[idx[b]];
+    cands.push((((Math.atan2(B[1]-A[1],B[0]-A[0])+Math.PI/2)%Math.PI)+Math.PI)%Math.PI);
+  }
+  cands.sort((a,b)=>a-b);
+  const out = [];
+  for (const phi of cands){
+    if (out.some(o => Math.abs(phi-o.phi) < 1e-3 || Math.abs(Math.abs(phi-o.phi)-Math.PI) < 1e-3)) continue;
+    const perm = {}; let ok = true;
+    for (const i of idx){ const j = findIn(P, idx, reflP(P[i], c, phi)); if (j < 0){ ok=false; break; } perm[i] = j; }
+    if (ok && !idx.every(i => perm[i] === i)) out.push({ phi, c, perm });
+  }
+  return out;
+}
+function completions(P, idx, tools, budget){
+  if (idx.length < 2 || budget <= 0) return [];
+  const S = idx.map(i => P[i]), allk = new Set(P.map(keyOf)), Sk = new Set(S.map(keyOf));
+  const res = new Map();
+  const closure = gen => {
+    const cur = S.slice(), seen = new Set(Sk); let changed = true;
+    while (changed){
+      changed = false;
+      for (const p of cur.slice()){
+        const q = gen(p), k = keyOf(q);
+        if (!seen.has(k)){ seen.add(k); cur.push(q); changed = true; if (cur.length - S.length > budget) return null; }
+      }
+    }
+    return cur.filter(p => !Sk.has(keyOf(p)));
+  };
+  const add = (pts, info) => {
+    if (!pts || !pts.length) return;
+    const ks = pts.map(keyOf).sort();
+    if (ks.some(k => allk.has(k))) return;
+    const id = ks.join('|');
+    if (!res.has(id)) res.set(id, { pts, info });
+  };
+  const angles = [];
+  for (const t of tools){ if (t in ROT) angles.push(ROT[t]); if (t in MINROT) angles.push(...ADD_ANGLES); }
+  const rotList = [...new Set(angles)];
+  for (const t of [...rotList, ...tools.filter(x => x === 'm')]){
+    if (t !== 'm'){
+      const base = t*Math.PI/180, order = Math.round(360/Math.abs(t));
+      for (let k=1;k<order;k++){
+        const th = base*k, c_ = Math.cos(th), s_ = Math.sin(th);
+        for (let a=0;a<S.length;a++) for (let b=0;b<S.length;b++){
+          if (a === b) continue;
+          const A = S[a], B = S[b];
+          const vx = B[0]-(A[0]*c_-A[1]*s_), vy = B[1]-(A[0]*s_+A[1]*c_);
+          const m00=1-c_, m01=s_, m10=-s_, m11=1-c_, det = m00*m11-m01*m10;
+          if (Math.abs(det) < 1e-9) continue;
+          const cx = (m11*vx-m01*vy)/det, cy = (-m10*vx+m00*vy)/det;
+          add(closure(p => rotP(p,[cx,cy],base)), { kind:'rot', c:[cx,cy] });
+        }
+      }
+    }
+    if (t === 'm'){
+      for (let a=0;a<S.length;a++) for (let b=a+1;b<S.length;b++){
+        const A=S[a], B=S[b], mid=[(A[0]+B[0])/2,(A[1]+B[1])/2], ang=Math.atan2(B[1]-A[1],B[0]-A[0]);
+        add(closure(p => reflP(p,mid,ang+Math.PI/2)), { kind:'m', c:mid, phi:ang+Math.PI/2 });
+        add(closure(p => reflP(p,A,ang)), { kind:'m', c:A, phi:ang });
+      }
+    }
+  }
+  const [cx, cy] = centroid(P, idx);
+  return [...res.values()].sort((u,v) => u.pts.length - v.pts.length ||
+    Math.max(...u.pts.map(p=>Math.hypot(p[0]-cx,p[1]-cy))) - Math.max(...v.pts.map(p=>Math.hypot(p[0]-cx,p[1]-cy))));
+}
+function minRot(P, idx, sign){ const n = rotOrder(P, idx); return n ? rotPerm(P, idx, sign*360/n) : null; }
+function rotOrder(P, idx){        // general rotational symmetry, for the status line
+  if (idx.length < 3) return 0;
+  const c = centroid(P, idx), off = idx.filter(i => Math.hypot(P[i][0]-c[0],P[i][1]-c[1]) > EPS).length;
+  for (let n = off; n >= 2; n--){ if (off % n) continue; if (rotPerm(P, idx, 360/n)) return n; }
+  return 0;
+}
+
+/* ================= sound + haptics ================= */
+let soundOn = true, AC = null;
+try{ const v = localStorage.getItem(KEY+':sound'); if (v !== null) soundOn = v === '1'; }catch(e){}
+function audio(){
+  if (!soundOn) return null;
+  if (!AC){ try{ AC = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ return null; } }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(f, at, dur, { type='sine', gain=.08, to=null } = {}){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t+dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t+.012); g.gain.exponentialRampToValueAtTime(.0001, t+dur);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t+dur+.05);
+}
+// Android: Vibration API. iOS (18+): Safari plays a system haptic when a <input switch> is toggled via its label,
+// so we keep a hidden one and click it; pattern arrays become a short run of ticks.
+let iosTick = null;
+if (!navigator.vibrate){
+  try{
+    const inp = document.createElement('input'); inp.type = 'checkbox'; inp.setAttribute('switch', ''); inp.id = 'hapticSwitch';
+    const lab = document.createElement('label'); lab.htmlFor = 'hapticSwitch';
+    for (const el of [inp, lab]) Object.assign(el.style, { position:'fixed', left:'-9999px', width:'1px', height:'1px', opacity:'0', pointerEvents:'none' });
+    lab.setAttribute('aria-hidden', 'true'); inp.tabIndex = -1;
+    document.body.append(inp, lab);
+    iosTick = () => { try{ lab.click(); }catch(e){} };
+  }catch(e){}
+}
+const buzz = p => {
+  if (!soundOn) return;
+  if (navigator.vibrate){ try{ navigator.vibrate(p); }catch(e){} return; }
+  if (!iosTick) return;
+  if (Array.isArray(p)){ let t = 0; p.forEach((d,i) => { if (i % 2 === 0) setTimeout(iosTick, t); t += d; }); }
+  else iosTick();
+};
+const NOTES = [523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.51,1567.98,1760,2093];
+const sfx = {
+  select(n){ tone(NOTES[Math.min(n,NOTES.length)-1] || 523, 0, .12, { type:'triangle', gain:.07 }); buzz(6); },
+  deselect(){ tone(392, 0, .09, { gain:.05, to:330 }); buzz(4); },
+  sym(){ tone(1046.5, 0, .22, { gain:.035 }); tone(1567.98, .06, .3, { gain:.03 }); buzz(8); },
+  turn(){ tone(311, 0, .38, { gain:.06, to:466 }); tone(622, .02, .34, { type:'triangle', gain:.025, to:932 }); buzz(14); },
+  flip(){ tone(700, 0, .3, { gain:.05, to:350 }); tone(1050, .03, .25, { type:'triangle', gain:.02, to:525 }); buzz(14); },
+  add(){ tone(880, 0, .12, { type:'triangle', gain:.06 }); tone(1318.5, .07, .16, { type:'triangle', gain:.05 }); buzz(10); },
+  undo(){ tone(440, 0, .12, { gain:.05, to:294 }); buzz(5); },
+  solve(){ [523.25,659.25,783.99,1046.5,1318.51].forEach((f,i)=>tone(f, i*.085, .5, { type:'triangle', gain:.06 })); buzz([20,40,20,40,30]); }
+};
+function renderSoundBtn(){
+  const b = $('soundBtn');
+  b.setAttribute('aria-label', soundOn ? 'Sound and haptics on' : 'Sound and haptics off');
+  b.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/>${soundOn ? '<path d="M16.5 8.5a5 5 0 0 1 0 7M19.5 5.5a9 9 0 0 1 0 13"/>' : '<path d="M17 9l5 6M22 9l-5 6"/>'}</svg>`;
+}
+$('soundBtn').onclick = () => { soundOn = !soundOn; try{ localStorage.setItem(KEY+':sound', soundOn?'1':'0'); }catch(e){} renderSoundBtn(); if (soundOn) sfx.select(3); };
+renderSoundBtn();
+
+/* ================= state ================= */
+let prog = { cur:0, best:{} };   // best moves, keyed by level name so reordering levels keeps progress
+const CHAPTERS = [...new Set(LEVELS.map(l => l.chapter))];
+const CH_DESC = { 'Turns':'Select a symmetric shape and turn it.', 'Links':'Linked pieces are always selected together.',
+  'Arrows':'One-way links: the tail drags the head.', 'Mirrors':'Flip a shape instead of turning it.',
+  'Building':'Add points to make shapes that can move.',
+  'Lattices':'Big boards, thousands of possible turns. Links and arrows keep them honest.',
+  'Challenges':'Everything at once. Beautiful and tricky.' };
+const starsFor = i => { const b = prog.best[LEVELS[i].name]; return b === undefined ? 0 : 1 + (b <= LEVELS[i].par ? 1 : 0); };
+const totalStars = () => LEVELS.reduce((s,_,i) => s + starsFor(i), 0);
+const levelLabel = i => { const ch = CHAPTERS.indexOf(LEVELS[i].chapter) + 1;
+  const n = LEVELS.slice(0, i+1).filter(l => l.chapter === LEVELS[i].chapter).length; return `${ch}.${n}`; };
+try{ const p = JSON.parse(localStorage.getItem(KEY)); if (p && typeof p.cur === 'number') prog = p; }catch(e){}
+// progress lives in the browser AND in the artifact's per-player db, so republishing never wipes it
+let cloudRef = null, cloudTimer = 0;
+if (!prog.hints) prog.hints = {};
+const hintSeen = name => prog.hints[name] || 0;
+const saveProg = () => {
+  try{ localStorage.setItem(KEY, JSON.stringify(prog)); }catch(e){}
+  if (cloudRef){ clearTimeout(cloudTimer); cloudTimer = setTimeout(() => cloudRef.set({ cur: prog.cur, best: prog.best, hints: prog.hints }).catch(()=>{}), 800); }
+};
+(async () => {
+  try{
+    if (!window.claude || !claude.use) return;
+    const [db, user] = await Promise.all([claude.use('db'), claude.use('user')]);
+    if (!db || !user) return;
+    const uid = await user.id(); if (!uid) return;
+    const ref = db.doc('data/users/' + uid + '/progress');
+    const snap = await ref.get();
+    const remote = snap.exists ? snap.data() : null;
+    let changed = false;
+    if (remote && remote.best){
+      for (const [name, b] of Object.entries(remote.best)){
+        if (typeof b === 'number' && (prog.best[name] === undefined || b < prog.best[name])){ prog.best[name] = b; changed = true; }
+      }
+      if (!Object.keys(prog.best).length || (typeof remote.cur === 'number' && prog.cur === 0)) prog.cur = remote.cur || 0;
+    }
+    if (remote && remote.hints){
+      for (const [name, h] of Object.entries(remote.hints)) if (typeof h === 'number' && (hintSeen(name) | h) !== hintSeen(name)){ prog.hints[name] = hintSeen(name) | h; changed = true; }
+    }
+    cloudRef = ref;
+    saveProg();                       // push the merged record back up
+    if (changed){ loadLevel(Math.min(prog.cur || 0, LEVELS.length-1)); }
+  }catch(e){ /* offline or no db: localStorage alone still works */ }
+})();
+
+let solvedStars = null, showHint = false;
+let li, L, P, colors, links, arrows, outAdj, inAdj, sel, history, solved, solvedAt, anim, preview, opts, born;
+let selAmt = [], selVel = [], spokeAmt = 0;
+
+function buildComps(){
+  // links pull both ways; an arrow pulls only from tail to head
+  outAdj = P.map(()=>[]); inAdj = P.map(()=>[]);
+  for (const [a,b] of links){ outAdj[a].push(b); outAdj[b].push(a); inAdj[a].push(b); inAdj[b].push(a); }
+  for (const [a,b] of arrows){ outAdj[a].push(b); inAdj[b].push(a); }
+}
+function reach(i, adj){
+  const seen = new Set([i]), st = [i];
+  while (st.length){ const x = st.pop(); for (const y of adj[x]) if (!seen.has(y)){ seen.add(y); st.push(y); } }
+  return seen;
+}
+// ---- analytics: a no-op unless the page is hosted with a GoatCounter code (window.TURNS_CONFIG.goatcounter)
+const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const startedThisVisit = new Set();
+function track(path){
+  try{ if (window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: 'turns/' + path, title: path, event: true }); }catch(e){}
+}
+function trackQuit(){ if (L && !solved && history.length > 0) track(`quit/${slug(L.name)}/${history.length}`); }
+addEventListener('pagehide', trackQuit);
+function loadLevel(i){
+  if (L && LEVELS[i] !== L) trackQuit();
+  li = Math.max(0, Math.min(LEVELS.length-1, i)); L = LEVELS[li];
+  if (!startedThisVisit.has(L.name)){ startedThisVisit.add(L.name); track(`start/${slug(L.name)}`); }
+  P = L.pts.map(p => p.slice()); colors = L.start.map(c => c || 0); links = (L.links||[]).map(l => l.slice()); arrows = (L.arrows||[]).map(l => l.slice());
+  sel = new Set(); history = []; solved = false; anim = null; preview = null; born = {}; flipsUsed = 0; hintUsed = false;
+  selAmt = P.map(()=>0); selVel = P.map(()=>0); spokeAmt = 0;
+  buildComps(); prog.cur = li; saveProg();
+  view.s = 0; showHint = false; buildToolbar(); refresh();
+}
+const budgetLeft = () => (L.budget||0) - (P.length - L.pts.length);
+let flipsUsed = 0, hintUsed = false;
+const flipsLeft = () => L.flips == null ? Infinity : L.flips - flipsUsed;
+const selIdx = () => [...sel].sort((a,b)=>a-b);
+
+function computeOpts(){
+  const idx = selIdx(); opts = {};
+  for (const t of L.tools){
+    if (t in MINROT){ const r = minRot(P, idx, MINROT[t]); opts[t] = r ? [r] : []; }
+    else if (t in ROT){ const r = rotPerm(P, idx, ROT[t]); opts[t] = r ? [r] : []; }
+    else if (t === 'm') opts[t] = flipsLeft() > 0 ? mirrorAxes(P, idx) : [];
+    else if (t === 'add') opts[t] = completions(P, idx, L.tools.filter(x=>x!=='add'), budgetLeft());
+  }
+}
+const anyFit = () => L.tools.some(t => t !== 'add' && opts[t] && opts[t].length);
+
+/* ================= actions ================= */
+function setSel(i, on){
+  const before = sel.size;
+  // selecting pulls in everything downstream; deselecting drops everything that points here
+  if (on) for (const j of reach(i, outAdj)) sel.add(j);
+  else for (const j of reach(i, inAdj)) sel.delete(j);
+  if (sel.size === before) return;
+  preview = null;
+  const hadFit = opts && anyFit();
+  computeOpts();
+  if (on) sfx.select(sel.size); else sfx.deselect();
+  if (!hadFit && anyFit()) setTimeout(()=>sfx.sym(), 70);
+  refresh();
+}
+function pushHistory(){ history.push({ flips: flipsUsed, colors: colors.slice(), n: P.length, links: links.map(l => l.slice()), arrows: arrows.map(l => l.slice()) }); }
+
+function applyPerm(perm, animSpec){
+  pushHistory();
+  const next = colors.slice();
+  for (const i in perm) next[perm[i]] = colors[+i];
+  anim = { ...animSpec, from: colors, links, arrows, idx: new Set(Object.keys(perm).map(Number)), t0: performance.now() };
+  // links belong to the pieces, so they travel with the move
+  links = links.map(([a,b]) => [a in perm ? perm[a] : a, b in perm ? perm[b] : b]);
+  arrows = arrows.map(([a,b]) => [a in perm ? perm[a] : a, b in perm ? perm[b] : b]);
+  colors = next; preview = null; buildComps();
+  refresh();
+}
+// a new input during an animation finishes it at once (the move is already committed; only the visual lags)
+function settle(){ if (anim) finishAnim(); return !solved; }
+function useTool(t){
+  if (solved) return;
+  let a0 = 0;
+  if (anim){
+    // turning the same shape again mid-turn: carry on from where the pieces are right now
+    const r = (t in ROT || t in MINROT) && opts[t] && opts[t][0];
+    if (r && anim.kind === 'rot' && Math.hypot(anim.c[0]-r.c[0], anim.c[1]-r.c[1]) < 1e-6){
+      const ks = Object.keys(r.perm).map(Number), e = ease(Math.min(1, (performance.now()-anim.t0)/anim.dur));
+      if (ks.length === anim.idx.size && ks.every(i => anim.idx.has(i))) a0 = (anim.a0||0)*(1-e) + anim.ang*e - anim.ang;
+    }
+    if (!settle()) return;
+  }
+  const o = opts[t]; if (!o || !o.length) return;
+  if (t in ROT || t in MINROT){
+    const r = o[0];
+    applyPerm(r.perm, { kind:'rot', c:r.c, ang:r.th, a0, dur: reduceMotion() ? 1 : 460 });
+    sfx.turn();
+  } else {
+    if (preview && preview.tool === t){ preview.k = (preview.k + 1) % o.length; tone(700 + preview.k*90, 0, .08, { type:'triangle', gain:.04 }); }
+    else { preview = { tool:t, k:0 }; tone(660, 0, .08, { type:'triangle', gain:.04 }); }
+    refresh();
+  }
+}
+function applyPreview(){
+  if (!preview || !settle() || !preview) return;
+  const o = opts[preview.tool][preview.k];
+  if (preview.tool === 'm'){
+    applyPerm(o.perm, { kind:'m', c:o.c, phi:o.phi, dur: reduceMotion() ? 1 : 520 }); flipsUsed++; computeOpts(); refresh();
+    sfx.flip();
+  } else {
+    pushHistory();
+    const now = performance.now();
+    for (const p of o.pts){ P.push(p); colors.push(0); selAmt.push(0); selVel.push(0); born[P.length-1] = now; sel.add(P.length-1); }
+    buildComps(); preview = null; computeOpts();
+    sfx.add(); refresh();
+  }
+}
+function finishAnim(){
+  anim = null;
+  if (L.goal.every(([i,c]) => colors[i] === c)){
+    solved = true; solvedAt = performance.now();
+    const before = starsFor(li);
+    const b = prog.best[L.name]; if (b === undefined || history.length < b) prog.best[L.name] = history.length;
+    track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`);
+    solvedStars = { now: starsFor(li), gained: starsFor(li) - before };
+    saveProg(); setTimeout(()=>sfx.solve(), 60);
+  }
+  computeOpts(); refresh();
+}
+function undo(){
+  if (anim) finishAnim();
+  if (!history.length) return;
+  const h = history.pop();
+  colors = h.colors; links = h.links; arrows = h.arrows; flipsUsed = h.flips || 0; P.length = h.n; selAmt.length = h.n; selVel.length = h.n;
+  for (const i of [...sel]) if (i >= h.n) sel.delete(i);
+  buildComps(); preview = null; solved = false; computeOpts(); sfx.undo(); refresh();
+}
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= UI ================= */
+function rotIcon(deg, label){
+  const ccw = deg > 0, a = Math.abs(deg);
+  const r = 14, sweep = a === 180 ? 200 : 280;
+  const start = ccw ? -40 : 220, end = ccw ? start + sweep : start - sweep;
+  const pt = d => [20 + r*Math.cos(d*Math.PI/180), 20 - r*Math.sin(d*Math.PI/180)];
+  const [x0,y0] = pt(start), [x1,y1] = pt(end);
+  const large = sweep > 180 ? 1 : 0, sw = ccw ? 0 : 1;
+  const tang = ccw ? end + 90 : end - 90;
+  const ah = (off) => { const d = (tang + off)*Math.PI/180; return [x1 - 6*Math.cos(d), y1 + 6*Math.sin(d)]; };
+  const [ax,ay] = ah(28), [bx,by] = ah(-28);
+  return `<svg viewBox="0 0 40 40" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${large} ${sw} ${x1.toFixed(1)} ${y1.toFixed(1)}"/>
+    <path d="M${ax.toFixed(1)} ${ay.toFixed(1)} L${x1.toFixed(1)} ${y1.toFixed(1)} L${bx.toFixed(1)} ${by.toFixed(1)}"/>
+    <text x="20" y="24.5" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)" stroke="none" font-family="Roboto Slab, Georgia, serif">${label === undefined ? a : label}</text></svg>`;
+}
+const mirrorIcon = `<svg viewBox="0 0 40 40" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linejoin="round">
+  <path d="M20 4v32" stroke-dasharray="3 3.5" stroke-linecap="round"/><path class="fill" d="M16 11L6 29h10z" fill="var(--ink)"/><path d="M24 11l10 18H24z"/></svg>`;
+const addIcon = `<svg viewBox="0 0 40 40" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round">
+  <circle cx="20" cy="20" r="14" stroke-dasharray="4 4"/><path d="M20 13v14M13 20h14"/></svg>`;
+
+const introduced = (() => {
+  const seen = new Set(), out = [];
+  LEVELS.forEach(lv => {
+    const groups = new Set(lv.tools.map(t => GROUP[t])); if ((lv.links||[]).length) groups.add('Links'); if ((lv.arrows||[]).length) groups.add('Arrows'); if (lv.tools.includes('cw') && !lv.tools.includes('ccw')) groups.add('Clockwise only');
+    out.push([...groups].filter(g => !seen.has(g))); groups.forEach(g => seen.add(g));
+  });
+  return out;
+})();
+
+function buildToolbar(){
+  const box = $('tools'); box.innerHTML = '';
+  const newGroups = introduced[li];
+  for (const t of L.tools){
+    const b = document.createElement('button');
+    b.className = 'tool' + (newGroups.includes(GROUP[t]) ? ' new' : '');
+    b.dataset.tool = t; b.setAttribute('aria-label', TOOL_NAME[t]); b.title = TOOL_NAME[t];
+    b.innerHTML = t in MINROT ? rotIcon(MINROT[t]*90, '') : t in ROT ? rotIcon(ROT[t]) : t === 'm' ? mirrorIcon : addIcon;
+    if (t === 'add' || (t === 'm' && L.flips != null)){ const bd = document.createElement('span'); bd.className = 'badge'; b.append(bd); }
+    b.onclick = () => useTool(t);
+    box.append(b);
+  }
+}
+
+function refresh(){
+  if (!opts) computeOpts();
+  $('levelBtn').textContent = `${levelLabel(li)} ${L.name}`;
+  $('starBtn').innerHTML = `<span class="star">★</span> ${totalStars()}`;
+  const nw = introduced[li];
+  $('hint').innerHTML = (nw.length ? `<b>New: ${nw.join(', ')}.</b> ` : '') + L.hint;
+  const bestHere = prog.best[L.name];
+  const parKnown = (hintSeen(L.name) & 1) || (bestHere !== undefined && bestHere <= L.par) || (solved && history.length <= L.par);
+  $('meta').textContent = parKnown ? `Moves ${history.length}, par ${L.par}` : `Moves ${history.length}`;
+  $('undo').disabled = !history.length;
+  $('reset').disabled = !history.length && !sel.size;
+
+  for (const b of $('tools').children){
+    const t = b.dataset.tool;
+    b.disabled = solved || !(opts[t] && opts[t].length);
+    b.classList.toggle('armed', !!preview && preview.tool === t);
+    const bd = b.querySelector('.badge'); if (bd) bd.textContent = t === 'm' ? flipsLeft() : budgetLeft();
+    if (t in MINROT){ const o = opts[t] && opts[t][0], tx = b.querySelector('text');
+      if (tx) tx.textContent = o ? Math.round(Math.abs(o.th)*180/Math.PI) : '';
+      b.setAttribute('aria-label', TOOL_NAME[t] + (o ? ` ${Math.round(Math.abs(o.th)*180/Math.PI)} degrees` : '')); }
+  }
+  $('solvedRow').hidden = !solved;
+  const hb = $('hintbar'); hb.hidden = true;
+  $('hintBtn').setAttribute('aria-pressed', showHint);
+  if (false){
+    const at = history.length;
+    hb.innerHTML = '<span>Par solution, dots per move:</span>' + L.parMoves.map(([n,add],k) =>
+      `<span class="chip${k < at ? ' done' : k === at ? ' now' : ''}" title="Move ${k+1}${add ? ', adds points' : ''}">${n}${add ? '+' : ''}</span>`).join('');
+  }
+  $('nextBtn').hidden = li >= LEVELS.length-1;
+  $('preview').hidden = !preview;
+
+  const st = $('status'), idx = selIdx(), n = idx.length;
+  if (solved){
+    const m = history.length, atPar = m <= L.par;
+    st.innerHTML = `<span class="earned" aria-label="${atPar ? 2 : 1} of 2 stars"><span class="star on">★</span><span class="star${atPar ? ' on' : ''}">★</span></span>` +
+      (atPar ? `Solved in ${m}. That's par!` : ((hintSeen(L.name) & 1) ? `Solved in ${m}. Par is ${L.par} for the second star.` : `Solved in ${m}. There's a shorter way, for the second star.`)) +
+      (li >= LEVELS.length-1 ? ' That was the last level.' : '');
+    return;
+  }
+  if (preview && !(opts[preview.tool] && opts[preview.tool][preview.k])) preview = null;
+  if (preview){
+    const o = opts[preview.tool], k = preview.k;
+    if (preview.tool === 'm'){
+      st.textContent = o.length > 1 ? 'Pick a mirror line, then apply.' : 'Flip across this mirror line?';
+      $('optLabel').textContent = `Line ${k+1} of ${o.length}`;
+    } else {
+      const c = o[k].pts.length;
+      st.textContent = `Adds ${c} point${c>1?'s':''}. ${budgetLeft()} left to spend.`;
+      $('optLabel').textContent = `Option ${k+1} of ${o.length}`;
+    }
+    $('prevOpt').disabled = $('nextOpt').disabled = o.length < 2;
+    return;
+  }
+  const hasAdd = L.tools.includes('add') && budgetLeft() > 0;
+  if (n === 0) st.textContent = 'Tap or drag across dots to select them.';
+  else if (n < 3) st.textContent = hasAdd && opts.add.length ? 'Select at least 3 dots, or add points.' : 'Select at least 3 dots.';
+  else {
+    const ord = rotOrder(P, idx), mir = L.tools.includes('m') ? opts.m.length : 0;
+    const parts = [];
+    if (ord) parts.push(`${ord}-fold turn symmetry`);
+    if (mir) parts.push(`${mir} mirror line${mir>1?'s':''}`);
+    if (!parts.length) st.textContent = hasAdd && opts.add.length ? 'No symmetry yet. Try adding points.' : 'No symmetry.';
+    else st.textContent = parts.join(', ').replace(/^./, c=>c.toUpperCase()) + (anyFit() ? '.' : '. None of your tools fit it.');
+  }
+}
+
+$('prevOpt').onclick = () => { if (!preview) return; const n = opts[preview.tool].length; preview.k = (preview.k - 1 + n) % n; refresh(); };
+$('nextOpt').onclick = () => { if (!preview) return; preview.k = (preview.k + 1) % opts[preview.tool].length; refresh(); };
+$('applyOpt').onclick = applyPreview;
+$('cancelOpt').onclick = () => { preview = null; refresh(); };
+$('undo').onclick = undo;
+$('hintBtn').onclick = () => openHints();
+$('hclose').onclick = () => $('hsheet').classList.remove('open');
+$('hsheet').addEventListener('click', e => { if (e.target === $('hsheet')) $('hsheet').classList.remove('open'); });
+const HINTS = [
+  { t:'Par', d:'How many moves the best solution takes.' },
+  { t:'Move sizes', d:'How many dots each move of a best solution selects.' },
+  { t:'Shapes', d:'The shape of each move, drawn like the selection highlight. Where it goes is up to you.' },
+];
+function openHints(){ renderHints(); $('hsheet').classList.add('open'); }
+function renderHints(){
+  const seen = hintSeen(L.name), box = $('hcards'); box.innerHTML = '';
+  HINTS.forEach((h, k) => {
+    const on = seen & (1 << k), card = document.createElement('div');
+    card.className = 'hcard' + (on ? ' seen' : '');
+    card.innerHTML = `<div class="hh"><div><div class="ht">${k+1}. ${h.t}</div><div class="hd">${h.d}</div></div>` +
+      (on ? '<span class="hs">✓ Viewed</span>' : '<button class="reveal">Reveal</button>') + '</div>';
+    if (on){
+      const b = document.createElement('div'); b.className = 'hb';
+      if (k === 0) b.textContent = `Par is ${L.par} move${L.par === 1 ? '' : 's'}.`;
+      else if (k === 1) b.innerHTML = '<div class="hchips">' + (L.parMoves||[]).map(([n,add],i) => `<span class="hchip" title="Move ${i+1}">${n}${add ? ' + add' : ''}</span>`).join('') + '</div>';
+      else { b.className = 'hb hshapes'; drawHintShapes(b); }
+      card.append(b);
+    } else card.querySelector('.reveal').onclick = () => { track(`hint/${slug(L.name)}/${k+1}`); prog.hints[L.name] = hintSeen(L.name) | (1 << k); saveProg(); renderHints(); refresh(); };
+    box.append(card);
+  });
+}
+// replay the stored par solution to know the board, links and arrows at every move
+function solFrames(lv){
+  if (!lv.sol) return null;
+  let pts = lv.pts.map(p => p.slice()), lk = (lv.links||[]).map(l => l.slice()), ar = (lv.arrows||[]).map(l => l.slice()), cols = lv.start.slice();
+  const frames = [];
+  for (const mv of lv.sol){
+    frames.push({ pts: pts.slice(), links: lk.map(l => l.slice()), arrows: ar.map(l => l.slice()), sel: mv.s, t: mv.t });
+    let r = null;
+    if (mv.t === 'add'){ pts = pts.concat(mv.add.map(q => q.slice())); cols = cols.concat(mv.add.map(() => null)); continue; }
+    if (mv.t in MINROT) r = minRot(pts, mv.s, MINROT[mv.t]);
+    else if (mv.t in ROT) r = rotPerm(pts, mv.s, ROT[mv.t]);
+    else if (mv.t === 'm') r = mirrorAxes(pts, mv.s).find(a => { const d = Math.abs(((a.phi - mv.phi) % Math.PI + Math.PI) % Math.PI); return d < 1e-3 || Math.PI - d < 1e-3; });
+    if (!r) return null;
+    const pm = i => r.perm[i] === undefined ? i : r.perm[i], nc = cols.slice();
+    for (const i of mv.s) nc[pm(i)] = cols[i];
+    cols = nc; lk = lk.map(([a,b]) => [pm(a), pm(b)]); ar = ar.map(([a,b]) => [pm(a), pm(b)]);
+  }
+  frames.ok = lv.goal.every(([i,c]) => cols[i] === c);
+  return frames;
+}
+function drawHintShapes(box){
+  const frames = solFrames(L);
+  if (!frames){ box.textContent = 'No shape hints for this level.'; return; }
+  const col = css('--sel'), dpr = window.devicePixelRatio || 1, S = 76;
+  frames.forEach((f, k) => {
+    const wrap = document.createElement('div'); wrap.className = 'hshape';
+    const cv = document.createElement('canvas'); cv.width = S*dpr; cv.height = S*dpr;
+    wrap.append(cv); const lab = document.createElement('span');
+    lab.textContent = (k+1) + (f.t === 'add' ? ' add' : ''); wrap.append(lab); box.append(wrap);
+    // fit the selection into the tile; the shape's size is set by the board spacing so tiles compare honestly
+    const md = minSpacing(f.pts), R = md*.3, sel = new Set(f.sel);
+    let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for (const i of f.sel){ x0=Math.min(x0,f.pts[i][0]); x1=Math.max(x1,f.pts[i][0]); y0=Math.min(y0,f.pts[i][1]); y1=Math.max(y1,f.pts[i][1]); }
+    const span = Math.max(x1-x0, y1-y0) + 2*R + md*.1, sc = (S-8)/span, cx = (x0+x1)/2, cy = (y0+y1)/2;
+    const X = x => S/2 + (x-cx)*sc, Y = y => S/2 - (y-cy)*sc;
+    const { E, F } = boardGraph(f.pts), Rb = md*.17;
+    const SE = E.filter(([u,v]) => sel.has(u) && sel.has(v)), SF = F.filter(fc => fc.every(v => sel.has(v)));
+    const conn = [];   // links and arrows left out of hint shapes: they'd give away too much
+    const layer = grow => { const c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height; const g = c.getContext('2d');
+      g.setTransform(dpr,0,0,dpr,0,0); g.fillStyle = g.strokeStyle = col; g.lineCap = 'round'; g.lineJoin = 'round';
+      for (const i of f.sel){ g.beginPath(); g.arc(X(f.pts[i][0]), Y(f.pts[i][1]), R*sc + grow, 0, TAU); g.fill(); }
+      g.lineWidth = 2*(Rb*sc + grow);
+      for (const [u,v] of SE){ g.beginPath(); g.moveTo(X(f.pts[u][0]),Y(f.pts[u][1])); g.lineTo(X(f.pts[v][0]),Y(f.pts[v][1])); g.stroke(); }
+      for (const [a,b] of conn){ const pa = f.pts[a], pb = f.pts[b], cc = bowCtrl(pa, pb, f.pts);
+        g.beginPath(); g.moveTo(X(pa[0]),Y(pa[1])); g.quadraticCurveTo(X(cc[0]),Y(cc[1]),X(pb[0]),Y(pb[1])); g.stroke(); }
+      for (const fc of SF){ g.beginPath(); fc.forEach((v,j) => j ? g.lineTo(X(f.pts[v][0]),Y(f.pts[v][1])) : g.moveTo(X(f.pts[v][0]),Y(f.pts[v][1]))); g.closePath(); g.fill();
+        if (grow){ g.lineWidth = 2*grow; g.stroke(); g.lineWidth = 2*(Rb*sc + grow); } }
+      return c; };
+    const fill = layer(0), ring = layer(2), rg = ring.getContext('2d');
+    rg.setTransform(1,0,0,1,0,0); rg.globalCompositeOperation = 'destination-out'; rg.drawImage(fill, 0, 0);
+    const g = cv.getContext('2d'); g.globalAlpha = .2; g.drawImage(fill, 0, 0); g.globalAlpha = .9; g.drawImage(ring, 0, 0);
+  });
+}
+$('reset').onclick = () => { anim = null; loadLevel(li); sfx.undo(); };
+$('againBtn').onclick = () => loadLevel(li);
+$('nextBtn').onclick = () => loadLevel(li+1);
+
+function thumb(lv){
+  // tiny preview: dots, links/arrows, goal rings
+  const xs = lv.pts.map(p=>p[0]), ys = lv.pts.map(p=>p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const s = 30/Math.max(maxX-minX, maxY-minY, 1e-6), ox = 20 - s*(minX+maxX)/2, oy = 20 + s*(minY+maxY)/2;
+  const X = x => (ox + x*s).toFixed(1), Y = y => (oy - y*s).toFixed(1);
+  const col = { r:'var(--red)', g:'var(--green)', y:'var(--gold)' };
+  let o = '';
+  // construction guides, same geometry and tick counts as on the board
+  const g = computeGuides(lv.pts, lv.name === 'Lattice'), gs = 'stroke="var(--grey)" fill="none" stroke-linecap="round"';
+  if (g && g.lines) for (const [a,b] of g.lines)
+    o += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" ${gs} stroke-opacity=".4" stroke-width=".45"/>`;
+  if (g && g.polys){
+    const sizes = [...new Set(g.polys.map(q => q.v.length))].sort((a,b) => a-b);
+    for (const pg of g.polys){
+      const cx = +X(pg.c[0]), cy = +Y(pg.c[1]), R = pg.r*s, n = pg.v.length, ticks = sizes.indexOf(n)+1;
+      o += `<circle cx="${cx}" cy="${cy}" r="${R.toFixed(2)}" ${gs} stroke-opacity=".45" stroke-width=".4" stroke-dasharray="1 1.3"/>`;
+      const angs = pg.v.map(v => Math.atan2(+Y(v[1])-cy, +X(v[0])-cx)).sort((a,b) => a-b);
+      for (const a of angs) o += `<line x1="${cx}" y1="${cy}" x2="${(cx+Math.cos(a)*R).toFixed(2)}" y2="${(cy+Math.sin(a)*R).toFixed(2)}" ${gs} stroke-opacity=".35" stroke-width=".35"/>`;
+      const ar = Math.min(R*.32, 3.4), gap = Math.min(.2, Math.PI/n*.35), pt = (a,r) => `${(cx+Math.cos(a)*r).toFixed(2)} ${(cy+Math.sin(a)*r).toFixed(2)}`;
+      for (let i=0;i<n;i++){
+        const a0 = angs[i]+gap, a1 = (i+1<n ? angs[i+1] : angs[0]+TAU)-gap, m = (angs[i] + (i+1<n ? angs[i+1] : angs[0]+TAU))/2;
+        o += `<path d="M${pt(a0,ar)} A${ar.toFixed(2)} ${ar.toFixed(2)} 0 0 1 ${pt(a1,ar)}" ${gs} stroke-opacity=".55" stroke-width=".35"/>`;
+        for (let t=0;t<ticks;t++){ const tm = m + (t-(ticks-1)/2)*(.7/ar);
+          o += `<path d="M${pt(tm,ar-.7)} L${pt(tm,ar+.7)}" ${gs} stroke-opacity=".55" stroke-width=".35"/>`; }
+      }
+    }
+  }
+  if (g && g.pairs) for (const pr of g.pairs){
+    for (const [a,b] of pr.segs) o += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" ${gs} stroke-opacity=".45" stroke-width=".4" stroke-dasharray="1 1.3"/>`;
+    o += `<circle cx="${X(pr.c[0])}" cy="${Y(pr.c[1])}" r=".6" fill="var(--grey)" fill-opacity=".6"/>`;
+  }
+  for (const [a,b] of (lv.links||[])){
+    const cc = bowCtrl(lv.pts[a], lv.pts[b], lv.pts);
+    o += `<path d="M${X(lv.pts[a][0])} ${Y(lv.pts[a][1])} Q${X(cc[0])} ${Y(cc[1])} ${X(lv.pts[b][0])} ${Y(lv.pts[b][1])}" fill="none" stroke="var(--grey)" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/>`;
+  }
+  for (const [a,b] of (lv.arrows||[])){
+    // bar that stops short of the head, then a filled head just outside the target dot
+    const cc = bowCtrl(lv.pts[a], lv.pts[b], lv.pts), qx = +X(cc[0]), qy = +Y(cc[1]);
+    const ax = +X(lv.pts[a][0]), ay = +Y(lv.pts[a][1]), bx = +X(lv.pts[b][0]), by = +Y(lv.pts[b][1]);
+    const len = Math.hypot(bx-qx, by-qy) || 1, ux = (bx-qx)/len, uy = (by-qy)/len;
+    const tx = bx - ux*2.6, ty = by - uy*2.6, hl = 2.8, hw = 1.8, f = v => v.toFixed(2);
+    o += `<path d="M${f(ax)} ${f(ay)} Q${f(qx)} ${f(qy)} ${f(tx-ux*hl*.8)} ${f(ty-uy*hl*.8)}" fill="none" stroke="var(--grey)" stroke-opacity=".55" stroke-width="1.4" stroke-linecap="round"/>`;
+    o += `<path d="M${f(tx)} ${f(ty)} L${f(tx-ux*hl-uy*hw)} ${f(ty-uy*hl+ux*hw)} L${f(tx-ux*hl+uy*hw)} ${f(ty-uy*hl-ux*hw)}Z" fill="var(--grey)" fill-opacity=".75"/>`;
+  }
+  for (const [i,c] of lv.goal) o += `<circle cx="${X(lv.pts[i][0])}" cy="${Y(lv.pts[i][1])}" r="3.6" fill="none" stroke="${col[c]}" stroke-width="1.3"/>`;
+  lv.pts.forEach((p,i) => { const c = lv.start[i];
+    o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${c ? 2.4 : 1.7}" fill="${c ? col[c] : 'var(--ink)'}"/>`; });
+  return `<svg class="thumb" viewBox="0 0 40 40" aria-hidden="true">${o}</svg>`;
+}
+function openLevels(){
+  const list = $('list'); list.innerHTML = '';
+  $('total').innerHTML = `<b>${totalStars()}</b> of ${LEVELS.length*2} <span class="star on">★</span>`;
+  CHAPTERS.forEach((ch, ci) => {
+    const idxs = LEVELS.map((l,i)=>i).filter(i => LEVELS[i].chapter === ch);
+    const got = idxs.reduce((s,i)=>s+starsFor(i),0);
+    const sec = document.createElement('section'); sec.className = 'chapter';
+    sec.innerHTML = `<div class="ch-head"><h3>${ci+1}. ${ch}</h3><span class="count">${got} / ${idxs.length*2} <span class="star on">★</span></span></div>
+      <div class="ch-desc">${CH_DESC[ch] || ''}</div><div class="tiles"></div>`;
+    const grid = sec.querySelector('.tiles');
+    idxs.forEach((i, n) => {
+      const lv = LEVELS[i], st = starsFor(i);
+      const b = document.createElement('button'); b.className = 'tile' + (i===li ? ' cur' : '');
+      b.setAttribute('aria-label', `Level ${ci+1}.${n+1}, ${lv.name}, ${st} of 2 stars`); b.title = lv.name;
+      b.innerHTML = thumb(lv) + `<span class="num">${n+1}</span><span class="stars"><span class="star${st>=1?' on':''}">★</span><span class="star${st>=2?' on':''}">★</span></span>`;
+      b.onclick = () => { $('sheet').classList.remove('open'); loadLevel(i); };
+      grid.append(b);
+    });
+    list.append(sec);
+  });
+  $('sheet').classList.add('open');
+  const cur = list.querySelector('.tile.cur'); if (cur) cur.scrollIntoView({ block:'center' });
+}
+$('starBtn').onclick = openLevels;
+$('levelBtn').onclick = openLevels;
+$('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') e.target.classList.remove('open'); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ $('sheet').classList.remove('open'); if (preview){ preview = null; refresh(); } }
+  if (e.key === 'Enter' && preview) applyPreview();
+  if ((e.key === 'z' || e.key === 'u') && !e.metaKey) undo();
+});
+
+/* ================= view ================= */
+let W=0, H=0, dpr=1;
+const view = { s:0, ox:0, oy:0, md:1 };
+function resize(){
+  const r = $('board').getBoundingClientRect(); dpr = window.devicePixelRatio || 1;
+  W = r.width; H = r.height;
+  stage.width = glc.width = Math.round(W*dpr); stage.height = glc.height = Math.round(H*dpr);
+}
+new ResizeObserver(resize).observe($('board'));
+function targetView(){
+  const pts = P.slice();
+  if (preview && preview.tool === 'add') pts.push(...opts.add[preview.k].pts);
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
+  let md = Infinity;
+  for (let i=0;i<P.length;i++) for (let j=i+1;j<P.length;j++) md = Math.min(md, Math.hypot(P[i][0]-P[j][0], P[i][1]-P[j][1]));
+  // leave room for the selection goo around the outer dots
+  const pad = 20, m = 1.3*md;
+  const s = Math.min((W-2*pad)/(maxX-minX+m), (H-2*pad)/(maxY-minY+m), 190/md);
+  return { s, ox: W/2 - s*(minX+maxX)/2, oy: H/2 + s*(minY+maxY)/2, md };
+}
+
+/* ================= metaball selection ================= */
+const goo = document.createElement('canvas'), gctx = goo.getContext('2d');
+let gooImg = null; const STEP = 3;
+function hexRGB(h){ h = h.replace('#',''); if (h.length === 3) h = h.split('').map(c=>c+c).join(''); const n = parseInt(h,16); return [n>>16&255, n>>8&255, n&255]; }
+const smooth = (a,b,x) => { const t = Math.max(0, Math.min(1, (x-a)/(b-a))); return t*t*(3-2*t); };
+function drawGoo(blobs, segs, holes, rgb){
+  if (!blobs.length) return;
+  const gw = Math.ceil(W/STEP)+1, gh = Math.ceil(H/STEP)+1;
+  if (goo.width !== gw || goo.height !== gh || !gooImg){ goo.width = gw; goo.height = gh; gooImg = gctx.createImageData(gw, gh); }
+  const d = gooImg.data; d.fill(0);
+  let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+  for (const b of blobs){ const m = Math.sqrt(b.r2)*2.2; x0=Math.min(x0,b.x-m); y0=Math.min(y0,b.y-m); x1=Math.max(x1,b.x+m); y1=Math.max(y1,b.y+m); }
+  const gx0 = Math.max(0, Math.floor(x0/STEP)), gy0 = Math.max(0, Math.floor(y0/STEP));
+  const gx1 = Math.min(gw-1, Math.ceil(x1/STEP)), gy1 = Math.min(gh-1, Math.ceil(y1/STEP));
+  const [R,G,B] = rgb;
+  for (let gy=gy0; gy<=gy1; gy++){
+    const py = gy*STEP;
+    for (let gx=gx0; gx<=gx1; gx++){
+      const px = gx*STEP; let f = 0;
+      for (const b of blobs){ const dx=px-b.x, dy=py-b.y; f += b.r2/(dx*dx+dy*dy+1); }
+      for (const s of segs){
+        const vx=s.x1-s.x0, vy=s.y1-s.y0, l2=vx*vx+vy*vy||1;
+        let t = ((px-s.x0)*vx + (py-s.y0)*vy)/l2; t = t<0?0:t>1?1:t;
+        const dx = px-(s.x0+vx*t), dy = py-(s.y0+vy*t);
+        f += s.r2/(dx*dx+dy*dy+1);
+      }
+      for (const h of holes){ const dx=px-h.x, dy=py-h.y; f -= h.r2/(dx*dx+dy*dy+1); }
+      if (f < .85) continue;
+      const fill = smooth(.9, 1.05, f)*.26, rim = smooth(.9, 1.0, f)*(1 - smooth(1.04, 1.3, f))*.75;
+      const a = Math.min(1, fill + rim), o = (gy*gw + gx)*4;
+      d[o]=R; d[o+1]=G; d[o+2]=B; d[o+3]=a*255;
+    }
+  }
+  gctx.putImageData(gooImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(goo, 0, 0, gw, gh, 0, 0, gw*STEP, gh*STEP);
+}
+
+
+/* ================= GPU selection shader ================= */
+const glc = $('gl'); let gl = null, glProg = null; const GU = {}; let MAXN = 64;
+function initGL(){
+  try{ gl = glc.getContext('webgl', { premultipliedAlpha:true, antialias:false, alpha:true }); }catch(e){ gl = null; }
+  if (!gl || !gl.getExtension('OES_standard_derivatives')){ gl = null; return; }
+  MAXN = Math.min(64, (gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) || 0) - 16);
+  if (MAXN < 25){ gl = null; return; }     // too few uniforms for big boards: CPU renderer
+  dotArr = new Float32Array(MAXN*4);
+  const vs = 'attribute vec2 a; void main(){ gl_Position = vec4(a,0.,1.); }';
+  const fs = `#extension GL_OES_standard_derivatives : enable
+precision highp float;
+#define MAXN ${MAXN}
+uniform vec4 uDot[MAXN];
+uniform int uN;
+uniform vec4 uCen;
+uniform float uR, uUnder, uRim, uSpoke, uFill, uRimA, uDash;
+uniform vec3 uCol;
+float segD(vec2 p, vec2 a, vec2 b){ vec2 pa = p-a, ba = b-a; float h = clamp(dot(pa,ba)/max(dot(ba,ba),1e-4), 0., 1.); return length(pa - ba*h); }
+void main(){
+  vec2 p = gl_FragCoord.xy;
+  // metaball field: selected dots, spokes to the symmetry center, and a center blob
+  float f = 0.;
+  // "under" zone: how close this pixel is to an unselected dot the goo has to pass beneath
+  float under = 0.; vec2 uc = vec2(0.); float ud = 1e9;
+  for (int i = 0; i < MAXN; i++){
+    if (i >= uN) break;
+    vec4 d = uDot[i]; vec2 q = p - d.xy; float d2 = dot(q,q);
+    float r = uR*max(d.z, 0.); f += r*r/(d2 + 1.);
+    if (uCen.z > .01 && d.z > .5){ float rs = uR*uSpoke*uCen.z; float s = segD(p, uCen.xy, d.xy); f += rs*rs/(s*s + 1.); }
+    float un = 1. - clamp(d.z, 0., 1.);
+    if (un > .01){
+      float dd = sqrt(d2);
+      float z = un*(1. - smoothstep(uUnder*.75, uUnder, dd));
+      if (z > under){ under = z; }
+      if (dd < ud){ ud = dd; uc = d.xy; }
+    }
+  }
+  if (uCen.z > .01){ vec2 q = p - uCen.xy; float rc = uR*.45*uCen.z; f += rc*rc/(dot(q,q) + 1.); }
+  // signed pixel distance to the edge, estimated on log(f): the true edge (f = 1) stays put,
+  // but steep interior ridges (the spokes) no longer look like edges
+  float lf = log(max(f, 1e-6));
+  vec2 g = vec2(dFdx(lf), dFdy(lf));
+  float sd = lf/max(length(g), 1e-5);
+  float cov = clamp(sd + .5, 0., 1.);
+  float rimMask = cov*(1. - clamp(sd - uRim + .5, 0., 1.));
+  // dashes run along the outline (the direction perpendicular to the field gradient)
+  vec2 tn = vec2(-g.y, g.x); tn /= max(length(tn), 1e-6);
+  float t = fract(dot(p, tn)/uDash);
+  float dash = smoothstep(.0, .08, t)*(1. - smoothstep(.5, .58, t));
+  float rim = rimMask*mix(1., dash, under);
+  float fillA = uFill*mix(1., .3, under);
+  float a = cov*fillA + rim*(uRimA - fillA);
+  gl_FragColor = vec4(uCol*a, a);
+}`;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  try{
+    glProg = gl.createProgram();
+    gl.attachShader(glProg, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(glProg, sh(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(glProg);
+    if (!gl.getProgramParameter(glProg, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(glProg));
+  }catch(e){ console.warn('Falling back to CPU selection effect:', e); gl = null; return; }
+  gl.useProgram(glProg);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(glProg, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  for (const n of ['uDot','uN','uCen','uR','uUnder','uRim','uSpoke','uFill','uRimA','uDash','uCol']) GU[n] = gl.getUniformLocation(glProg, n);
+}
+let dotArr = new Float32Array(MAXN*4);
+function renderGL(dots, cen, md, rgb){
+  gl.viewport(0, 0, glc.width, glc.height); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+  if (!dots.some(d => d[2] > .02)) return;
+  const n = Math.min(MAXN, dots.length), Hd = glc.height;
+  dotArr.fill(0);
+  for (let i=0;i<n;i++){ dotArr[i*4] = dots[i][0]*dpr; dotArr[i*4+1] = Hd - dots[i][1]*dpr; dotArr[i*4+2] = dots[i][2]; dotArr[i*4+3] = dots[i][3] || 0; }
+  const px = md*dpr, dotPx = Math.max(9, Math.min(16, md*.16))*dpr;
+  gl.useProgram(glProg);
+  gl.uniform4fv(GU.uDot, dotArr); gl.uniform1i(GU.uN, n);
+  gl.uniform4f(GU.uCen, cen ? cen[0]*dpr : 0, cen ? Hd - cen[1]*dpr : 0, cen ? cen[2] : 0, 0);
+  gl.uniform1f(GU.uR, px*.3);
+  gl.uniform1f(GU.uUnder, dotPx*2.6);
+  gl.uniform1f(GU.uSpoke, .3);
+  gl.uniform1f(GU.uRim, 2.5*dpr);
+  gl.uniform1f(GU.uFill, .26);
+  gl.uniform1f(GU.uRimA, .85);
+  gl.uniform1f(GU.uDash, 7*dpr);
+  gl.uniform3f(GU.uCol, rgb[0]/255, rgb[1]/255, rgb[2]/255);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// initGL();   // goo shader retired: selection is now drawn from the board graph
+
+/* ================= render loop ================= */
+let last = performance.now();
+const ease = t => t<.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+function tokenPos(i, k){
+  let p = P[i];
+  if (!anim || !anim.idx.has(i)) return p;
+  const e = ease(k);
+  if (anim.kind === 'rot') return rotP(p, anim.c, (anim.a0||0)*(1-e) + anim.ang*e);
+  // mirror: slide along the axis direction unchanged, perpendicular component flips through the line
+  const ux = Math.cos(anim.phi), uy = Math.sin(anim.phi), dx = p[0]-anim.c[0], dy = p[1]-anim.c[1];
+  const along = dx*ux + dy*uy, perp = -dx*uy + dy*ux, np = perp*Math.cos(Math.PI*e);
+  return [anim.c[0] + along*ux - np*uy, anim.c[1] + along*uy + np*ux];
+}
+function draw(now){
+  try{ drawFrame(now); }catch(e){ console.error(e); preview = null; anim = null; }
+  requestAnimationFrame(draw);
+}
+
+// construction guides: faint geometry showing which shapes are truly regular
+// guides are computed live from the current dots (plus any previewed additions), cached per point set
+let guideCache = { key:null, g:null };
+function computeGuides(pts, forceLattice){
+  const n = pts.length; if (n < 3) return null;
+  const d = (a,b) => Math.hypot(a[0]-b[0], a[1]-b[1]);
+  const at = q => { for (let i=0;i<n;i++) if (Math.abs(pts[i][0]-q[0])<1e-3 && Math.abs(pts[i][1]-q[1])<1e-3) return i; return -1; };
+  let md = Infinity; for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) md = Math.min(md, d(pts[i],pts[j]));
+  const edges = []; for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) if (Math.abs(d(pts[i],pts[j])-md) < 1e-3) edges.push([i,j]);
+  const nn = pts.map((p,i) => { let m = Infinity; for (let j=0;j<n;j++) if (j!==i) m = Math.min(m, d(p,pts[j])); return m; });
+  const polys = new Map();
+  for (let k=3;k<=8;k++){
+    const c = Math.cos(TAU/k), s = Math.sin(TAU/k);
+    for (let a=0;a<n;a++) for (let b=0;b<n;b++){
+      if (a===b || Math.abs(d(pts[a],pts[b])-nn[a]) > 1e-3) continue;
+      const vs = [a,b]; let ok = true;
+      for (let t=0;t<k-2;t++){
+        const p = pts[vs[vs.length-2]], q = pts[vs[vs.length-1]], dx = q[0]-p[0], dy = q[1]-p[1];
+        const r = at([q[0]+dx*c-dy*s, q[1]+dx*s+dy*c]); if (r < 0){ ok = false; break; } vs.push(r);
+      }
+      if (ok) polys.set([...vs].sort((x,y)=>x-y).join(','), vs);
+    }
+  }
+  const all = [...polys.values()];
+  const cen = v => [v.reduce((s,i)=>s+pts[i][0],0)/v.length, v.reduce((s,i)=>s+pts[i][1],0)/v.length];
+  const keep = all.filter(p => !all.some(q => {
+    if (q.length <= p.length) return false;
+    const cover = new Set(q), ci = at(cen(q)); if (ci >= 0) cover.add(ci);
+    return p.every(i => cover.has(i));
+  }));
+  let lattice = forceLattice || (keep.length >= 3 && new Set(keep.map(p=>p.length)).size === 1) || (!keep.length && n >= 5 && edges.length >= 4);
+  let hidden = null;
+  if (!lattice){
+    hidden = hiddenSymmetries(pts, keep, at, cen);
+    // polygons don't explain every symmetry: on a lattice patch, lattice lines explain them all at once
+    if (hidden.length && n >= 5 && onLattice(pts, edges)) lattice = true;
+  }
+  if (lattice){
+    const lines = new Map();
+    for (const [i,j] of edges){
+      const a = pts[i], b = pts[j]; let ang = ((Math.atan2(b[1]-a[1], b[0]-a[0]) % Math.PI) + Math.PI) % Math.PI;
+      if (Math.abs(ang-Math.PI) < 1e-3) ang = 0;
+      const ux = Math.cos(ang), uy = Math.sin(ang), off = -uy*a[0]+ux*a[1];
+      const f3 = x => (Math.round(x*1000)/1000 + 0).toFixed(3), key = f3(ang)+'|'+f3(off);
+      if (!lines.has(key)) lines.set(key, { ux, uy, off, ts:[] });
+      lines.get(key).ts.push(ux*a[0]+uy*a[1], ux*b[0]+uy*b[1]);
+    }
+    return { lines: [...lines.values()].map(({ux,uy,off,ts}) => { const t0 = Math.min(...ts), t1 = Math.max(...ts), px = -uy*off, py = ux*off;
+      return [[px+ux*t0, py+uy*t0], [px+ux*t1, py+uy*t1]]; }) };
+  }
+  const polyG = keep.map(v => { const c = cen(v); return { c, r: d(c, pts[v[0]]), v: v.map(i => pts[i]) }; });
+  // hidden rotational symmetries not explained by the marked polygons
+  const rots = hidden || [];
+  const outPolys = polyG.slice(), pairs = [];
+  for (const h of rots){
+    if (h.k === 2) pairs.push({ c: h.c, segs: h.orbits.map(o => [pts[o[0]], pts[o[1]]]), mid: h.center >= 0 });
+    else for (const o of h.orbits) outPolys.push({ c: h.c, r: d(h.c, pts[o[0]]), v: o.map(i => pts[i]), hidden: true });
+  }
+  if (!outPolys.length && !pairs.length) return null;
+  return { polys: outPolys, pairs };
+}
+function onLattice(pts, edges){
+  if (!edges.length) return false;
+  const [i,j] = edges[0], ux = pts[j][0]-pts[i][0], uy = pts[j][1]-pts[i][1];
+  for (const deg of [90, 60]){
+    const t = deg*Math.PI/180, vx = ux*Math.cos(t)-uy*Math.sin(t), vy = ux*Math.sin(t)+uy*Math.cos(t), det = ux*vy-uy*vx;
+    if (pts.every(p => { const dx = p[0]-pts[i][0], dy = p[1]-pts[i][1], a = (dx*vy-dy*vx)/det, b = (ux*dy-uy*dx)/det;
+      return Math.abs(a-Math.round(a)) < 1e-3 && Math.abs(b-Math.round(b)) < 1e-3; })) return true;
+  }
+  return false;
+}
+function hiddenSymmetries(pts, keep, at, cen){
+  const n = pts.length, found = new Map();
+  const rotAbout = (p, c, th) => { const dx = p[0]-c[0], dy = p[1]-c[1], cs = Math.cos(th), sn = Math.sin(th); return [c[0]+dx*cs-dy*sn, c[1]+dx*sn+dy*cs]; };
+  for (let k=2;k<=8;k++){
+    const th = TAU/k, cs = Math.cos(th), sn = Math.sin(th);
+    for (let a=0;a<n;a++) for (let b=0;b<n;b++){
+      if (a===b || (k===2 && b<a)) continue;
+      // centre c with rot(a,c,th) = b:  (I-R)c = b - R a
+      const A = pts[a], B = pts[b], rx = B[0]-(cs*A[0]-sn*A[1]), ry = B[1]-(sn*A[0]+cs*A[1]);
+      const m00 = 1-cs, m01 = sn, m10 = -sn, m11 = 1-cs, det = m00*m11-m01*m10;
+      const c = [(m11*rx-m01*ry)/det, (-m10*rx+m00*ry)/det];
+      const key = k+'|'+c[0].toFixed(3)+','+c[1].toFixed(3);
+      if (found.has(key)) continue;
+      const ci = at(c), seen = new Set(), orbits = [];
+      for (let i=0;i<n;i++){
+        if (i === ci || seen.has(i)) continue;
+        const o = [i]; let q = pts[i], ok = true;
+        for (let t=1;t<k;t++){ q = rotAbout(q, c, th); const j = at(q); if (j < 0){ ok = false; break; } o.push(j); }
+        if (ok){ o.forEach(j => seen.add(j)); orbits.push(o); }
+      }
+      const size = orbits.length*k + (ci >= 0 ? 1 : 0);
+      found.set(key, { k, c, center: ci, orbits, set: new Set([...orbits.flat(), ...(ci>=0?[ci]:[])]), ok: size >= 3 && orbits.length > 0 });
+    }
+  }
+  let list = [...found.values()].filter(h => h.ok);
+  // keep only the highest order at each centre for the same dots
+  list = list.filter(h => !list.some(g => g !== h && g.k > h.k && g.k % h.k === 0 && Math.hypot(g.c[0]-h.c[0], g.c[1]-h.c[1]) < 1e-3 && g.set.size === h.set.size));
+  // drop structures already explained by marked polygons (dots all belong to polygons wholly inside the structure)
+  const explained = h => {
+    const inside = keep.filter(v => v.every(i => h.set.has(i)));
+    const cov = new Set(); for (const v of inside){ v.forEach(i => cov.add(i)); const cc = at(cen(v)); if (cc >= 0) cov.add(cc); }
+    return [...h.set].every(i => cov.has(i));
+  };
+  return list.filter(h => !explained(h));
+}
+function currentGuides(){
+  const pts = P.slice();
+  if (preview && preview.tool === 'add' && opts.add && opts.add[preview.k]) pts.push(...opts.add[preview.k].pts);
+  const key = L.name + '#' + pts.map(p => p[0].toFixed(3)+','+p[1].toFixed(3)).join(';');
+  if (guideCache.key !== key) guideCache = { key, g: computeGuides(pts, L.name === 'Lattice') };
+  return guideCache.g;
+}
+function drawGuides(X, Y, col){
+  const g = currentGuides(); if (!g) return;
+  ctx.save(); ctx.strokeStyle = col; ctx.lineCap = 'round';
+  if (g.lines){
+    ctx.globalAlpha = .22; ctx.lineWidth = 1;
+    for (const [a,b] of g.lines){ ctx.beginPath(); ctx.moveTo(X(a[0]),Y(a[1])); ctx.lineTo(X(b[0]),Y(b[1])); ctx.stroke(); }
+  }
+  const sizes = [...new Set((g.polys || []).map(pg => pg.v.length))].sort((a,b) => a-b);   // distinct angles, largest first
+  for (const pg of (g.polys || [])){
+    const ticks = sizes.indexOf(pg.v.length) + 1;
+    const cx = X(pg.c[0]), cy = Y(pg.c[1]), R = pg.r*view.s, n = pg.v.length;
+    ctx.globalAlpha = .26; ctx.lineWidth = 1;
+    ctx.setLineDash([3,4]); ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    const angs = pg.v.map(v => Math.atan2(Y(v[1])-cy, X(v[0])-cx)).sort((a,b) => a-b);
+    ctx.globalAlpha = .2;
+    for (const a of angs){ ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx+Math.cos(a)*R, cy+Math.sin(a)*R); ctx.stroke(); }
+    // equal-angle marks: an arc in every sector, each with the same tick
+    const ar = Math.min(R*.3, 20), gap = Math.min(.18, Math.PI/n*.35);
+    ctx.globalAlpha = .34;
+    for (let i=0;i<n;i++){
+      const a0 = angs[i], a1 = i+1<n ? angs[i+1] : angs[0]+TAU, m = (a0+a1)/2;
+      ctx.beginPath(); ctx.arc(cx, cy, ar, a0+gap, a1-gap); ctx.stroke();
+      for (let t=0;t<ticks;t++){
+        const tm = m + (t - (ticks-1)/2) * (3.2/ar);
+        ctx.beginPath(); ctx.moveTo(cx+Math.cos(tm)*(ar-3.5), cy+Math.sin(tm)*(ar-3.5)); ctx.lineTo(cx+Math.cos(tm)*(ar+3.5), cy+Math.sin(tm)*(ar+3.5)); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = .3; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, 1.6, 0, TAU); ctx.fill();
+  }
+  // half turns: every pair is split evenly by the centre, shown with matching ticks on both halves
+  for (const pr of (g.pairs || [])){
+    const lens = [...new Set(pr.segs.map(([a,b]) => Math.hypot(a[0]-b[0], a[1]-b[1]).toFixed(3)))].sort();
+    ctx.globalAlpha = .28; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+    for (const [a,b] of pr.segs){ ctx.beginPath(); ctx.moveTo(X(a[0]),Y(a[1])); ctx.lineTo(X(b[0]),Y(b[1])); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.globalAlpha = .4;
+    for (const [a,b] of pr.segs){
+      const ticks = Math.min(3, lens.indexOf(Math.hypot(a[0]-b[0], a[1]-b[1]).toFixed(3)) + 1);
+      const ax = X(a[0]), ay = Y(a[1]), bx = X(b[0]), by = Y(b[1]), L = Math.hypot(bx-ax, by-ay) || 1, ux = (bx-ax)/L, uy = (by-ay)/L;
+      for (const f of [.25, .75]){
+        const mx = ax + (bx-ax)*f, my = ay + (by-ay)*f;
+        for (let t=0;t<ticks;t++){ const o = (t-(ticks-1)/2)*3.2, px = mx+ux*o, py = my+uy*o;
+          ctx.beginPath(); ctx.moveTo(px-uy*4, py+ux*4); ctx.lineTo(px+uy*4, py-ux*4); ctx.stroke(); }
+      }
+    }
+    ctx.globalAlpha = .35; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(X(pr.c[0]), Y(pr.c[1]), 2, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// links/arrows bow sideways when a dot sits on (or near) the straight line, so they never look like they end there
+let mdCache = { n:-1, md:1 };
+function minSpacing(pts){
+  if (pts === P && mdCache.n === P.length) return mdCache.md;
+  let md = Infinity; for (let i=0;i<pts.length;i++) for (let j=i+1;j<pts.length;j++) md = Math.min(md, Math.hypot(pts[i][0]-pts[j][0], pts[i][1]-pts[j][1]));
+  if (!isFinite(md)) md = 1;
+  if (pts === P) mdCache = { n:P.length, md };
+  return md;
+}
+function bowCtrl(pa, pb, pts){
+  const dx = pb[0]-pa[0], dy = pb[1]-pa[1], len = Math.hypot(dx, dy) || 1, nx = -dy/len, ny = dx/len;
+  const md = minSpacing(pts); let w = 0;
+  for (const q of pts){
+    const qx = q[0]-pa[0], qy = q[1]-pa[1], t = (qx*dx+qy*dy)/(len*len);
+    if (t < .08 || t > .92) continue;
+    w = Math.max(w, 1 - Math.abs(qx*nx+qy*ny)/(.3*md));
+  }
+  const h = Math.min(.45*md, .22*len) * Math.max(0, w);
+  return [(pa[0]+pb[0])/2 + nx*h, (pa[1]+pb[1])/2 + ny*h];
+}
+
+// ---- board graph: Delaunay triangulation, cocircular faces merged (squares stay squares), long hull edges pruned
+let graphCache = { key:'', E:[], F:[] };
+function circum(a,b,c){ const d = 2*(a[0]*(b[1]-c[1])+b[0]*(c[1]-a[1])+c[0]*(a[1]-b[1]));
+  if (Math.abs(d) < 1e-12) return [0,0,Infinity];
+  const A=a[0]*a[0]+a[1]*a[1], B=b[0]*b[0]+b[1]*b[1], C=c[0]*c[0]+c[1]*c[1];
+  const ux=(A*(b[1]-c[1])+B*(c[1]-a[1])+C*(a[1]-b[1]))/d, uy=(A*(c[0]-b[0])+B*(a[0]-c[0])+C*(b[0]-a[0]))/d;
+  return [ux,uy,Math.hypot(a[0]-ux,a[1]-uy)]; }
+function boardGraph(pts){
+  const key = pts.length + ':' + pts.map(p => p[0].toFixed(3)+','+p[1].toFixed(3)).join(';');
+  if (graphCache.key === key) return graphCache;
+  const n = pts.length, A = pts.concat([[-1e4,-1e4],[1e4,-1e4],[0,1e4]]); let T = [[n,n+1,n+2]];
+  for (let i=0;i<n;i++){
+    const p = A[i], bad = [], keep = [];
+    for (const t of T){ const c = circum(A[t[0]],A[t[1]],A[t[2]]); (Math.hypot(p[0]-c[0],p[1]-c[1]) < c[2]-1e-9 ? bad : keep).push(t); }
+    const cnt = new Map(), ek = (u,v) => Math.min(u,v)+','+Math.max(u,v);
+    for (const t of bad) for (const [u,v] of [[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]]) cnt.set(ek(u,v),(cnt.get(ek(u,v))||0)+1);
+    for (const t of bad) for (const [u,v] of [[t[0],t[1]],[t[1],t[2]],[t[2],t[0]]]) if (cnt.get(ek(u,v)) === 1) keep.push([u,v,i]);
+    T = keep;
+  }
+  let faces = T.filter(t => t.every(v => v < n));
+  const ek = (u,v) => Math.min(u,v)+','+Math.max(u,v);
+  const onC = (f,c) => f.every(v => Math.abs(Math.hypot(pts[v][0]-c[0],pts[v][1]-c[1]) - c[2]) < 1e-4);
+  for (let merged = true; merged;){
+    merged = false;
+    outer: for (let a=0;a<faces.length;a++) for (let b=a+1;b<faces.length;b++){
+      const fa = faces[a], fb = faces[b]; if (fa.filter(v => fb.includes(v)).length !== 2) continue;
+      const c = circum(pts[fa[0]],pts[fa[1]],pts[fa[2]]); if (!onC(fa,c) || !onC(fb,c)) continue;
+      const vs = [...new Set(fa.concat(fb))], cx = vs.reduce((s,v)=>s+pts[v][0],0)/vs.length, cy = vs.reduce((s,v)=>s+pts[v][1],0)/vs.length;
+      vs.sort((u,v) => Math.atan2(pts[u][1]-cy,pts[u][0]-cx) - Math.atan2(pts[v][1]-cy,pts[v][0]-cx));
+      faces.splice(b,1); faces[a] = vs; merged = true; break outer;
+    }
+  }
+  const md = minSpacing(pts), es = new Map();
+  for (const f of faces) for (let k=0;k<f.length;k++){ const u = f[k], v = f[(k+1)%f.length]; es.set(ek(u,v),[u,v]); }
+  const E = [...es.values()].filter(([u,v]) => Math.hypot(pts[u][0]-pts[v][0],pts[u][1]-pts[v][1]) <= 2.05*md);
+  const eset = new Set(E.map(([u,v]) => ek(u,v)));
+  const F = faces.filter(f => f.every((u,k) => eset.has(ek(u,f[(k+1)%f.length]))));
+  graphCache = { key, E, F }; return graphCache;
+}
+// ---- selection: disks on selected dots, bars on edges with both ends selected, filled faces; one merged shape
+const selFill = document.createElement('canvas'), selRing = document.createElement('canvas');
+function drawSelection(gooPos, X, Y, mdPx, col, conn){   // conn: [a, b, pa, pb, ctrl] links/arrows in world coords
+  const W = stage.width, H = stage.height, dpr = W / stage.clientWidth;
+  for (const c of [selFill, selRing]) if (c.width !== W || c.height !== H){ c.width = W; c.height = H; }
+  const live = []; for (let i=0;i<P.length;i++) if (selAmt[i] > .02) live.push(i);
+  if (!live.length) return;
+  const amt = i => Math.min(1.15, Math.max(0, selAmt[i]));
+  const { E, F } = boardGraph(P), R = mdPx*.3, Rb = mdPx*.17;
+  const SE = E.filter(([u,v]) => selAmt[u] > .02 && selAmt[v] > .02);
+  const SF = F.filter(f => f.every(v => selAmt[v] > .02));
+  const shapes = (g, grow) => {
+    g.setTransform(dpr,0,0,dpr,0,0); g.fillStyle = g.strokeStyle = col; g.lineCap = 'round';
+    for (const i of live){ const p = gooPos(i); g.beginPath(); g.arc(X(p[0]), Y(p[1]), Math.max(0, R*amt(i)) + grow, 0, TAU); g.fill(); }
+    for (const [u,v] of SE){ const a = gooPos(u), b = gooPos(v), w = Rb*Math.min(amt(u), amt(v));
+      g.lineWidth = 2*(w + grow); g.beginPath(); g.moveTo(X(a[0]),Y(a[1])); g.lineTo(X(b[0]),Y(b[1])); g.stroke(); }
+    for (const [a,b,pa,pb,cc] of (conn||[])){ if (selAmt[a] <= .02 || selAmt[b] <= .02) continue;
+      const w = Rb*Math.min(amt(a), amt(b)); g.lineWidth = 2*(w + grow);
+      g.beginPath(); g.moveTo(X(pa[0]),Y(pa[1])); g.quadraticCurveTo(X(cc[0]),Y(cc[1]),X(pb[0]),Y(pb[1])); g.stroke(); }
+    for (const f of SF){ const m = Math.min(...f.map(amt)), q = f.map(gooPos);
+      const cx = q.reduce((s,p)=>s+X(p[0]),0)/q.length, cy = q.reduce((s,p)=>s+Y(p[1]),0)/q.length;
+      g.beginPath(); q.forEach((p,k) => { const x = cx + (X(p[0])-cx)*Math.min(1,m), y = cy + (Y(p[1])-cy)*Math.min(1,m); k ? g.lineTo(x,y) : g.moveTo(x,y); });
+      g.closePath(); g.fill(); if (grow){ g.lineWidth = 2*grow; g.lineJoin = 'round'; g.stroke(); } }
+  };
+  const fc = selFill.getContext('2d'), rc = selRing.getContext('2d');
+  fc.setTransform(1,0,0,1,0,0); fc.clearRect(0,0,W,H); shapes(fc, 0);
+  rc.setTransform(1,0,0,1,0,0); rc.clearRect(0,0,W,H); shapes(rc, 2);
+  rc.setTransform(1,0,0,1,0,0); rc.globalCompositeOperation = 'destination-out'; rc.drawImage(selFill, 0, 0); rc.globalCompositeOperation = 'source-over';
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha = .2; ctx.drawImage(selFill, 0, 0);
+  ctx.globalAlpha = .9; ctx.drawImage(selRing, 0, 0);
+  ctx.restore();
+}
+function mixHex(a, b, t){ const A = hexRGB(a), B = hexRGB(b); const c = A.map((v,k) => Math.round(v + (B[k]-v)*t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`; }
+function drawFrame(now){
+  if (preview && !(opts[preview.tool] && opts[preview.tool][preview.k])) preview = null;
+  const dt = Math.min(.05, (now-last)/1000); last = now;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  if (!L || !W) return;
+
+  const tv = targetView();
+  if (!view.s) Object.assign(view, tv);
+  const kk = 1 - Math.exp(-dt*9);
+  view.s += (tv.s-view.s)*kk; view.ox += (tv.ox-view.ox)*kk; view.oy += (tv.oy-view.oy)*kk; view.md = tv.md;
+  const X = x => view.ox + x*view.s, Y = y => view.oy - y*view.s;
+  const dot = Math.max(9, Math.min(16, view.md*view.s*0.16));
+  const PAL = { r:css('--red'), g:css('--green'), y:css('--gold') };
+  const ink = css('--ink'), border = css('--border'), grey = css('--grey'), selC = css('--sel');
+
+  let k = 1;
+  if (anim){ k = Math.min(1, (now-anim.t0)/anim.dur); }
+  drawGuides(X, Y, grey);
+
+  // selection springs
+  const stiff = 260, damp = 18;
+  for (let i=0;i<P.length;i++){
+    const tgt = sel.has(i) ? 1 : 0;
+    selVel[i] += ((tgt - selAmt[i])*stiff - selVel[i]*damp)*dt;
+    selAmt[i] += selVel[i]*dt;
+  }
+  const fit = sel.size >= 3 && anyFit();
+  spokeAmt += ((fit ? 1 : 0) - spokeAmt)*(1-Math.exp(-dt*(fit?7:14)));
+
+  // links
+  ctx.lineCap = 'round';
+  for (const [a,b] of (anim ? anim.links : links)){
+    const pa = tokenPos(a, k), pb = tokenPos(b, k), cc = bowCtrl(pa, pb, P);
+    ctx.strokeStyle = ink; ctx.globalAlpha = .28; ctx.lineWidth = dot*.55;
+    ctx.beginPath(); ctx.moveTo(X(pa[0]),Y(pa[1])); ctx.quadraticCurveTo(X(cc[0]),Y(cc[1]),X(pb[0]),Y(pb[1])); ctx.stroke();
+  }
+  for (const [a,b] of (anim ? anim.arrows : arrows)){
+    const pa = tokenPos(a, k), pb = tokenPos(b, k), cc = bowCtrl(pa, pb, P);
+    const ax = X(pa[0]), ay = Y(pa[1]), bx = X(pb[0]), by = Y(pb[1]), cx = X(cc[0]), cy = Y(cc[1]);
+    const len = Math.hypot(bx-cx, by-cy) || 1, ux = (bx-cx)/len, uy = (by-cy)/len;   // head follows the curve's end tangent
+    const tipX = bx - ux*dot*1.35, tipY = by - uy*dot*1.35, hw = dot*.75, hl = dot*1.25;
+    ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.globalAlpha = .28; ctx.lineWidth = dot*.55;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, tipX - ux*hl*.6, tipY - uy*hl*.6); ctx.stroke();
+    ctx.globalAlpha = .45;
+    ctx.beginPath(); ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - ux*hl - uy*hw, tipY - uy*hl + ux*hw);
+    ctx.lineTo(tipX - ux*hl + uy*hw, tipY - uy*hl - ux*hw); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // selection effect
+  const idx = selIdx();
+  const center = idx.length ? centroid(P, idx) : null;
+  const gooPos = i => (anim && anim.kind === 'rot' && anim.idx.has(i)) ? rotP(P[i], anim.c, (anim.a0||0)*(1-ease(k)) + anim.ang*ease(k)) : P[i];
+  const mdPx = view.md*view.s;
+  const selCol = mixHex(grey, selC, Math.max(0, Math.min(1, spokeAmt)));
+  const conn = [];
+  for (const [a,b] of (anim ? anim.links : links).concat(anim ? anim.arrows : arrows)){
+    const pa = tokenPos(a, k), pb = tokenPos(b, k); conn.push([a, b, pa, pb, bowCtrl(pa, pb, P)]); }
+  drawSelection(gooPos, X, Y, mdPx, selCol, conn);
+  if (center && spokeAmt > .02 && !preview){   // dashed spokes from the turning centre
+    ctx.save(); ctx.strokeStyle = selCol; ctx.globalAlpha = .55*spokeAmt; ctx.lineWidth = 1.3; ctx.setLineDash([3,4]);
+    for (const i of idx){ const p = gooPos(i); ctx.beginPath(); ctx.moveTo(X(center[0]),Y(center[1])); ctx.lineTo(X(p[0]),Y(p[1])); ctx.stroke(); }
+    ctx.restore();
+  }
+  const hollowAt = (center && spokeAmt > .3) ? P.findIndex((p,i) => !sel.has(i) && Math.hypot(p[0]-center[0], p[1]-center[1]) < 1e-3) : -1;
+
+  // preview ghosts
+  if (preview){
+    const o = opts[preview.tool][preview.k];
+    ctx.setLineDash([6,6]); ctx.strokeStyle = selC; ctx.lineWidth = 2;
+    if (preview.tool === 'm'){
+      const ux = Math.cos(o.phi), uy = Math.sin(o.phi), Lx = 1e3;
+      ctx.beginPath(); ctx.moveTo(X(o.c[0]-ux*Lx), Y(o.c[1]-uy*Lx)); ctx.lineTo(X(o.c[0]+ux*Lx), Y(o.c[1]+uy*Lx)); ctx.stroke();
+      ctx.setLineDash([]);
+      for (const i in o.perm){ const j = o.perm[i], c = colors[+i]; if (!c || +i === j) continue;
+        ctx.globalAlpha = .4; ctx.fillStyle = PAL[c]; ctx.beginPath(); ctx.arc(X(P[j][0]),Y(P[j][1]),dot*1.25,0,TAU); ctx.fill(); }
+      ctx.globalAlpha = 1;
+    } else {
+      const pulse = 1 + .08*Math.sin(now/180);
+      for (const p of o.pts){ ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]),dot*pulse,0,TAU); ctx.stroke(); }
+      ctx.setLineDash([]);
+      if (o.info.kind === 'rot'){ ctx.fillStyle = selC; ctx.beginPath(); ctx.arc(X(o.info.c[0]),Y(o.info.c[1]),3.5,0,TAU); ctx.fill(); }
+      else {
+        const ux = Math.cos(o.info.phi), uy = Math.sin(o.info.phi), Lx = 1e3;
+        ctx.globalAlpha = .5; ctx.setLineDash([3,7]);
+        ctx.beginPath(); ctx.moveTo(X(o.info.c[0]-ux*Lx), Y(o.info.c[1]-uy*Lx)); ctx.lineTo(X(o.info.c[0]+ux*Lx), Y(o.info.c[1]+uy*Lx)); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // sockets
+  for (let i=0;i<P.length;i++){
+    const added = i >= L.pts.length;
+    let sc = 1;
+    if (born[i]){ const t = Math.min(1,(now-born[i])/450); sc = t<1 ? 1 + Math.sin(t*Math.PI)*.5 - (1-t)*.6 : 1; if (t>=1) delete born[i]; }
+    ctx.strokeStyle = added ? grey : border; ctx.lineWidth = 2; if (added) ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.arc(X(P[i][0]),Y(P[i][1]),dot*Math.max(.1,sc),0,TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // goal rings
+  for (const [i,c] of L.goal){
+    const done = !anim && colors[i] === c;
+    let r = dot*1.75, w = done ? 4 : 2.5;
+    if (solved){ const t = (now - solvedAt)/1000, wave = Math.max(0, 1 - Math.abs(t*2.2 - i*.25 - .2)); r += wave*dot*.6; }
+    ctx.strokeStyle = PAL[c]; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.arc(X(P[i][0]),Y(P[i][1]),r,0,TAU); ctx.stroke();
+  }
+
+  // tokens
+  const src = anim ? anim.from : colors;
+  for (let i=0;i<P.length;i++){
+    const p = tokenPos(i, k), c = src[i];
+    let sc = 1; if (born[i]){ const t = Math.min(1,(now-born[i])/450); sc = Math.max(0, t*(1+Math.sin(t*Math.PI)*.4)); }
+    ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]), (c ? dot : dot*.62)*sc, 0, TAU);
+    if (i === hollowAt && !c){ ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.stroke(); }
+    else { ctx.fillStyle = c ? PAL[c] : ink; ctx.fill(); }
+  }
+
+  // symmetry center
+  if (center && spokeAmt > .05 && !preview){
+    ctx.globalAlpha = spokeAmt; ctx.strokeStyle = selC; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X(center[0]),Y(center[1]),4,0,TAU); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  if (anim && k >= 1) finishAnim();
+}
+requestAnimationFrame(draw);
+
+/* ================= input ================= */
+let paint = null;
+function hit(e){
+  const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const dot = Math.max(9, Math.min(16, view.md*view.s*0.16));
+  let best = -1, bd = Math.max(26, dot*2.4);
+  P.forEach((p,i)=>{ const d = Math.hypot(view.ox + p[0]*view.s - mx, view.oy - p[1]*view.s - my); if (d < bd){ bd = d; best = i; } });
+  return best;
+}
+stage.addEventListener('pointerdown', e=>{
+  if (!L || !settle()) return;
+  audio();
+  const i = hit(e);
+  if (i < 0){
+    // tapping empty board clears the selection (and any preview)
+    if (sel.size || preview){ sel.clear(); preview = null; computeOpts(); sfx.deselect(); refresh(); }
+    return;
+  }
+  stage.setPointerCapture(e.pointerId);
+  paint = { id:e.pointerId, on: !sel.has(i) };
+  setSel(i, paint.on);
+});
+stage.addEventListener('pointermove', e=>{
+  if (!paint || paint.id !== e.pointerId) return;
+  const i = hit(e); if (i >= 0 && sel.has(i) !== paint.on) setSel(i, paint.on);
+});
+const endPaint = e => { if (paint && paint.id === e.pointerId) paint = null; };
+stage.addEventListener('pointerup', endPaint); stage.addEventListener('pointercancel', endPaint);
+
+loadLevel(prog.cur || 0);
+</script>
+</body>
+</html>
