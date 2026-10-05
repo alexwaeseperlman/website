@@ -96,8 +96,6 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 button:disabled .rv{color:inherit}
 .wallet{margin-left:auto;margin-right:8px;color:var(--ink);font-size:15px;white-space:nowrap}
 .wallet .bulb{color:var(--gold);margin-right:4px}
-.wnote{font-size:13px;color:var(--grey);margin:0 0 4px}
-.wnote:empty{display:none}
 .clock{font-variant-numeric:tabular-nums}
 .hcard .hd.short{margin-top:8px}
 .hchips{display:flex;flex-wrap:wrap;gap:6px}
@@ -266,7 +264,7 @@ header > button{height:38px;display:inline-flex;align-items:center;justify-conte
   <p>You can't move dots one at a time. Instead you select a shape and turn it, and every dot in the shape moves with it.</p>
   <div class="row"><button id="welcomeGo" class="primary">Show me</button></div>
 </div></div>
-<div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><span class="wallet" id="wallet"></span><button id="hclose">Close</button></div><div class="wnote" id="wnote"></div><div id="hcards"></div></div></div>
+<div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><span class="wallet" id="wallet"></span><button id="hclose">Close</button></div><div id="hcards"></div></div></div>
 <section class="screen" id="home" aria-label="Menu">
   <div class="home-inner">
     <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
@@ -743,6 +741,8 @@ function grantChapterReveals(){   // returns how many were just granted
   const n = (e - (prog.chGranted || 1)) * REVEALS.perChapter; prog.chGranted = e; addReveals(n, 'chapter'); return n;
 }
 const nextRevealIn = () => Math.max(0, REVEALS.every - (Date.now() - prog.revealAt));
+// time until the balance reaches `need` from free refills alone (each refill is 30 minutes after the last)
+const affordIn = need => need <= prog.reveals ? 0 : nextRevealIn() + (need - prog.reveals - 1) * REVEALS.every;
 const fmtClock = ms => { const t = Math.ceil(ms / 1000); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const BULB = '<svg class="bulb" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 // with none left, the button shows the countdown to the next free reveal instead of a 0
@@ -917,7 +917,8 @@ function openHints(){ regenReveals(); renderHints(); $('hsheet').classList.add('
 function renderWallet(){
   const n = prog.reveals;
   $('wallet').innerHTML = `${BULB}<b>${n}</b> reveal${n === 1 ? '' : 's'}`;
-  $('wnote').innerHTML = n < REVEALS.cap ? `Next free reveal in <span class="clock">${fmtClock(nextRevealIn())}</span>` : '';
+  for (const c of document.querySelectorAll('#hcards .clock[data-need]')){
+    const t = affordIn(+c.dataset.need); c.textContent = fmtClock(t); c.parentElement.setAttribute('aria-label', `Available in ${fmtClock(t)}`); }
 }
 function renderHints(){
   renderWallet(); renderHintBtn();
@@ -926,7 +927,9 @@ function renderHints(){
     const on = k < paid, cost = hintCost(L.name, k), afford = cost <= prog.reveals, card = document.createElement('div');
     card.className = 'hcard' + (on ? ' seen' : '');
     card.innerHTML = `<div class="hh"><div><div class="ht">${k+1}. ${h.t}</div><div class="hd">${h.d}</div></div>` +
-      (on ? '<span class="hs">✓ Viewed</span>' : `<button class="reveal"${afford ? '' : ' disabled'} aria-label="Reveal for ${cost}">Reveal <span class="rv">${BULB}${cost}</span></button>`) + '</div>';
+      (on ? '<span class="hs">✓ Viewed</span>' : afford
+        ? `<button class="reveal" aria-label="Reveal for ${cost}">Reveal <span class="rv">${BULB}${cost}</span></button>`
+        : `<button class="reveal" disabled><span class="clock" data-need="${cost}">${fmtClock(affordIn(cost))}</span> <span class="rv">${BULB}${cost}</span></button>`) + '</div>';
     if (on){
       const b = document.createElement('div'); b.className = 'hb';
       if (k === 0) b.textContent = `Par is ${L.par} move${L.par === 1 ? '' : 's'}.`;
