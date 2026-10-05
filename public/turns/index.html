@@ -1450,6 +1450,8 @@ function boardGraph(pts){
   }
   const md = minSpacing(pts), es = new Map();
   for (const f of faces) for (let k=0;k<f.length;k++){ const u = f[k], v = f[(k+1)%f.length]; es.set(ek(u,v),[u,v]); }
+  // nearest neighbours always join; this only matters when every dot is on one line and there are no faces
+  for (let u=0;u<n;u++) for (let v=u+1;v<n;v++) if (Math.hypot(pts[u][0]-pts[v][0],pts[u][1]-pts[v][1]) <= md*1.01 && !es.has(ek(u,v))) es.set(ek(u,v),[u,v]);
   const E = [...es.values()].filter(([u,v]) => Math.hypot(pts[u][0]-pts[v][0],pts[u][1]-pts[v][1]) <= 2.05*md);
   const eset = new Set(E.map(([u,v]) => ek(u,v)));
   const F = faces.filter(f => f.every((u,k) => eset.has(ek(u,f[(k+1)%f.length]))));
