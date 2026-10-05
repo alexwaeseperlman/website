@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Turns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
 }
 :root[data-theme="dark"]{ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --sel:#5aa9f5; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; }
 *,*::before,*::after{box-sizing:inherit}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;touch-action:manipulation}   /* no double-tap zoom; scrolling still works */
 body{
   background:var(--bg); color:var(--ink);
   font-family:"Roboto Slab",Rockwell,Georgia,serif; font-size:16px; line-height:1.4;
@@ -219,6 +219,9 @@ header > button{height:38px;display:inline-flex;align-items:center;justify-conte
     window.gtag = function(){ dataLayer.push(arguments); };
     gtag('js', new Date()); gtag('config', id);
   })();
+  // iOS Safari ignores user-scalable=no for pinches, so cancel its gesture events
+  ['gesturestart','gesturechange','gestureend'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); }, { passive:false }); });
+  document.addEventListener('touchmove', function(e){ if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
   if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
 </script>
 </head>
