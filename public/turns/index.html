@@ -224,7 +224,7 @@ header > button{height:38px;display:inline-flex;align-items:center;justify-conte
   // Supabase project for sign-in and synced progress (Project Settings -> API). Leave as is to hide sign-in.
   // The anon key is meant to be public: row-level security keeps each player to their own row.
   window.TURNS_CONFIG = { goatcounter: 'REPLACE_WITH_YOUR_CODE', ga4: 'G-WW9YY1BJML',
-    supabase: { url: 'REPLACE_WITH_SUPABASE_URL', anonKey: 'REPLACE_WITH_SUPABASE_ANON_KEY', providers: ['google', 'apple', 'github', 'email'] } };
+    supabase: { url: 'REPLACE_WITH_SUPABASE_URL', anonKey: 'REPLACE_WITH_SUPABASE_ANON_KEY', providers: ['google', 'email'] } };
   (function(){
     var c = (window.TURNS_CONFIG || {}).goatcounter;
     if (!c || c.indexOf('REPLACE') === 0) return;
