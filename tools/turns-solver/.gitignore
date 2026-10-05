@@ -1,0 +1,5 @@
+turns
+lat2
+sols.json
+results*.jsonl
+__pycache__/
