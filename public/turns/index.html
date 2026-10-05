@@ -97,6 +97,8 @@ button:disabled .rv{color:inherit}
 .wallet{margin-left:auto;margin-right:8px;color:var(--ink);font-size:15px;white-space:nowrap}
 .wallet .bulb{color:var(--gold);margin-right:4px}
 .wnote{font-size:13px;color:var(--grey);margin:0 0 4px}
+.wnote:empty{display:none}
+.clock{font-variant-numeric:tabular-nums}
 .hcard .hd.short{margin-top:8px}
 .hchips{display:flex;flex-wrap:wrap;gap:6px}
 .hchip{border:1.5px solid var(--border);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums}
@@ -741,11 +743,21 @@ function grantChapterReveals(){   // returns how many were just granted
   const n = (e - (prog.chGranted || 1)) * REVEALS.perChapter; prog.chGranted = e; addReveals(n, 'chapter'); return n;
 }
 const nextRevealIn = () => Math.max(0, REVEALS.every - (Date.now() - prog.revealAt));
-const fmtWait = ms => { const m = Math.ceil(ms / 60000); return m >= 60 ? '1 hour' : m <= 1 ? '1 minute' : m + ' minutes'; };
+const fmtClock = ms => { const t = Math.ceil(ms / 1000); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const BULB = '<svg class="bulb" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-function renderHintBtn(){ $('hintBtn').innerHTML = `Hint <span class="rv">${BULB}${prog.reveals}</span>`; $('hintBtn').setAttribute('aria-label', `Hint, ${prog.reveals} reveals left`); }
-setInterval(() => { const before = prog.reveals; regenReveals(); if (prog.reveals !== before){ renderHintBtn(); if ($('hsheet').classList.contains('open')) renderHints(); }
-  else if ($('hsheet').classList.contains('open') && prog.reveals < REVEALS.cap) renderWallet(); }, 15000);
+// with none left, the button shows the countdown to the next free reveal instead of a 0
+function renderHintBtn(){
+  const n = prog.reveals;
+  $('hintBtn').innerHTML = `Hint <span class="rv">${BULB}${n ? n : `<span class="clock">${fmtClock(nextRevealIn())}</span>`}</span>`;
+  $('hintBtn').setAttribute('aria-label', n ? `Hint, ${n} reveals left` : `Hint, next reveal in ${fmtClock(nextRevealIn())}`);
+}
+setInterval(() => {
+  if (prog.reveals >= REVEALS.cap) return;
+  const before = prog.reveals; regenReveals();
+  if (prog.reveals !== before && $('hsheet').classList.contains('open')) renderHints();
+  else if ($('hsheet').classList.contains('open')) renderWallet();
+  renderHintBtn();
+}, 1000);
 regenReveals(); renderHintBtn();
 
 /* ================= tutorial (levels 1.1 and 1.2) ================= */
@@ -905,8 +917,7 @@ function openHints(){ regenReveals(); renderHints(); $('hsheet').classList.add('
 function renderWallet(){
   const n = prog.reveals;
   $('wallet').innerHTML = `${BULB}<b>${n}</b> reveal${n === 1 ? '' : 's'}`;
-  $('wnote').innerHTML = (n < REVEALS.cap ? `Next free reveal in ${fmtWait(nextRevealIn())}. ` : '') +
-    'Par costs 1, move sizes 2, shapes 3. Each hint includes the ones above it, so you only pay the difference. Unlocking a chapter gives 3 more.';
+  $('wnote').innerHTML = n < REVEALS.cap ? `Next free reveal in <span class="clock">${fmtClock(nextRevealIn())}</span>` : '';
 }
 function renderHints(){
   renderWallet(); renderHintBtn();
@@ -915,8 +926,7 @@ function renderHints(){
     const on = k < paid, cost = hintCost(L.name, k), afford = cost <= prog.reveals, card = document.createElement('div');
     card.className = 'hcard' + (on ? ' seen' : '');
     card.innerHTML = `<div class="hh"><div><div class="ht">${k+1}. ${h.t}</div><div class="hd">${h.d}</div></div>` +
-      (on ? '<span class="hs">✓ Viewed</span>' : `<button class="reveal"${afford ? '' : ' disabled'} aria-label="Reveal for ${cost}">Reveal <span class="rv">${BULB}${cost}</span></button>`) + '</div>' +
-      (!on && !afford ? `<div class="hd short">You need ${cost - prog.reveals} more.</div>` : '');
+      (on ? '<span class="hs">✓ Viewed</span>' : `<button class="reveal"${afford ? '' : ' disabled'} aria-label="Reveal for ${cost}">Reveal <span class="rv">${BULB}${cost}</span></button>`) + '</div>';
     if (on){
       const b = document.createElement('div'); b.className = 'hb';
       if (k === 0) b.textContent = `Par is ${L.par} move${L.par === 1 ? '' : 's'}.`;
