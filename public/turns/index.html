@@ -90,6 +90,14 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .hcard .hb{margin-top:10px;color:var(--ink);font-size:15px}
 .hcard .hd{font-size:13px;color:var(--grey);margin-top:2px}
 .hcard.seen{border-color:var(--blue)}
+.bulb{width:15px;height:15px;vertical-align:-2px;margin-right:1px}
+.rv{display:inline-flex;align-items:center;gap:1px;line-height:1;vertical-align:-2px;font-variant-numeric:tabular-nums;color:var(--gold);font-weight:600}
+.rv .bulb{vertical-align:0}
+button:disabled .rv{color:inherit}
+.wallet{margin-left:auto;margin-right:8px;color:var(--ink);font-size:15px;white-space:nowrap}
+.wallet .bulb{color:var(--gold);margin-right:4px}
+.wnote{font-size:13px;color:var(--grey);margin:0 0 4px}
+.hcard .hd.short{margin-top:8px}
 .hchips{display:flex;flex-wrap:wrap;gap:6px}
 .hchip{border:1.5px solid var(--border);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums}
 .hshapes{display:flex;flex-wrap:wrap;gap:10px}
@@ -253,7 +261,7 @@ header > button{height:38px;display:inline-flex;align-items:center;justify-conte
   <p>You can't move dots one at a time. Instead you select a shape and turn it, and every dot in the shape moves with it.</p>
   <div class="row"><button id="welcomeGo" class="primary">Show me</button></div>
 </div></div>
-<div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><button id="hclose">Close</button></div><div id="hcards"></div></div></div>
+<div class="sheet" id="hsheet"><div class="inner"><div class="sheet-head"><h2>Hints</h2><span class="wallet" id="wallet"></span><button id="hclose">Close</button></div><div class="wnote" id="wnote"></div><div id="hcards"></div></div></div>
 <section class="screen" id="home" aria-label="Menu">
   <div class="home-inner">
     <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
@@ -486,6 +494,10 @@ const curIndex = () => { const i = LEVELS.findIndex(l => l.name === prog.curName
 let cloudRef = null, cloudTimer = 0;
 if (!prog.hints) prog.hints = {};
 const hintSeen = name => prog.hints[name] || 0;
+// hints are tiers (par, move sizes, shapes) worth 1, 2, 3; revealing a tier includes the ones above it,
+// so you pay only the difference. hintsPaid = value of the highest tier seen (0 if none).
+const hintsPaid = name => 32 - Math.clz32(hintSeen(name));
+const hintCost = (name, k) => Math.max(0, k + 1 - hintsPaid(name));
 const saveProg = () => {
   try{ localStorage.setItem(KEY, JSON.stringify(prog)); }catch(e){}
   if (cloudRef){ clearTimeout(cloudTimer); cloudTimer = setTimeout(() => cloudRef.set({ cur: prog.cur, best: prog.best, hints: prog.hints }).catch(()=>{}), 800); }
@@ -646,9 +658,10 @@ function finishAnim(){
     const before = starsFor(li), ci = CHAPTERS.indexOf(L.chapter);
     const nextWasEarned = ci + 1 < CHAPTERS.length && chapterEarned(ci + 1);
     const b = prog.best[L.name]; if (b === undefined || history.length < b) prog.best[L.name] = history.length;
-    track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`, 'level_complete', { moves: history.length, par: L.par, at_par: history.length <= L.par, hints_seen: hintSeen(L.name).toString(2).replace(/0/g, '').length });
+    track(`solve/${slug(L.name)}/${history.length <= L.par ? 'par' : 'over'}`, 'level_complete', { moves: history.length, par: L.par, at_par: history.length <= L.par, hints_seen: hintsPaid(L.name) });
     solvedStars = { now: starsFor(li), gained: starsFor(li) - before,
       unlocked: ci + 1 < CHAPTERS.length && !nextWasEarned && chapterEarned(ci + 1) ? CHAPTERS[ci + 1] : null };
+    solvedStars.reveals = grantChapterReveals(); renderHintBtn();
     saveProg(); setTimeout(()=>sfx.solve(), 60);
   }
   computeOpts(); refresh();
@@ -707,6 +720,31 @@ function buildToolbar(){
   }
 }
 
+/* ================= hint reveals ================= */
+// a wallet of hint reveals: 3 to start, +3 for every chapter unlocked, and while below 3 one comes back
+// every 30 minutes. addReveals is the one way in, so a future purchase only needs to call it.
+const REVEALS = { start:3, perChapter:3, cap:3, every:30*60*1000 };
+const earnedChapters = () => CHAPTERS.filter((_,c) => chapterEarned(c)).length;
+if (typeof prog.reveals !== 'number'){ prog.reveals = REVEALS.start; prog.chGranted = earnedChapters(); prog.revealAt = Date.now(); }
+function regenReveals(){
+  const now = Date.now();
+  if (prog.reveals >= REVEALS.cap){ prog.revealAt = now; return; }
+  const n = Math.floor((now - (prog.revealAt || now)) / REVEALS.every);
+  if (n > 0){ prog.reveals = Math.min(REVEALS.cap, prog.reveals + n); prog.revealAt += n * REVEALS.every; if (prog.reveals >= REVEALS.cap) prog.revealAt = now; saveProg(); }
+}
+function addReveals(n, source){ regenReveals(); prog.reveals += n; saveProg(); track(`reveals/${source}`, 'reveals_added', { amount:n, source }); }
+function grantChapterReveals(){   // returns how many were just granted
+  const e = earnedChapters(); if (e <= (prog.chGranted || 1)) return 0;
+  const n = (e - (prog.chGranted || 1)) * REVEALS.perChapter; prog.chGranted = e; addReveals(n, 'chapter'); return n;
+}
+const nextRevealIn = () => Math.max(0, REVEALS.every - (Date.now() - prog.revealAt));
+const fmtWait = ms => { const m = Math.ceil(ms / 60000); return m >= 60 ? '1 hour' : m <= 1 ? '1 minute' : m + ' minutes'; };
+const BULB = '<svg class="bulb" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function renderHintBtn(){ $('hintBtn').innerHTML = `Hint <span class="rv">${BULB}${prog.reveals}</span>`; $('hintBtn').setAttribute('aria-label', `Hint, ${prog.reveals} reveals left`); }
+setInterval(() => { const before = prog.reveals; regenReveals(); if (prog.reveals !== before){ renderHintBtn(); if ($('hsheet').classList.contains('open')) renderHints(); }
+  else if ($('hsheet').classList.contains('open') && prog.reveals < REVEALS.cap) renderWallet(); }, 15000);
+regenReveals(); renderHintBtn();
+
 /* ================= tutorial (levels 1.1 and 1.2) ================= */
 // Each step follows the level's own solution: highlight the dots to select, then the button to press.
 const TUTORIAL = {
@@ -745,6 +783,13 @@ function tutState(){
 function renderCoach(){
   const t = tutState();
   for (const b of document.querySelectorAll('.coached')) b.classList.remove('coached');
+  if (!t && L.name === 'Hexagon' && !prog.hintTut && !solved && !tutSkipped){
+    $('hint').innerHTML = `<div class="coach"><div class="ct"><span class="cs">Tutorial · Hints</span>Stuck? Tap <b>Hint</b>. Hints cost reveals, and you have ${prog.reveals}. ` +
+      `You get 3 more for each chapter you unlock, and while you have fewer than 3, one comes back every 30 minutes.</div><button id="tutSkip">Got it</button></div>`;
+    $('tutSkip').onclick = () => { prog.hintTut = true; saveProg(); track('tutorial/hints-dismiss', 'tutorial_skip', { tutorial:'hints' }); refresh(); };
+    $('hintBtn').classList.add('coached');
+    return true;
+  }
   if (!t) return false;
   // the tutorial points at one button, so drop the generic "new button" pulse
   for (const b of $('tools').querySelectorAll('.new')) b.classList.remove('new');
@@ -766,7 +811,7 @@ function maybeWelcome(){
 $('welcomeGo').onclick = () => { $('welcome').classList.remove('open'); prog.welcomed = true; saveProg(); };
 
 function lockNote(){
-  if (solvedStars && solvedStars.unlocked) return ` <b>${solvedStars.unlocked} unlocked!</b>`;
+  if (solvedStars && solvedStars.unlocked) return ` <b>${solvedStars.unlocked} unlocked!</b>` + (solvedStars.reveals ? ` +${solvedStars.reveals} hint reveals.` : '');
   if (li >= LEVELS.length-1 || levelOpen(li+1)) return '';
   const ci = CHAPTERS.indexOf(L.chapter);
   return ` Get all ${chMax(ci)} ★ in ${L.chapter} to unlock ${CHAPTERS[ci+1]} (you have ${chStars(ci)}).`;
@@ -778,7 +823,7 @@ function refresh(){
   const nw = introduced[li];
   $('hint').innerHTML = (nw.length ? `<b>New: ${nw.join(', ')}.</b> ` : '') + L.hint;
   const bestHere = prog.best[L.name];
-  const parKnown = (hintSeen(L.name) & 1) || (bestHere !== undefined && bestHere <= L.par) || (solved && history.length <= L.par);
+  const parKnown = (hintsPaid(L.name) >= 1) || (bestHere !== undefined && bestHere <= L.par) || (solved && history.length <= L.par);
   $('meta').textContent = parKnown ? `Moves ${history.length}, par ${L.par}` : `Moves ${history.length}`;
   $('undo').disabled = !history.length;
   $('reset').disabled = !history.length && !sel.size;
@@ -809,7 +854,7 @@ function refresh(){
   if (solved){
     const m = history.length, atPar = m <= L.par;
     st.innerHTML = `<span class="earned" aria-label="${atPar ? 2 : 1} of 2 stars"><span class="star on">★</span><span class="star${atPar ? ' on' : ''}">★</span></span>` +
-      (atPar ? `Solved in ${m}. That's par!` : ((hintSeen(L.name) & 1) ? `Solved in ${m}. Par is ${L.par} for the second star.` : `Solved in ${m}. There's a shorter way, for the second star.`)) +
+      (atPar ? `Solved in ${m}. That's par!` : ((hintsPaid(L.name) >= 1) ? `Solved in ${m}. Par is ${L.par} for the second star.` : `Solved in ${m}. There's a shorter way, for the second star.`)) +
       (li >= LEVELS.length-1 ? ' That was the last level.' : '') + lockNote();
     return;
   }
@@ -853,21 +898,32 @@ const HINTS = [
   { t:'Move sizes', d:'How many dots each move of a best solution selects.' },
   { t:'Shapes', d:'The shape of each move, drawn like the selection highlight. Where it goes is up to you.' },
 ];
-function openHints(){ renderHints(); $('hsheet').classList.add('open'); }
+function openHints(){ regenReveals(); renderHints(); $('hsheet').classList.add('open'); if (!prog.hintTut){ prog.hintTut = true; saveProg(); refresh(); } }
+function renderWallet(){
+  const n = prog.reveals;
+  $('wallet').innerHTML = `${BULB}<b>${n}</b> reveal${n === 1 ? '' : 's'}`;
+  $('wnote').innerHTML = (n < REVEALS.cap ? `Next free reveal in ${fmtWait(nextRevealIn())}. ` : '') +
+    'Par costs 1, move sizes 2, shapes 3. Each hint includes the ones above it, so you only pay the difference. Unlocking a chapter gives 3 more.';
+}
 function renderHints(){
-  const seen = hintSeen(L.name), box = $('hcards'); box.innerHTML = '';
+  renderWallet(); renderHintBtn();
+  const paid = hintsPaid(L.name), box = $('hcards'); box.innerHTML = '';
   HINTS.forEach((h, k) => {
-    const on = seen & (1 << k), card = document.createElement('div');
+    const on = k < paid, cost = hintCost(L.name, k), afford = cost <= prog.reveals, card = document.createElement('div');
     card.className = 'hcard' + (on ? ' seen' : '');
     card.innerHTML = `<div class="hh"><div><div class="ht">${k+1}. ${h.t}</div><div class="hd">${h.d}</div></div>` +
-      (on ? '<span class="hs">✓ Viewed</span>' : '<button class="reveal">Reveal</button>') + '</div>';
+      (on ? '<span class="hs">✓ Viewed</span>' : `<button class="reveal"${afford ? '' : ' disabled'} aria-label="Reveal for ${cost}">Reveal <span class="rv">${BULB}${cost}</span></button>`) + '</div>' +
+      (!on && !afford ? `<div class="hd short">You need ${cost - prog.reveals} more.</div>` : '');
     if (on){
       const b = document.createElement('div'); b.className = 'hb';
       if (k === 0) b.textContent = `Par is ${L.par} move${L.par === 1 ? '' : 's'}.`;
       else if (k === 1) b.innerHTML = '<div class="hchips">' + (L.parMoves||[]).map(([n,add],i) => `<span class="hchip" title="Move ${i+1}">${n}${add ? ' + add' : ''}</span>`).join('') + '</div>';
       else { b.className = 'hb hshapes'; drawHintShapes(b); }
       card.append(b);
-    } else card.querySelector('.reveal').onclick = () => { track(`hint/${slug(L.name)}/${k+1}`, 'hint_reveal', { hint: k + 1 }); prog.hints[L.name] = hintSeen(L.name) | (1 << k); saveProg(); renderHints(); refresh(); };
+    } else card.querySelector('.reveal').onclick = () => {
+      regenReveals(); const c = hintCost(L.name, k); if (c > prog.reveals) return renderHints();
+      track(`hint/${slug(L.name)}/${k+1}`, 'hint_reveal', { hint: k + 1, cost: c, reveals_left: prog.reveals - c });
+      prog.reveals -= c; prog.hints[L.name] = hintSeen(L.name) | ((2 << k) - 1); saveProg(); renderHints(); refresh(); };
     box.append(card);
   });
 }
@@ -1022,11 +1078,14 @@ function renderHowto(){
     <h3>Arrows</h3>
     <div class="ex">${ex('Arrow')}<p>Selecting an arrow's tail selects its head too, but selecting the head doesn't select the tail.</p></div>
     <h3>Stars and par</h3>
-    <p>Solving a level earns <span class="star on">★</span>. Solving it in the fewest moves possible, called par, earns <span class="star on">★★</span>. Tap Hint to see par and get help.</p>
+    <p>Solving a level earns <span class="star on">★</span>. Solving it in the fewest moves possible, called par, earns <span class="star on">★★</span>.</p>
+    <h3>Hints</h3>
+    <p>Tap Hint for help. Hints cost reveals: par costs 1, move sizes 2 and shapes 3. Each hint includes the ones above it, so you only pay the difference.</p>
+    <p>You start with 3 reveals and get 3 more for each chapter you unlock. While you have fewer than 3, one comes back every 30 minutes.</p>
     <h3>Unlocking</h3>
     <ul><li>One star on a level unlocks the next level.</li><li>All 20 stars in a chapter unlock the next chapter.</li></ul>
     <h3>Buttons</h3>
-    <ul><li><b>Undo</b> takes back your last turn.</li><li><b>Reset</b> starts the level over.</li><li><b>Hint</b> shows par and step-by-step help.</li></ul>`;
+    <ul><li><b>Undo</b> takes back your last turn.</li><li><b>Reset</b> starts the level over.</li><li><b>Hint</b> spends reveals on par, move sizes or shapes.</li></ul>`;
 }
 function renderHome(){
   const started = Object.keys(prog.best).length > 0 || li > 0;
