@@ -745,12 +745,7 @@ const nextRevealIn = () => Math.max(0, REVEALS.every - (Date.now() - prog.reveal
 const affordIn = need => need <= prog.reveals ? 0 : nextRevealIn() + (need - prog.reveals - 1) * REVEALS.every;
 const fmtClock = ms => { const t = Math.ceil(ms / 1000); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const BULB = '<svg class="bulb" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-// with none left, the button shows the countdown to the next free reveal instead of a 0
-function renderHintBtn(){
-  const n = prog.reveals;
-  $('hintBtn').innerHTML = `Hint <span class="rv">${BULB}${n ? n : `<span class="clock">${fmtClock(nextRevealIn())}</span>`}</span>`;
-  $('hintBtn').setAttribute('aria-label', n ? `Hint, ${n} reveals left` : `Hint, next reveal in ${fmtClock(nextRevealIn())}`);
-}
+function renderHintBtn(){ $('hintBtn').innerHTML = `Hint <span class="rv">${BULB}${prog.reveals}</span>`; $('hintBtn').setAttribute('aria-label', `Hint, ${prog.reveals} reveals left`); }
 setInterval(() => {
   if (prog.reveals >= REVEALS.cap) return;
   const before = prog.reveals; regenReveals();
