@@ -221,10 +221,11 @@ header > button{height:38px;display:inline-flex;align-items:center;justify-conte
 <script>
   // Set your GoatCounter code here (the part before .goatcounter.com). Leave as is to disable analytics.
   // Set your Google Analytics 4 measurement ID (G-XXXXXXXXXX) the same way.
-  // Supabase project for sign-in and synced progress (Project Settings -> API). Leave as is to hide sign-in.
-  // The anon key is meant to be public: row-level security keeps each player to their own row.
+  // Supabase project for sign-in and synced progress (Project Settings -> API). Empty url/anonKey hides sign-in.
+  // The publishable key is meant to be public: row-level security keeps each player to their own row.
   window.TURNS_CONFIG = { goatcounter: 'REPLACE_WITH_YOUR_CODE', ga4: 'G-WW9YY1BJML',
-    supabase: { url: 'REPLACE_WITH_SUPABASE_URL', anonKey: 'REPLACE_WITH_SUPABASE_ANON_KEY', providers: ['google', 'email'] } };
+    supabase: { url: 'https://wgysofnocxigucqocxed.supabase.co', anonKey: 'sb_publishable_m9npQPFI2rwsFo40wY9FMg_rKHZxf80',
+      providers: ['email'] } };   // add 'google' once its OAuth client is set up in Supabase
   (function(){
     var c = (window.TURNS_CONFIG || {}).goatcounter;
     if (!c || c.indexOf('REPLACE') === 0) return;

@@ -1,5 +1,10 @@
 # Turns sign-in: Supabase setup
 
+**Status:** project `turns` (`wgysofnocxigucqocxed`, us-east-1) is set up: the table and its rules (step 2),
+URLs (step 3), email sign-in (step 4) and the game's config (step 6) are done. What's left is Google:
+create the OAuth client (step 4), enable Google in Supabase, then add `'google'` to `providers` in
+`public/turns/index.html`.
+
 Sign-in stays hidden in the game until step 6 is done, so you can do these in any order.
 
 ## 1. Create the project
@@ -33,8 +38,8 @@ The anon key is designed to be public; row-level security (step 2) is what prote
 Never put the `service_role` key in the game.
 
 ## 6. Put them in the game
-In `public/turns/index.html`, replace `REPLACE_WITH_SUPABASE_URL` and `REPLACE_WITH_SUPABASE_ANON_KEY`
-in `TURNS_CONFIG.supabase`, then push to `main`.
+In `public/turns/index.html`, set `url` and `anonKey` (the publishable key) in `TURNS_CONFIG.supabase`,
+then push to `main`.
 
 ## Notes
 - Free projects pause after a week with no activity. The game keeps working from the browser while paused;
