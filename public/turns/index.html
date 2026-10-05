@@ -121,6 +121,9 @@ button,.tile{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .star{color:var(--border)}
 .star.on{color:var(--gold)}
 .pill{padding:5px 10px;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+header > button{height:38px;display:inline-flex;align-items:center;justify-content:center;gap:4px;flex-shrink:0}
+#levelBtn{display:block;flex-shrink:1}
+@media (max-width:359px){ header h1{font-size:0} }   /* tiny phones: the level name needs the room */
 .pill .star{color:var(--gold)}
 .earned{display:inline-flex;gap:2px;margin-right:6px;vertical-align:-1px}
 .earned .star{display:inline-block;transform:scale(0);animation:starpop .45s cubic-bezier(.3,1.6,.5,1) forwards}
