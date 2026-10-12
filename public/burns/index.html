@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body style="margin:0"><title>Burns</title>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"></head><body style="margin:0"><title>Burns</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lilita+One&display=swap" rel="stylesheet">
@@ -13,7 +13,7 @@
   --f-body:"Fredoka","Nunito","Trebuchet MS",system-ui,sans-serif;
   color-scheme:light;
 }
-html,body{height:100%;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-weight:600;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
 button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
@@ -21,7 +21,7 @@ button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
 .screen{position:absolute;inset:0;display:flex;flex-direction:column}
 
 /* ---------- menu ---------- */
-#menu{overflow-y:auto;touch-action:pan-y;background:
+#menu{overflow-y:auto;overflow-x:hidden;overscroll-behavior-x:none;touch-action:pan-y;background:
   radial-gradient(circle at 20% 0%,#fff6e2 0,transparent 55%),var(--cream)}
 .m-head{padding:28px 20px 8px;text-align:center}
 .logo{font-family:var(--f-display);font-size:56px;line-height:1;color:var(--orange);letter-spacing:.5px;
@@ -275,8 +275,8 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .row.used b{font-size:13px;text-align:right}
 
 /* ---------- home + levels (laid out like Turns) ---------- */
-#home,#howto{overflow-y:auto;touch-action:pan-y;background:radial-gradient(circle at 50% 22%,#fff3d8 0,transparent 60%),var(--cream)}
-.h-bar{padding:14px 16px 0}
+#home,#howto{overflow-y:auto;overflow-x:hidden;overscroll-behavior-x:none;touch-action:pan-y;background:radial-gradient(circle at 50% 22%,#fff3d8 0,transparent 60%),var(--cream)}
+.h-bar{padding:14px 16px 0;margin:0 0 16px}
 .h-main{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;max-width:380px;margin:0 auto;padding:4vh 16px 20px}
 .h-logo svg{width:120px;height:120px;filter:drop-shadow(0 5px 0 var(--ink))}
 .h-logo .flick{transform-origin:32px 58px;animation:flick 2.4s ease-in-out infinite}
