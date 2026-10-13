@@ -17,7 +17,7 @@ html,body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-user-sele
 body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-weight:600;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
 button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
-#app{position:relative;height:100%;max-width:480px;margin:0 auto;background:var(--cream);overflow:hidden;box-shadow:0 0 40px rgba(0,0,0,.35)}
+#app{position:relative;height:100%;margin:0 auto;background:var(--ground);overflow:hidden}
 .screen{position:absolute;inset:0;display:flex;flex-direction:column}
 
 /* ---------- menu ---------- */
@@ -28,12 +28,12 @@ button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
   -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:0 5px 0 var(--ink);display:inline-flex;align-items:center;gap:6px}
 .logo svg{width:46px;height:46px;flex:none;filter:drop-shadow(0 4px 0 var(--ink))}
 .tag{margin-top:12px;color:var(--ink-soft);font-size:16px}
-.packs{display:flex;flex-direction:column;gap:18px;padding:18px 16px 36px}
+.packs{display:flex;flex-direction:column;gap:18px;padding:18px 16px 36px;max-width:960px;margin:0 auto;box-sizing:border-box;width:100%}
 .pack{background:var(--panel);border:2.5px solid var(--ink);border-radius:22px;overflow:hidden;box-shadow:0 5px 0 rgba(74,46,31,.25)}
 .pack-h{display:flex;align-items:center;gap:10px;padding:12px 16px;color:#fff;border-bottom:2.5px solid var(--ink)}
 .pack-h h2{margin:0;font-family:var(--f-display);font-weight:400;font-size:24px;-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;letter-spacing:.3px}
 .pack-h p{margin:0 0 0 auto;font-size:13px;color:#fff;opacity:.95;text-align:right;max-width:52%;line-height:1.2}
-.lvls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}
+.lvls{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px}
 .lvl{display:flex;flex-direction:column;gap:6px;text-align:left;background:#fffdf7;border:2px solid var(--line);border-radius:16px;padding:8px;transition:transform .12s}
 .lvl:active{transform:scale(.97)}
 .lvl canvas{width:100%;aspect-ratio:3/4;max-width:100%;border-radius:10px;border:2px solid var(--ink);background:#9bbf6a;display:block;object-fit:cover}
@@ -43,7 +43,7 @@ button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
 .m-foot{padding:0 20px 28px;text-align:center;color:var(--ink-soft);font-size:13px}
 
 /* ---------- game ---------- */
-#game{background:var(--ground)}
+#game{background:var(--ground);width:min(100%,var(--gw,100%));margin:0 auto;box-shadow:0 0 40px rgba(0,0,0,.35)}
 #stage{position:relative;flex:1;min-height:0;overflow:hidden}
 #gl,#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #gl{pointer-events:none}
@@ -344,7 +344,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 5d8df88 · Oct 13</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 24a90c1 · Oct 13</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -5733,7 +5733,7 @@ function startLevelNow(id){
     parts:[],pops:[],booms:[],people:[],fuses:[],spark:null,shake:0,speed:1,auto:1,hot:0,calm:0,acc:0,simRnd:rng32(def.seed*13+5),igniteAt:0,quiet:0,cam:{x:0,y:0},picking:false,pourAt:null,
     mask:new Uint8Array(world.g.N*4),fire:new Uint8Array(world.g.N*4),lraw:new Float32Array(world.g.N),dirty:[],dirtyF:new Uint8Array(world.g.N),maskAll:true,litPrev:[],litNow:[],insp:null,rnd:rng32(def.seed*7+1),th:def.stars,bgv:def.bg?BURN.hex(def.bg).map(v=>v/255):null};
   spawnPeople();music('plan');
-  S.z0=z;S.cam.x=S.A[0]+(S.A[2]-VW/z)/2;S.cam.y=S.A[1]-72/z;clampCam();
+  fitFrame();layout();S.z=S.z0=startZoom(z);S.cam.x=S.A[0]+(S.A[2]-VW/z)/2;S.cam.y=S.A[1]-72/z;clampCam();
   $('lvlName').textContent=def.name;$('hudIcon').innerHTML=ICON.coin;renderTools();updateCoins();selTool=null;refreshMode();
   $('pauseGoal').textContent='Goals: '+goalText();renderLightButtons();
   if(def.tutorial&&!BEST._tut)showTut();else toast('Goals: '+goalText(),3000);
@@ -6138,7 +6138,14 @@ window.addEventListener('keydown',e=>{if(!S||$('game').hidden||e.target.tagName=
 function pinchDist(){const a=[...ptrs.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}
 function mid(){const a=[...ptrs.values()];return{x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2}}
 window.addEventListener('keydown',e=>{if(!S)return;if(e.key==='z'&&(e.metaKey||e.ctrlKey))undo();if(e.key==='0'||e.key==='i')setLook(!S.look);if(e.key==='Escape')selectTool(null);const k=+e.key;if(k>=1&&k<=4&&S.phase==='plan')(TOOLSET[k-1]&&selectTool(TOOLSET[k-1].id));if(e.key==='Escape')closeInspect();if((e.key==='f'||e.key===' ')&&S.phase==='burn'){e.preventDefault();cycleSpeed()}});
-function relayout(){if(!S)return;const st=$('stage').getBoundingClientRect();if(Math.abs(st.width-VW)<.5&&Math.abs(st.height-VH)<.5&&Math.min(window.devicePixelRatio||1,DPR_CAP)===DPR)return;layout();clampCam()}
+// On screens wider than the level's map is tall-for (tablets in landscape, desktops) the game frame narrows to the map's
+// shape, so the whole map height fits and nothing past the map ever shows. Phones keep the full screen.
+function fitFrame(){const g=$('game');if(!S){g.style.removeProperty('--gw');return}
+  g.style.setProperty('--gw',Math.min(innerWidth,Math.round(innerHeight*S.W/S.H))+'px')}
+// first zoom: phones show 420 world px across as always; bigger frames fit the whole active area
+function startZoom(z){if(VW<=520)return z;const A=S.A,cover=Math.max(VW/S.W,VH/S.H);
+  return Math.max(cover,clamp(Math.min(VW/(A[2]+16),(VH-150)/(A[3]+16)),.7,2.4))}
+function relayout(){if(!S)return;fitFrame();const st=$('stage').getBoundingClientRect();if(Math.abs(st.width-VW)<.5&&Math.abs(st.height-VH)<.5&&Math.min(window.devicePixelRatio||1,DPR_CAP)===DPR)return;layout();clampCam()}
 window.addEventListener('resize',relayout);
 if(window.ResizeObserver)new ResizeObserver(relayout).observe($('stage'));
 
