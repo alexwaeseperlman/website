@@ -343,7 +343,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build ed6e88d · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 279bb99 · Oct 14</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -5696,8 +5696,8 @@ const LEVELS=PACKS.flatMap(p=>BURN.levels.filter(l=>l.pack===p.id));
 const TOOLS=[
  {id:'crate',asset:'tool_crate',name:'Crate',cost:20,info:'Kindling. Catches at 95°C and burns hot for 7 seconds.'},
  {id:'fuel',asset:'gas_can',name:'Gas',cost:1,info:'Drag to splash gas. 1 coin per splash. Flashes at 60°C and carries fire across paths.'},
- {id:'hay',asset:'tool_hay',name:'Hay bale',cost:40,info:'Catches at 80°C and burns for 9 seconds. Its heat reaches 2 cells away.'},
- {id:'bomb',asset:'tool_bomb',name:'Bomb',cost:60,info:'Fuse lights at 120°C. Blows holes in roofs and lights everything nearby.'},
+ {id:'hay',asset:'tool_hay',name:'Hay bale',cost:30,info:'Catches at 80°C and burns for 9 seconds. Its heat reaches 2 cells away.'},
+ {id:'bomb',asset:'tool_bomb',name:'Bomb',cost:50,info:'Fuse lights at 120°C. Blows holes in roofs and lights everything nearby.'},
  {id:'sponge',asset:'tool_sponge',name:'Sponge',cost:0,info:'Drag over gas to wipe it up, or over a tool to pick it back up. You get the coins back, and undo puts it all back.'},
 ];
 const SPARK={power:330,R:1.7,dur:3.2};
