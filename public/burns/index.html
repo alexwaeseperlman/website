@@ -92,7 +92,6 @@ button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:9px;background:linear-gradient(#ffa046,#ee6a2a);box-shadow:inset 0 0 0 2px rgba(150,60,20,.35);width:0;transition:width .25s}
 .bar em{position:absolute;top:50%;width:18px;height:18px;transform:translate(-50%,-50%)}
 .bar em svg{width:18px;height:18px;display:block}
-#combo{font-family:var(--f-display);font-size:14px;color:var(--orange);min-height:1em}
 .ctl{display:flex;align-self:stretch}
 #btnSpeed{width:64px;height:100%;min-height:64px;border-radius:16px;background:#fffdf6;color:var(--ink);border:2.5px solid var(--line);box-shadow:0 3px 0 rgba(74,46,31,.25);font-family:var(--f-display);font-size:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1;transition:background .2s,color .2s}
 #btnSpeed svg{width:26px;height:26px;margin-bottom:2px}
@@ -344,7 +343,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 7975072 · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build dab0924 · Oct 14</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -373,7 +372,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
     <div class="tray" id="burnBar" hidden>
       <div class="burn">
         <div class="meter">
-          <div class="meter-top"><span>SCORE</span><span id="combo"></span><b id="score">0</b></div>
+          <div class="meter-top"><span>SCORE</span><b id="score">0</b></div>
           <div class="bar" id="bar"><i id="barFill"></i></div>
         </div>
         <div class="ctl">
@@ -2149,7 +2148,7 @@ const LIGHTS={
 /* Backyard pack */
 (function(){
 BURN.pack({id:'yard',name:'Suburbia',sub:'Lawns, sheds and one very nice piano',color:'#7fae4f'});
-BURN.level({id:'yard1',pack:'yard',name:'Backyard 01',W:420,H:640,budget:120,seed:11,people:3,tutorial:true,stars:[2500,6000,8500],
+BURN.level({id:'yard1',pack:'yard',name:'Backyard 01',W:420,H:640,budget:120,seed:11,people:3,tutorial:true,stars:[850,2150,3050],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    B.put('lawn',X0,Y0,X1-X0,Y1-Y0,{flowers:.18});
@@ -2213,7 +2212,7 @@ BURN.level({id:'yard1',pack:'yard',name:'Backyard 01',W:420,H:640,budget:120,see
   }});
 
 /* Backyard 02: a gravel cross splits the garden into four plots around a pool. The shed is the jackpot. */
-BURN.level({id:'yard2',pack:'yard',name:'Backyard 02',W:420,H:800,budget:150,seed:22,people:4,stars:[4000,12000,21000],
+BURN.level({id:'yard2',pack:'yard',name:'Backyard 02',W:420,H:800,budget:150,seed:22,people:4,stars:[1300,3900,6850],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    B.put('lawn',X0,Y0,X1-X0,Y1-Y0,{flowers:.14});
@@ -2317,7 +2316,7 @@ function bungalow(B,x,y,o={}){
 }
 
 /* Block Party: three front yards above the street, the party in the street, a party lawn and a pool yard below. */
-BURN.level({id:'yard3',pack:'yard',name:'Block Party',W:720,H:960,budget:300,seed:33,people:8,light:'dusk',bg:'#2b3324',stars:[5000,14000,23500],
+BURN.level({id:'yard3',pack:'yard',name:'Block Party',W:720,H:960,budget:300,seed:33,people:8,light:'dusk',bg:'#2b3324',stars:[1350,3800,6400],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    B.put('lawn',X0,Y0,X1-X0,Y1-Y0,{flowers:.12});
@@ -2434,7 +2433,7 @@ const tree=(B,x,y,r,col)=>{ B.at('tree_trunk',x,y); B.put('tree_canopy',x-r,y-r,
 
 /* Maple Close: four houses round a cul-de-sac, the woods across the creek. Driveways, the close and the path are
    firebreaks; a gate, a fence, two footbridges and one overhanging oak are the only soft ways through. */
-BURN.level({id:'yard4',pack:'yard',name:'Maple Close',W:960,H:920,budget:240,seed:44,people:10,bg:'#4f6b35',stars:[9000,24000,50000],
+BURN.level({id:'yard4',pack:'yard',name:'Maple Close',W:960,H:920,budget:240,seed:44,people:10,bg:'#4f6b35',stars:[2850,7650,15950],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    B.put('lawn',X0,Y0,X1-X0,Y1-Y0,{flowers:.1});
@@ -2543,7 +2542,7 @@ function porchHouse(B,x,y,o={}){
 
 /* Hollow Lane on Halloween night: three decorated houses across the street from the harvest fair and the old
    churchyard. The street splits the map; parked cars and the bale stacks on the kerbs are the bridges. */
-BURN.level({id:'yard5',pack:'yard',name:'Hollow Lane',W:880,H:1072,budget:260,seed:55,people:12,light:'night',bg:'#1e2330',stars:[7500,24000,52000],
+BURN.level({id:'yard5',pack:'yard',name:'Hollow Lane',W:880,H:1072,budget:260,seed:55,people:12,light:'night',bg:'#1e2330',stars:[1800,5900,12800],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    B.put('yard_autumn_lawn',X0,Y0,X1-X0,Y1-Y0,{leaves:1});
@@ -2679,7 +2678,7 @@ function parkTree(B,cx,cy,size=80,color){ B.at('tree_trunk',cx,cy); B.put('tree_
 
 /* ======================= 1. Corner Café ======================= */
 BURN.level({id:'metro1',pack:'metro',name:'Corner Café',W:420,H:720,budget:150,seed:21,people:6,light:'afternoon',bg:'#4d5157',
-  stars:[5000,15000,28500],
+  stars:[1100,3350,6450],
   build(B){
    // ---- ground ----
    const [X0,Y0,X1,Y1]=B.map;
@@ -2795,7 +2794,7 @@ BURN.level({id:'metro1',pack:'metro',name:'Corner Café',W:420,H:720,budget:150,
 
 /* ======================= 2. Main Street ======================= */
 BURN.level({id:'metro2',pack:'metro',name:'Main Street',W:480,H:640,budget:150,seed:22,people:7,light:'afternoon',bg:'#4d5157',
-  stars:[4500,18000,37500],
+  stars:[1250,5150,10750],
   build(B){
    // ---- ground ----
    const [X0,Y0,X1,Y1]=B.map;
@@ -2949,7 +2948,7 @@ function apartment(B,x,y,w,h,cols,doorAt,roofCol,kinds){
 }
 
 BURN.level({id:'metro3',pack:'metro',name:'Downtown Night',W:760,H:1040,budget:220,seed:23,people:10,light:'night',bg:'#2e3138',
-  stars:[9000,28000,56000],
+  stars:[2450,7600,15250],
   build(B){
    // ---- ground: two blocks west of the avenue, a market strip east, one big intersection ----
    const [X0,Y0,X1,Y1]=B.map;
@@ -3162,7 +3161,7 @@ function shophouse(B,x,y,w,h,front,kind,roofCol,doorAt){
 }
 
 BURN.level({id:'metro4',pack:'metro',name:'Lantern Festival',W:1200,H:784,budget:260,seed:24,people:12,light:'night',bg:'#2e3138',
-  stars:[15000,40000,105000],
+  stars:[3350,8950,23500],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    // ---- ground: the moon garden (west), Garden Road, the festival street between two rows of shophouses, the parade road south ----
@@ -3275,7 +3274,7 @@ BURN.level({id:'metro4',pack:'metro',name:'Lantern Festival',W:1200,H:784,budget
 
 /* ======================= 5. Freight Yard ======================= */
 BURN.level({id:'metro5',pack:'metro',name:'Freight Yard',W:880,H:1088,budget:300,seed:25,people:12,light:'dusk',bg:'#4d5157',
-  stars:[20000,55000,115000],
+  stars:[4600,12650,26500],
   build(B){
    const [X0,Y0,X1,Y1]=B.map;
    const PC=['#d9443a','#f5c518','#4f86c6','#6aa35a','#fffaf0','#9b6bc0','#f08a5a'];
@@ -3546,7 +3545,7 @@ function palmL(B,cx,cy){ B.at('cairo_palm_trunk',cx,cy); B.at('cairo_palm',cx,cy
 
 /* ---------------------------------------------------------------- 1 */
 BURN.level({ id:'cairo1', pack:'cairo', name:'Spice Lane', W:420, H:760, budget:100, seed:301, people:10,
-  stars:[6000,18000,31500], tools:['crate','fuel','hay'], light:'afternoon', bg:'#b88a52',
+  stars:[1500,4550,8000], tools:['crate','fuel','hay'], light:'afternoon', bg:'#b88a52',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('cairo_flagstones',X0,Y0,X1-X0,Y1-Y0);
@@ -3589,7 +3588,7 @@ BURN.level({ id:'cairo1', pack:'cairo', name:'Spice Lane', W:420, H:760, budget:
 
 /* ---------------------------------------------------------------- 2 */
 BURN.level({ id:'cairo2', pack:'cairo', name:'Rooftop Laundry', W:480, H:800, budget:140, seed:302, people:10,
-  stars:[12000,47000,65000], tools:['crate','fuel','hay'], light:'afternoon', bg:'#b88a52',
+  stars:[2700,10700,14850], tools:['crate','fuel','hay'], light:'afternoon', bg:'#b88a52',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('cairo_flagstones',X0,Y0,X1-X0,Y1-Y0);
@@ -3663,7 +3662,7 @@ BURN.level({ id:'cairo2', pack:'cairo', name:'Rooftop Laundry', W:480, H:800, bu
 // Two lanes cross at an old tower. The west arm of the cross street is the covered souk;
 // the lamp-oil merchant has set up just south of the crossing (everyone keeps telling him to move).
 BURN.level({ id:'cairo3', pack:'cairo', name:'The Grand Souk', W:800, H:1000, budget:200, seed:303, people:16,
-  stars:[15000,60000,128000], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#8a6440',
+  stars:[3300,13300,28400], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#8a6440',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('cairo_flagstones',X0,Y0,X1-X0,Y1-Y0);
@@ -3763,7 +3762,7 @@ BURN.level({ id:'cairo3', pack:'cairo', name:'The Grand Souk', W:800, H:1000, bu
 // dyers' yard, the rooftops, the camel market, the lamp-makers' lane (oil jars all the way down to the depot) and the
 // caravan ground outside the great gate. Streets keep every district apart: the one spark has to be carried.
 BURN.level({ id:'cairo4', pack:'cairo', name:'The Caravanserai', W:960, H:1000, budget:240, seed:304, people:18,
-  stars:[18000,75000,150000], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#8a6440',
+  stars:[3900,16450,32900], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#8a6440',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('cairo_flagstones',X0,Y0,X1-X0,Y1-Y0);
@@ -3876,7 +3875,7 @@ BURN.level({ id:'cairo4', pack:'cairo', name:'The Caravanserai', W:960, H:1000, 
 // the river show are stacked on the quay and the boatyard has its pitch out. The Nile keeps the south safe; the
 // garden canal splits the date grove. One spark, and a lot of town that only burns if you carry it there.
 BURN.level({ id:'cairo5', pack:'cairo', name:'Lantern Night on the Nile', W:1120, H:848, budget:140, seed:305, people:20,
-  margin:[160,120,240,120], stars:[20000,80000,145000], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#5a4430',
+  margin:[160,120,240,120], stars:[4750,19150,34750], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#5a4430',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('cairo_flagstones',X0,Y0,X1-X0,Y1-Y0);
@@ -3993,7 +3992,7 @@ const tree=(B,x,y,col,sz=100)=>{ B.at('tree_trunk',x,y); B.put('tree_canopy',x-s
 
 /* ============================== 1. Lantern Platform ============================== */
 BURN.level({id:'canopy1',pack:'canopy',name:'Lantern Platform',W:420,H:720,budget:100,seed:41,people:4,light:'afternoon',bg:'#1d3b25',
-  stars:[2200,4000,5800],
+  stars:[1250,2250,3300],
   build(B){
     const [X0,Y0,X1,Y1]=B.map; B.put('canopy_forest',X0,Y0,X1-X0,Y1-Y0);
     // bridges first so platform rims sit on top of their ends
@@ -4033,7 +4032,7 @@ BURN.level({id:'canopy1',pack:'canopy',name:'Lantern Platform',W:420,H:720,budge
 // A ring of six platforms. Two bridges are mossy and damp, two are broken; the lantern-oil store
 // sits at the broken end of the east bridge, so whoever gets fire to it blasts across the gap.
 BURN.level({id:'canopy2',pack:'canopy',name:'Rope Bridges',W:480,H:800,budget:100,seed:52,people:6,light:'dusk',bg:'#1d3b25',
-  stars:[3000,5200,7600],
+  stars:[2100,3650,5350],
   build(B){
     const [X0,Y0,X1,Y1]=B.map; B.put('canopy_forest',X0,Y0,X1-X0,Y1-Y0);
     // bridges (under the platform rims)
@@ -4097,7 +4096,7 @@ BURN.level({id:'canopy2',pack:'canopy',name:'Rope Bridges',W:480,H:800,budget:10
 // huts, a food market and the lantern workshop around it. Mossy bridges need fuel, broken ones
 // need a blast, and the workshop's oil store throws fire across to the south-west decks.
 BURN.level({id:'canopy3',pack:'canopy',name:'Festival in the Trees',W:784,H:1000,budget:120,seed:63,people:10,light:'night',bg:'#14281a',
-  stars:[5000,12000,20000],
+  stars:[2000,4850,8150],
   build(B){
     const [X0,Y0,X1,Y1]=B.map; B.put('canopy_forest',X0,Y0,X1-X0,Y1-Y0);
     // ---- bridges ----
@@ -4211,7 +4210,7 @@ function wildwood(B,boxes){ for(const [x,y,w,h] of boxes) B.put('canopy_wildwood
 // and zip lines carry goods over the gaps. Eight decks: firebreaks everywhere, three kinds of crossing
 // (damp moss that needs gas, broken bridges that need a blast, zip lines that need fire under their anchor).
 BURN.level({id:'canopy4',pack:'canopy',name:"Lantern Makers' Row",W:960,H:880,budget:120,seed:74,people:10,light:'dusk',bg:'#1d3b25',
-  stars:[10000,26000,52000],
+  stars:[3650,9500,19000],
   build(B){
     const [X0,Y0,X1,Y1]=B.map; B.put('canopy_forest',X0,Y0,X1-X0,Y1-Y0);
     // ---- crossings (under the deck rims) ----
@@ -4341,7 +4340,7 @@ BURN.level({id:'canopy4',pack:'canopy',name:"Lantern Makers' Row",W:960,H:880,bu
 // but the Elder's own boughs. The boughs are soaked with sap: no district fire can dry them, but once the trunk
 // burns, every bough burns out to its tip and drops fire on the drying racks below.
 BURN.level({id:'canopy5',pack:'canopy',name:'The Elder Hollow',W:1040,H:920,budget:160,seed:85,people:12,light:'night',bg:'#14281a',
-  stars:[12000,40000,66000],
+  stars:[4050,13600,22450],
   build(B){
     const [X0,Y0,X1,Y1]=B.map; B.put('canopy_forest',X0,Y0,X1-X0,Y1-Y0);
     // ---- the ring of crossings ----
@@ -4517,7 +4516,7 @@ function shop128(B,kind,x,y,o={}){ shop(B,x,y,128,96,Object.assign({},SHOPSTYLE[
 /* ---------------------------------------------------------------- 1 */
 // One short pier off the prom. A stone landing halfway along stops a deck fire; the fireworks are out at the end.
 BURN.level({ id:'pier1', pack:'pier', name:'Opening Night', W:420, H:704, budget:100, seed:501, people:8,
-  stars:[3500,7000,10500], tools:['crate','fuel','hay'], light:'dusk', bg:'#36aec6',
+  stars:[2250,4550,6850], tools:['crate','fuel','hay'], light:'dusk', bg:'#36aec6',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('pier_sea',X0,Y0,X1-X0,Y1-Y0);
@@ -4576,7 +4575,7 @@ BURN.level({ id:'pier1', pack:'pier', name:'Opening Night', W:420, H:704, budget
 // The seafront: three shops on the prom, the boardwalk in front, the beach below and a fishing jetty.
 // Stone steps split the boardwalk; bunting between the roofs and the hut decks are the links.
 BURN.level({ id:'pier2', pack:'pier', name:'Chips & Arcades', W:480, H:800, budget:150, seed:502, people:12,
-  stars:[8000,18000,33000], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#36aec6',
+  stars:[2900,6600,12150], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#36aec6',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('pier_sea',X0,Y0,X1-X0,Y1-Y0);
@@ -4641,7 +4640,7 @@ BURN.level({ id:'pier2', pack:'pier', name:'Chips & Arcades', W:480, H:800, budg
 // The Grand Pier: a neck of stalls, an arcade pavilion on the cross-deck, and the funfair out on the head.
 // Iron landings (stone) break the deck into sections; the rides and the fireworks are the prize.
 BURN.level({ id:'pier3', pack:'pier', name:'The Grand Pier', W:720, H:960, budget:200, seed:503, people:16,
-  stars:[9000,20000,31500], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#36aec6',
+  stars:[4400,9750,15400], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#36aec6',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('pier_sea',X0,Y0,X1-X0,Y1-Y0);
@@ -4723,7 +4722,7 @@ BURN.level({ id:'pier3', pack:'pier', name:'The Grand Pier', W:720, H:960, budge
 /* ---------------------------------------------------------------- 4 */
 // The whole seafront: six shops on the prom, the boardwalk, a fair on the sands, a fishing jetty and the pleasure pier.
 BURN.level({ id:'pier4', pack:'pier', name:'Seafront Carnival', W:960, H:960, budget:250, seed:504, people:22,
-  stars:[15000,40000,81000], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#36aec6',
+  stars:[4600,12250,24850], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#36aec6',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('pier_sea',X0,Y0,X1-X0,Y1-Y0);
@@ -4792,7 +4791,7 @@ BURN.level({ id:'pier4', pack:'pier', name:'Seafront Carnival', W:960, H:960, bu
 // Fireworks Night: the great pier at night. A ballroom on the hub, a carousel island west, the wheel and the dodgems east,
 // the bandstand head with the show's fireworks, and the launch barge moored off the end, out across the water.
 BURN.level({ id:'pier5', pack:'pier', name:'Fireworks Night', W:1000, H:960, budget:300, seed:505, people:24,
-  stars:[16000,42000,70000], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#2a7f99',
+  stars:[4500,11800,19700], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#2a7f99',
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('pier_sea',X0,Y0,X1-X0,Y1-Y0,{color:'#2c9ab8'});
@@ -4929,7 +4928,7 @@ function forestBand(B,x,y,w,h){ B.put('snow_forest',x,y,w,h); }
 // A cabin, its woodshed and a hay barn, each an island in the snow. The shed's firewood burns hot and long;
 // the snowmobile and fuel drum beside it can throw the fire across, and gas bridges the rest.
 BURN.level({id:'snow1',pack:'snow',name:'Woodsmoke Cabin',W:420,H:720,budget:100,seed:501,people:3,light:'afternoon',bg:'#dfe8f0',
-  stars:[4000,9500,16000],
+  stars:[1000,2450,4150],
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('snow_ground',X0,Y0,X1-X0,Y1-Y0);
@@ -4991,7 +4990,7 @@ BURN.level({id:'snow1',pack:'snow',name:'Woodsmoke Cabin',W:420,H:720,budget:100
 // The hamlet skates at dusk. The warming hut, three cabins, a woodshed and the sauna ring a frozen pond. Fishing huts
 // sit out on the ice where gas can't go: only the drum at the end of the pier and the parked snowmobiles reach them.
 BURN.level({id:'snow2',pack:'snow',name:'Skating Pond',W:480,H:800,budget:120,seed:502,people:6,light:'dusk',bg:'#c9d6e3',
-  stars:[7000,15000,24000],
+  stars:[3000,6450,10350],
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('snow_ground',X0,Y0,X1-X0,Y1-Y0);
@@ -5044,7 +5043,7 @@ BURN.level({id:'snow2',pack:'snow',name:'Skating Pond',W:480,H:800,budget:120,se
 // village green. South: the big hay barn, the farmhouse, the snowmobile garage and the sledding slope. The plowed lane
 // and the stone road bridge never burn; the old wooden footbridge does.
 BURN.level({id:'snow3',pack:'snow',name:'Chapel Hill',W:720,H:960,budget:160,seed:503,people:9,light:'afternoon',bg:'#dfe8f0',
-  stars:[10000,24000,40000],
+  stars:[2250,5400,9050],
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('snow_ground',X0,Y0,X1-X0,Y1-Y0);
@@ -5114,7 +5113,7 @@ BURN.level({id:'snow3',pack:'snow',name:'Chapel Hill',W:720,H:960,budget:160,see
 // restaurant hut and the top lift station; the lift cable runs high over the piste down to the valley station,
 // the chalets, the woodshed and the groomer garage. The piste and the lanes never burn.
 BURN.level({id:'snow4',pack:'snow',name:'The Ski Lodge',W:800,H:1040,budget:200,seed:504,people:12,light:'dusk',bg:'#c9d6e3',
-  stars:[18000,52000,90000],
+  stars:[3800,11050,19200],
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('snow_ground',X0,Y0,X1-X0,Y1-Y0);
@@ -5181,7 +5180,7 @@ BURN.level({id:'snow4',pack:'snow',name:'The Ski Lodge',W:800,H:1040,budget:200,
 // straw yule goat. Round the square: the chapel, the nativity shed, the Snowed-Inn, the skating pond, two cabins,
 // and south of the lane the barn, the woodshed and two more cabins. The rows are islands until you link them.
 BURN.level({id:'snow5',pack:'snow',name:'The Christmas Market',W:800,H:1100,budget:210,seed:505,people:16,light:'night',bg:'#b9c7d9',
-  stars:[22000,60000,90000],
+  stars:[5750,15750,23650],
   build(B){
     const [X0,Y0,X1,Y1]=B.map;
     B.put('snow_ground',X0,Y0,X1-X0,Y1-Y0);
@@ -5350,7 +5349,7 @@ function roofRow(B,x0,x1,y,d,face,k0,o={}){ let x=x0,k=k0;
 // One canal, two rows of houses. The cafe terrace and the flower market are the tinder; the wooden bridge, the
 // houseboat and the flower boat are the only things that carry fire over the water.
 BURN.level({ id:'canal1', pack:'canal', name:'Flower Quay', W:420, H:640, budget:100, seed:501, people:6,
-  stars:[10000,17000,22000], tools:['crate','fuel','hay'], light:'afternoon', bg:'#6b7a74',
+  stars:[2500,4300,5600], tools:['crate','fuel','hay'], light:'afternoon', bg:'#6b7a74',
   build(B0){ const B=scenic(B0,this.W,this.H);
     const [X0,Y0,X1,Y1]=B.map;
     B.put('canal_quay',X0,Y0,X1-X0,Y1-Y0,{style:'cobble'});
@@ -5413,7 +5412,7 @@ BURN.level({ id:'canal1', pack:'canal', name:'Flower Quay', W:420, H:640, budget
 const KINDS=[['home','bed'],['cafe','kitchen'],['cheese','home'],['flowers','bed'],['books','kitchen'],['home','music'],['store','home'],['flowers','kitchen']];
 function row(B,x,d,face,list,k0,o={}){ list.forEach(([y,w],i)=>{ const k=k0+i; house(B,x,y,w,d,Object.assign({k,face,kinds:KINDS[k%KINDS.length],slate:k%4===3},o)); }); }
 BURN.level({ id:'canal2', pack:'canal', name:'Floating Market', W:480, H:800, budget:120, seed:502, people:8,
-  stars:[17000,29000,36500], tools:['crate','fuel','hay'], light:'afternoon', bg:'#6b7a74',
+  stars:[4350,7400,9350], tools:['crate','fuel','hay'], light:'afternoon', bg:'#6b7a74',
   build(B0){ const B=scenic(B0,this.W,this.H);
     const [X0,Y0,X1,Y1]=B.map;
     B.put('canal_quay',X0,Y0,X1-X0,Y1-Y0,{style:'cobble'});
@@ -5471,7 +5470,7 @@ function corner(B,sx,sy,goods,color){
   M('canal_buckets',248,314,12,30); M('canal_flower_cart',218,338,40,22,{color:sx>0?'#c0392b':'#3f8f6a',rot:sy>0?0:2});
 }
 BURN.level({ id:'canal3', pack:'canal', name:'Four Corners', W:640, H:800, budget:160, seed:503, people:10,
-  stars:[32000,53500,69000], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#5f6c6a',
+  stars:[7900,13250,17100], tools:['crate','fuel','hay','bomb'], light:'dusk', bg:'#5f6c6a',
   build(B0){ const B=scenic(B0,this.W,this.H);
     const [X0,Y0,X1,Y1]=B.map;
     B.put('canal_quay',X0,Y0,X1-X0,Y1-Y0,{style:'cobble'});
@@ -5557,7 +5556,7 @@ function warehouse(B,x,y,w,d,o={}){
   else if(face==='n') B.put('canal_facade',x,y-10,w,10,{face:'n',doors:[w-gx-16],color:wc});
 }
 BURN.level({ id:'canal4', pack:'canal', name:'Warehouse Wharf', W:800, H:960, budget:200, seed:504, people:12,
-  stars:[56000,94000,120000], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#5f6c6a',
+  stars:[12250,20600,26350], tools:['crate','fuel','hay','bomb'], light:'afternoon', bg:'#5f6c6a',
   build(B0){ const B=scenic(B0,this.W,this.H);
     const [X0,Y0,X1,Y1]=B.map;
     B.put('canal_quay',X0,Y0,X1-X0,Y1-Y0,{style:'cobble'});
@@ -5622,7 +5621,7 @@ BURN.level({ id:'canal4', pack:'canal', name:'Warehouse Wharf', W:800, H:960, bu
 function column(B,x,d,face,list,k0,y0){ let y=y0; list.forEach(([w,a,b],i)=>{ if(a==null){ y+=w; return; } house(B,x,y,w,d,{k:k0+i,face,kinds:[a,b],slate:(k0+i)%4===3}); y+=w; }); }
 function strip(B,x0,y,d,face,list,k0){ let x=x0; list.forEach(([w,a,b],i)=>{ if(a==null){ x+=w; return; } house(B,x,y,w,d,{k:k0+i,face,kinds:[a,b],slate:(k0+i)%5===2}); x+=w; }); }
 BURN.level({ id:'canal5', pack:'canal', name:'Lantern Festival', W:960, H:1000, budget:240, seed:505, people:16,
-  stars:[67000,112000,144500], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#3f4a4a',
+  stars:[14400,24100,31100], tools:['crate','fuel','hay','bomb'], light:'night', bg:'#3f4a4a',
   build(B0){ const B=scenic(B0,this.W,this.H);
     const [X0,Y0,X1,Y1]=B.map;
     B.put('canal_quay',X0,Y0,X1-X0,Y1-Y0,{style:'cobble'});
@@ -5785,10 +5784,13 @@ const SNAP_R=40;
 function snapSpot(x,y,w,h){let f=fitAt(x,y,w,h);if(f)return f;let best=null,bd=1e9;
   for(let dy=-SNAP_R;dy<=SNAP_R;dy+=CS)for(let dx=-SNAP_R;dx<=SNAP_R;dx+=CS){const d=dx*dx+dy*dy;if(d>SNAP_R*SNAP_R||d>=bd)continue;f=fitAt(x+dx,y+dy,w,h);if(f){best=f;bd=d}}
   return best}
+// a placed tool's seed (its fuel and burn variation) comes from what and where it is, never from how many things were placed
+// or undone before it, so the same layout always burns the same way
+function itemSeed(name,x,y){let h=(S.def.seed*31)|0;for(const c of name+':'+Math.round(x)+','+Math.round(y))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0}
 function placeItem(tool,x,y){const t=TOOLS.find(t=>t.id===tool),d=A[t.asset];const[w,h]=d.size;
   const spot=snapSpot(x,y,w,h);if(!spot){toast("No open ground near there. Look for the glowing spots.",1600);return false}const gx=spot.x,gy=spot.y;
   if(S.coins<t.cost){noCoins();return false}
-  sfx(t.id==='bomb'?'place_bomb':'place');S.coins-=t.cost;const inst=addInstance(S.world,{name:t.asset,d,x:gx,y:gy,w,h,opts:{}},S.def.seed*31+S.world.nextId,true);inst.cost=t.cost;
+  sfx(t.id==='bomb'?'place_bomb':'place');S.coins-=t.cost;const inst=addInstance(S.world,{name:t.asset,d,x:gx,y:gy,w,h,opts:{}},itemSeed(t.asset,gx,gy),true);inst.cost=t.cost;
   finalizeGrid(S.world);R.refreshLayers();S.maskAll=true;validCv=null;S.undo.push({k:'item',inst});updateCoins();blip(gx+w/2,gy+h/2);return true}
 function removeItem(inst,silent){const w=S.world,g=S.g;for(const i of inst.cells){if(g.id[1][i]===inst.id){g.m[1][i]=0;g.id[1][i]=0;g.o[1][i]=-1;g.ign[1][i]=INF}}
   w.insts.splice(w.insts.indexOf(inst),1);delete w.byId[inst.id];S.coins+=inst.cost;
@@ -5858,9 +5860,9 @@ function ignite(L,i){const g=S.g;g.s[L][i]=1;if(L===0&&g.m[0][i]===MI.grass)g.st
 function spread(L,x,y,q){const g=S.g,gw=g.gw,gh=g.gh;for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=gh)continue;for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;const xx=x+dx;if(xx<0||xx>=gw)continue;heatCell(L,yy*gw+xx,dx&&dy?q*.7:q)}}}
 function radiate(x,y,q,r){const g=S.g;for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){const d=Math.hypot(dx,dy);if(d<1.5||d>r+.5)continue;const xx=x+dx,yy=y+dy;if(xx<0||yy<0||xx>=g.gw||yy>=g.gh)continue;const w=(1-d/(r+1))*.6;heatCell(0,yy*g.gw+xx,q*w);heatCell(1,yy*g.gw+xx,q*w)}}
 function onBurnt(L,i){const g=S.g,o=g.o[L][i];if(o>=0){const ob=S.world.objs[o];ob.b++;if(!ob.dead&&ob.b>=Math.max(1,ob.n*ob.need))destroyObj(ob)}}
-function comboMult(n){return n>=36?5:n>=24?4:n>=14?3:n>=6?2:1}
-function destroyObj(ob){ob.dead=true;S.kills++;if(S.time-S.lastKill<1.1)S.combo++;else S.combo=1;S.lastKill=S.time;const prevMult=comboMult(S.combo-1),mult=comboMult(S.combo);if(mult>prevMult)sfx('combo',{level:mult});else if(!S.lastPop||S.time-S.lastPop>.12){S.lastPop=S.time;sfx('pop',{pitch:Math.min(1,(S.combo||1)/36)})}S.bestCombo=Math.max(S.bestCombo,mult);
-  const pts=ob.pts*mult;S.score+=pts;const big=ob.pts>=250||ob.ex;if(big||S.pops.filter(p=>!p.big).length<6)S.pops.push({x:ob.cx,y:ob.cy,txt:'+'+pts.toLocaleString(),sub:big?ob.label+'!':null,life:0,max:big?1.8:1.1,big});
+// score is plain destruction: every object is worth its own points, whenever and in whatever order it burns
+function destroyObj(ob){ob.dead=true;S.kills++;if(!S.lastPop||S.time-S.lastPop>.12){S.lastPop=S.time;sfx('pop',{pitch:Math.min(1,.3+ob.pts/1000)})}
+  const pts=ob.pts;S.score+=pts;const big=ob.pts>=250||ob.ex;if(big||S.pops.filter(p=>!p.big).length<6)S.pops.push({x:ob.cx,y:ob.cy,txt:'+'+pts.toLocaleString(),sub:big?ob.label+'!':null,life:0,max:big?1.8:1.1,big});
   for(let k=0;k<(ob.n>6?3:1);k++)S.parts.push({k:'puff',x:ob.cx+(Math.random()-.5)*10,y:ob.cy+(Math.random()-.5)*10,vx:(Math.random()-.5)*30,vy:-10-Math.random()*20,life:0,max:1.1,r:5+Math.random()*4});
   if(ob.ex)explode(ob.cx,ob.cy,ob.ex.radius||40,ob.ex.kind)}
 function explode(x,y,R0,kind){SRC=7;const g=S.g,gw=g.gw,rc=R0/CS,cx=Math.floor(x/CS),cy=Math.floor(y/CS);
@@ -5888,7 +5890,6 @@ function simStep(dt){
     g.f[L][i]-=dt;if(g.f[L][i]<=0){g.s[L][i]=2;markCell(i);g.T[L][i]=300;g.last[L][i]=S.time;onBurnt(L,i)}else list[w++]=code}
   list.length=w;SRC=7;S.hot=hot;
   for(let k=S.fuses.length-1;k>=0;k--){const it=S.fuses[k];it.fuseT-=dt;if(it.fuseT<=0){S.fuses.splice(k,1);for(const i of it.cells)if(g.s[1][i]!==2){g.s[1][i]=2;markCell(i)}explode(it.x+it.w/2,it.y+it.h/2,(it.d.explode&&it.d.explode.radius)||56,'boom')}}
-  if(S.combo&&S.time-S.lastKill>1.1)S.combo=0;
   if(list.length||S.fuses.length||(S.spark&&S.spark.t>0))S.quiet=0;else{S.quiet+=dt;if(S.quiet>1.4)finish()}
 }
 /* textures from sim state. Incremental: only cells that changed since the last frame are rebuilt
@@ -5984,7 +5985,7 @@ function finish(){if(S.phase!=='burn')return;S.phase='done';const bonus=S.coinsL
 function showResult(total,bonus,stars,prev){$('ovResult').hidden=false;closeInspect();music('result');try{AU&&AU.setFire(0)}catch(e){}sfx(stars?'win':'lose');for(let k=0;k<stars;k++)setTimeout(()=>sfx('star',{index:k}),500+k*180);
   $('rTitle').textContent=stars===3?'Total meltdown!':stars===2?'Toasty work!':stars===1?'Nice blaze!':'Barely singed';
   $('rStars').innerHTML=[0,1,2].map(k=>ICON.star(k<stars)).join('');[...$('rStars').children].forEach((s,k)=>{if(k<stars){s.classList.add('pop');s.style.animationDelay=(k*.18)+'s'}});
-  const objs=S.world.objs.filter(o=>o.n);$('rRows').innerHTML=`<div class="row"><span>Destruction</span><b>${S.score.toLocaleString()}</b></div><div class="row"><span>Things destroyed</span><b>${objs.filter(o=>o.dead).length} of ${objs.length}</b></div><div class="row"><span>Best combo</span><b>×${S.bestCombo}</b></div><div class="row"><span>Coins left × 5</span><b>+${bonus.toLocaleString()}</b></div>`;
+  const objs=S.world.objs.filter(o=>o.n);$('rRows').innerHTML=`<div class="row"><span>Destruction</span><b>${S.score.toLocaleString()}</b></div><div class="row"><span>Things destroyed</span><b>${objs.filter(o=>o.dead).length} of ${objs.length}</b></div><div class="row"><span>Coins left × 5</span><b>+${bonus.toLocaleString()}</b></div>`;
   let n=0;const el=$('rScore');const step=()=>{n=Math.min(total,n+Math.ceil(total/30));el.textContent=n.toLocaleString();if(n<total)requestAnimationFrame(step)};step()}
 
 /* ---------- inspect ---------- */
@@ -6057,7 +6058,7 @@ function refreshMode(){if(!S)return;const placing=S.phase==='plan'&&!!selTool&&!
   if(S.phase==='plan')$('toolInfo').hidden=!S.def.tutorial&&!placing&&!S.look&&!S.picking}
 function updateCoins(){$('coins').textContent=S.coins;document.querySelectorAll('.tool').forEach(b=>{const t=TOOLS.find(t=>t.id===b.dataset.t);if(!t)return;b.classList.toggle('poor',S.coins<t.cost)})}
 function updateHUD(){if(S.phase==='plan')return;$('coins').textContent=S.score.toLocaleString();$('score').textContent=S.score.toLocaleString();$('barFill').style.width=Math.min(100,S.score/S.barMax*100)+'%';
-  const cm=comboMult(S.combo);$('combo').textContent=cm>1?`COMBO ×${cm}`:'';$('bar').querySelectorAll('em').forEach(e=>{const on=S.score>=S.th[+e.dataset.k];if(on!==(e.dataset.on==='1')){e.dataset.on=on?'1':'0';e.innerHTML=ICON.star(on)}})}
+  $('bar').querySelectorAll('em').forEach(e=>{const on=S.score>=S.th[+e.dataset.k];if(on!==(e.dataset.on==='1')){e.dataset.on=on?'1':'0';e.innerHTML=ICON.star(on)}})}
 let toastT=0;function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),ms)}
 function hideToast(){clearTimeout(toastT);$('toast').classList.remove('on')}
 function noCoins(){sfx('error');toast('Not enough coins. Undo, or wipe something up with the sponge to free some.',1800);const p=$('coinPill');p.classList.remove('shake');void p.offsetWidth;p.classList.add('shake')}
@@ -6078,7 +6079,7 @@ function setLook(on){if(!S)return;sfx('magnifier');if(on&&S.picking)doIgnite();S
 $('btnLook').innerHTML=MAG_SVG;$('btnLook').onclick=()=>setLook(!(S&&S.look));$('btnPause').onclick=()=>{if(S){$('ovPause').hidden=false;renderLightButtons()}};
 $('pResume').onclick=()=>$('ovPause').hidden=true;$('pRestart').onclick=()=>startLevel(S.def.id);
 $('pLevels').onclick=showMenu;$('rLevels').onclick=showMenu;$('rRetry').onclick=()=>startLevel(S.def.id);$('rNext').onclick=()=>{const i=LEVELS.indexOf(S.def);if(i>=0&&i<LEVELS.length-1)startLevel(LEVELS[i+1].id);else showMenu()};
-function showTut(){$('tutSteps').innerHTML='';const steps=[['tool_crate','Drag to look around. Pick a tool, tap the ground to place it, and you’re back to panning. Then press Ignite and tap one spot to light.'],['gas_can','Paths, stone and water stop fire. Wet things have to steam dry before they catch. Pick the magnifier to check any object.'],['tool_bomb','Everything that burns scores points. Fast chains build a combo. Unspent coins pay a bonus.']];
+function showTut(){$('tutSteps').innerHTML='';const steps=[['tool_crate','Drag to look around. Pick a tool, tap the ground to place it, and you’re back to panning. Then press Ignite and tap one spot to light.'],['gas_can','Paths, stone and water stop fire. Wet things have to steam dry before they catch. Pick the magnifier to check any object.'],['tool_bomb','Everything that burns scores its points. Unspent coins pay a bonus.']];
   for(const[a,t]of steps){const d=document.createElement('div');d.className='step';d.appendChild(assetIcon(a,40));const s=document.createElement('span');s.textContent=t;d.appendChild(s);$('tutSteps').appendChild(d)}$('ovTut').hidden=false}
 $('tGo').onclick=()=>{$('ovTut').hidden=true;BEST._tut=1;saveBest();toast('Goals: '+goalText(),3000)};
 function showMenu(){S=null;music('menu');try{AU&&AU.setFire(0)}catch(e){}$('game').hidden=true;$('menu').hidden=false;renderMenu()}
@@ -6352,13 +6353,12 @@ const TASKS=[
  {id:'cars',kind:'sum',n:[3,6,1],pay:n=>10+n*3,text:n=>`Blow up ${n} cars`,measure:R=>R.cars},
  {id:'boom',kind:'sum',n:[6,12,2],pay:n=>10+n*1.5,text:n=>`Set off ${n} explosions`,measure:R=>R.booms},
  {id:'fireworks',kind:'sum',n:[2,3,1],pay:n=>10+n*5,text:n=>`Light ${n} fireworks crates or barrels`,measure:R=>R.fireworks},
- {id:'combo',kind:'run',n:[2,4,1],pay:n=>5+n*5,text:n=>`Hit a ×${n} combo`,measure:R=>R.combo},
  {id:'night',kind:'sum',n:[2,3,1],pay:n=>8+n*5,text:n=>`Burn ${n} levels at night`,hint:'Set the light to Night in the pause menu',measure:R=>R.night?1:0},
  {id:'pack',kind:'run',n:[1,2,1],pay:n=>10+n*7,pick:true,text:(n,p)=>`Earn ${n}★ on any ${p.name} level`,measure:(R,p)=>R.pack===p.id?R.stars:0},
  {id:'area',kind:'run',n:[300,600,100],pay:n=>10+n/40,text:n=>`Burn ${n} m² in one run`,measure:R=>R.m2},
  {id:'frugal',kind:'run',n:[30,50,10],pay:n=>40-n/2,goal:1,text:n=>`Win a level spending under ${n}% of the coins`,measure:(R,p,n)=>R.stars>=1&&R.spent<n/100?1:0},
  {id:'destroy',kind:'sum',n:[60,140,20],pay:n=>10+n/10,text:n=>`Destroy ${n} things`,measure:R=>R.dead},
- {id:'score',kind:'sum',n:[15000,40000,5000],pay:n=>10+n/2500,text:n=>`Score ${n.toLocaleString()} points today`,measure:R=>R.total},
+ {id:'score',kind:'sum',n:[4000,10000,1000],pay:n=>10+n/625,text:n=>`Score ${n.toLocaleString()} points today`,measure:R=>R.total},
  {id:'stars',kind:'sum',n:[3,6,1],pay:n=>8+n*3,text:n=>`Earn ${n} stars today`,hint:'Replays count too',measure:R=>R.stars},
  {id:'wins',kind:'set',n:[2,3,1],pay:n=>8+n*5,text:n=>`Win ${n} different levels`,measure:R=>R.stars>=1?R.id:null},
 ];
@@ -6382,7 +6382,7 @@ let DAILY=null;
 function runRecord(total,stars){const w=S.world,I=S.items;let cars=0,booms=0,fw=0,dead=0,burnt=0;
   for(const o of w.objs){if(!o.n||!o.dead)continue;dead++;if(o.ex){booms++;if(o.ex.kind==='fireworks')fw++}if(w.byId[o.inst]&&w.byId[o.inst].name==='car')cars++}
   const g=S.g;for(let i=0;i<g.N;i++)if(g.s[0][i]===2||g.s[1][i]===2||g.s[2][i]===2||g.s[3][i]===2)burnt++;
-  const b=S.def.budget||1;return{id:S.def.id,pack:S.def.pack,stars,total,dead,cars,booms,fireworks:fw,combo:S.bestCombo||1,m2:Math.round(burnt*(CS/16)*(CS/16)),
+  const b=S.def.budget||1;return{id:S.def.id,pack:S.def.pack,stars,total,dead,cars,booms,fireworks:fw,m2:Math.round(burnt*(CS/16)*(CS/16)),
     night:(S.burnLight||lightKey)==='night',spent:(b-(S.coinsLeft!=null?S.coinsLeft:S.coins))/b,items:!!(I&&Object.keys(I.used||{}).length)}}
 // apply a run to today's tasks; returns {done:[{text,reward}], bonus, streak, nuke}
 function applyRun(R){DAILY=dailyInfo();const D=dailyState(),out={done:[],charcoal:0,bonus:0,streak:0,nuke:false};
@@ -6484,7 +6484,7 @@ function topLayer(i){const g=S.g;for(let L=NL-1;L>=0;L--)if(g.m[L][i]&&g.s[L][i]
 function burnOut(inst){const g=S.g;for(const i of inst.cells)if(g.id[1][i]===inst.id){g.s[1][i]=2;markCell(i)}}
 function pop(x,y,txt,big=true){S.pops.push({x,y,txt,life:0,max:big?1.4:1,big:true,word:true,small:!big})}
 function splashFire(x,y,R,d0,d1,blobs){const g=S.g;
-  forCells(x,y,R,(i,f)=>{if(f>.6+.4*hash(i*13+7))return;const m=g.m[0][i];if(m===MI.water||m===MI.ice||m===MI.snow)return;const dur=d0+(d1-d0)*Math.random();
+  forCells(x,y,R,(i,f)=>{if(f>.6+.4*hash(i*13+7))return;const m=g.m[0][i];if(m===MI.water||m===MI.ice||m===MI.snow)return;const dur=d0+(d1-d0)*S.simRnd();
     if(g.ovs[i]===3)g.ov[i]=Math.max(g.ov[i],dur);else{g.ov[i]=dur;g.ovs[i]=3;S.burning.push(i*5+4)}});
   const I=IS(),bl=[];for(let k=0;k<blobs;k++){const a=Math.random()*6.28,d=Math.sqrt(Math.random())*R*.8;bl.push({x:x+Math.cos(a)*d,y:y+Math.sin(a)*d,r:R*(.14+Math.random()*.16),rot:Math.random()*6})}
   I.decals.push({k:'splash',x,y,R,bl,t:0,life:d1+1})}
@@ -6590,9 +6590,9 @@ function meteorFx(x,y){const sx=x+150,sy=y-290,FALL=.9;let landed=false;
       drawSpr(c,'item_meteor',false,x,y,1.5,0,k);drawSpr(c,'item_meteor',true,x,y,1.5,0,cool*.8)}}}
 function tornadoFx(x0,y0){const T=14;let vx=0,vy=0,tgt=null,re=0;
   return{k:'tornado',x:x0,y:y0,px:x0,py:y0,age:0,tick(dt){this.age+=dt;this.px=this.x;this.py=this.y;re-=dt;
-      if(re<=0||!tgt||tgt.dead){re=1.6;tgt=null;let bd=1e9;for(const o of S.world.objs){if(!o.n||o.dead)continue;const d=Math.hypot(o.cx-this.x,o.cy-this.y)*(.6+Math.random()*.8);if(d<bd&&d<240&&d>12){bd=d;tgt=o}}}
+      if(re<=0||!tgt||tgt.dead){re=1.6;tgt=null;let bd=1e9;for(const o of S.world.objs){if(!o.n||o.dead)continue;const d=Math.hypot(o.cx-this.x,o.cy-this.y)*(.6+S.simRnd()*.8);if(d<bd&&d<240&&d>12){bd=d;tgt=o}}}
       const ax=tgt?tgt.cx-this.x:Math.cos(this.age*1.3)*40,ay=tgt?tgt.cy-this.y:Math.sin(this.age*.9)*40,al=Math.hypot(ax,ay)||1;
-      vx+=(ax/al*48-vx)*dt*1.6+(Math.random()-.5)*60*dt;vy+=(ay/al*48-vy)*dt*1.6+(Math.random()-.5)*60*dt;
+      vx+=(ax/al*48-vx)*dt*1.6+(S.simRnd()-.5)*60*dt;vy+=(ay/al*48-vy)*dt*1.6+(S.simRnd()-.5)*60*dt;
       this.x=clamp(this.x+vx*dt,S.A[0]+10,S.A[0]+S.A[2]-10);this.y=clamp(this.y+vy*dt,S.A[1]+10,S.A[1]+S.A[3]-10);
       const k=Math.min(1,this.age/.6)*Math.min(1,(T-this.age)/.8);
       forCells(this.x,this.y,2.4*CS,(i,f)=>heatAll(i,560*dt*k*(1-f*.7)));
@@ -6607,7 +6607,7 @@ function dragonFx(mx,my){const sc=1.7,w=48*sc,x0=-w,x1=S.W+w,V=150;let roared=fa
   return{k:'dragon',x:x0,y:my,px:x0,py:my,age:0,tick(dt){this.age+=dt;this.px=this.x;this.py=this.y;this.x+=V*dt;this.y=my+Math.sin(this.age*2.2)*6;
       const hx=this.x+w*.48,bx=hx+30,breath=Math.abs(bx-mx)<DRAGON_BREATH;this.breath=breath;
       if(breath){if(!roared){roared=true;pop(this.x,my-36,'RAWR!');sfx('ignite')}
-        forCells(bx,this.y,2*CS,(i,f)=>{const L=topLayer(i);if(f<.45&&Math.random()<.25)strike(L,i);heatAll(i,700*dt*(1-f*.6))});
+        forCells(bx,this.y,2*CS,(i,f)=>{const L=topLayer(i);if(f<.45&&S.simRnd()<.25)strike(L,i);heatAll(i,700*dt*(1-f*.6))});
         for(let k=0;k<3;k++)S.parts.push({k:'spark',x:hx+6,y:this.y+(Math.random()-.5)*6,vx:140+Math.random()*80,vy:(Math.random()-.5)*60,life:0,max:.3,r:2+Math.random()*2,c:['#ffe066','#f99a30','#ea5428'][k]})}
       if(this.x>x1)this.done=true},
     draw(c,tm){const a=S.acc/TICK,x=lerp(this.px,this.x,a),y=lerp(this.py,this.y,a),d=A.item_dragon,h=40*sc;
@@ -6782,7 +6782,7 @@ finish=function(){if(!S||S.phase!=='burn')return;
   if(S.replay){S.phase='done';setTimeout(showReplayEnd,700);return}
   const total=S.score+S.coinsLeft*5,stars=S.th.filter(v=>total>=v).length,objs=S.world.objs.filter(o=>o.n);
   if(S.plan){const l=HIST[S.def.id]=runsOf(S.def.id);
-    l.unshift({t:Date.now(),total,stars,score:S.score,left:S.coinsLeft,dead:objs.filter(o=>o.dead).length,all:objs.length,combo:S.bestCombo,used:S.items?S.items.used:{},plan:S.plan});
+    l.unshift({t:Date.now(),total,stars,score:S.score,left:S.coinsLeft,dead:objs.filter(o=>o.dead).length,all:objs.length,used:S.items?S.items.used:{},plan:S.plan});
     // keep the newest runs, and never drop the best one
     if(l.length>HIST_MAX){const best=l.reduce((b,r)=>r.total>b.total?r:b,l[0]);l.length=HIST_MAX;if(!l.includes(best))l[HIST_MAX-1]=best}
     saveHist()}
@@ -6972,7 +6972,7 @@ function renderHowto(){const ic=a=>{const s=document.createElement('span');s.app
     <ul><li>Fire jumps between things that touch or sit close together.</li><li>Paths, stone, snow and water stop it.</li><li>Wet things have to steam dry before they catch.</li><li>Explosive things (gas tanks, fireworks, barrels) blow fire outward.</li></ul>
     <p>Use the magnifier during planning to check what anything is made of.</p>
     <h3>Stars</h3>
-    <p>Each level has three score goals, one per ★. Every coin you don't spend adds 5 points, and fast chains of burning build a combo. Every level can reach ★★★ with coins alone.</p>
+    <p>Each level has three score goals, one per ★. Everything that burns is worth its own points (big things like houses and cars are worth the most), and every coin you don't spend adds 5 points. The same plan always scores the same. Every level can reach ★★★ with coins alone.</p>
     <h3>Unlocking</h3>
     <ul><li>One star on a level unlocks the next level.</li><li>All ${packMax(packs()[0].id)} stars in a pack unlock the next pack.</li></ul>
     <h3>Charcoal and items</h3>
@@ -7081,14 +7081,7 @@ async function onSignedIn(u){
   const here = STORE.all(), remote = data && data.data, mine = hasProgress(here), theirs = hasProgress(remote);
   if (here.owner === u.id || !mine){   // already this account's copy, or nothing to lose
     ready = true; state = 'synced';
-    // take the merge whenever it raises anything here (best scores, charcoal and items, or runs this device lacks),
-    // not just best scores; otherwise the push below would overwrite the account with this device's older copy.
-    // At most once per page load, so a merge that never settles can't loop reloads.
-    if (remote){ const m = merge(here, remote), canon = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, q) => (o[q] = x[q], o), {}) : x);
-      const runs = h => new Set(Object.values(h || {}).flat().map(r => r && r.t)), seen = runs(here.hist);
-      const raised = canon(m.best || {}) !== canon(here.best || {}) || canon(m.items || null) !== canon(here.items || null) || [...runs(remote.hist)].some(t => !seen.has(t));
-      let again = false; try{ again = sessionStorage.getItem('burns-merged') === '1'; sessionStorage.removeItem('burns-merged'); }catch(e){}
-      if (!again && (raised || here.owner !== u.id)){ try{ sessionStorage.setItem('burns-merged', '1'); }catch(e){} return apply(m); } }
+    if (remote){ const m = merge(here, remote); if (JSON.stringify(m.best) !== JSON.stringify(here.best || {}) || here.owner !== u.id) return apply(m); }
     else { here.owner = u.id; STORE.replace(here); }
     push(); render(); return; }
   const n = starCount(here), m = theirs ? starCount(remote) : 0, later = ['Decide later', '', () => { close(); render(); }];
