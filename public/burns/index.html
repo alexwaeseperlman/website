@@ -343,7 +343,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 58bee20 · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 8d7bae9 · Oct 14</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -5717,9 +5717,9 @@ function layout(){const st=$('stage').getBoundingClientRect();VW=st.width;VH=st.
 
 // A level's baked meshes load before it starts (cached after the first time); returns a promise either way.
 let loadingId=null;
-function startLevel(id){
+function startLevel(id,opts){
   if(!meshReady(id)||!meshReady('items')){ loadingId=id; toast('Loading…',60000);
-    return loadLevelMeshes(id).then(()=>{ if(loadingId!==id) return; loadingId=null; hideToast(); return startLevel(id); },e=>{ loadingId=null; console.error(e); toast('Couldn’t load this level. Check your connection and try again.',3000); }); }
+    return loadLevelMeshes(id).then(()=>{ if(loadingId!==id) return; loadingId=null; hideToast(); return startLevel(id,opts); },e=>{ loadingId=null; console.error(e); toast('Couldn’t load this level. Check your connection and try again.',3000); }); }
   loadingId=null; startLevelNow(id); return Promise.resolve(); }
 function startLevelNow(id){
   const def=LEVELS.find(l=>l.id===id);lightKey=LIGHTS[def.light]?def.light:'afternoon';TOOLSET=TOOLS.filter(t=>!def.tools||def.tools.includes(t.id)||t.id==='sponge');
@@ -6442,7 +6442,7 @@ function trayCounts(){if(!S)return;document.querySelectorAll('.tool.itm').forEac
 
 /* ---------- planning: placing, picking up, undo ---------- */
 const _startLevel=startLevel;
-startLevel=function(id){const r=_startLevel(id);if(S&&S.def.id===id){TOOLSET=TOOLSET.filter(t=>!t.item);IS()}return r};
+startLevel=function(id,opts){const r=_startLevel(id,opts);if(S&&S.def.id===id){TOOLSET=TOOLSET.filter(t=>!t.item);IS()}return r};
 const _selectTool=selectTool;
 selectTool=function(id){if(id&&ITEM[id]&&S&&avail(id)<=0){sfx('error');openShop(id);id=null}_selectTool(id)};
 const _refreshMode=refreshMode;
@@ -6803,7 +6803,7 @@ function applyPlan(p,replay){const miss=[];
     pourEnd()}
   selectTool(null);updateCoins();IA.trayCounts();return miss}
 
-function replayRun(id,run){$('ovHist').hidden=true;startLevel(id).then(()=>{if(!S||S.def.id!==id)return;S.replay=run;closeTutorial();
+function replayRun(id,run){$('ovHist').hidden=true;startLevel(id,{replay:true}).then(()=>{if(!S||S.def.id!==id)return;S.replay=run;closeTutorial();
   const miss=applyPlan(run.plan,true);if(miss.length)toast("Some of this run's setup doesn't fit any more",1800);
   $('btnUndo').hidden=true;lightAt(run.plan.light[0],run.plan.light[1]);showReplayTag(true)})}
 function planFrom(id,run){$('ovHist').hidden=true;startLevel(id).then(()=>{if(!S||S.def.id!==id)return;closeTutorial();
@@ -6959,7 +6959,7 @@ function route(){if(skip){skip=false;return}const h=location.hash.slice(1);
   if(h.startsWith('r=')&&window.openSharedRun){if(window.openSharedRun(h.slice(2)))return;setHash('');h2home();return}
   if(h==='unlockall'){unlockAll=true;try{localStorage.setItem('burns_unlock','1')}catch(e){}setHash('levels');return route()}
   if(h==='play'){if(!(S&&!$('game').hidden))startLevel(curLevel().id);return}
-  if(LEVELS.some(l=>l.id===h)){if(!(S&&S.def.id===h&&!$('game').hidden))startLevel(h);return}   // direct links (and tests) skip the locks
+  if(LEVELS.some(l=>l.id===h)){if(!(S&&S.def.id===h&&!$('game').hidden))startLevel(h);return}   // direct links still respect the locks (#unlockall opens all)
   leaveGame();$('mToast').classList.remove('on');
   if(h==='levels'){show('menu');renderMenu();const c=document.querySelector('#packs .lvl.cur');if(c)c.scrollIntoView({block:'center'})}
   else if(h==='howto'){show('howto');renderHowto();$('howto').scrollTop=0}
@@ -6969,7 +6969,11 @@ addEventListener('hashchange',route);
 
 // every level start (Play, a level card, Next, Retry, a replay) remembers the level and puts #play in the address
 const _start=startLevel;
-startLevel=function(id){STORE.put('cur',id);setHash('play');return _start(id)};
+// a locked level can't be played from anywhere (Retry, Restart, Next, a past plan, a typed address); it can only be
+// watched, as a shared replay ({replay:true})
+startLevel=function(id,opts){const l=LEVELS.find(x=>x.id===id);
+  if(l&&!levelOpen(l)&&!(opts&&opts.replay)){go('levels');setTimeout(()=>mToast(lockText(l),3200),60);return Promise.resolve()}
+  if(!(opts&&opts.replay))STORE.put('cur',id);setHash('play');return _start(id,opts)};
 showMenu=()=>go('levels');
 $('pLevels').onclick=()=>go('levels');$('rLevels').onclick=()=>go('levels');
 $('rNext').onclick=()=>{const i=LEVELS.indexOf(S.def),n=LEVELS[i+1];if(n&&levelOpen(n))startLevel(n.id);else go('levels')};
