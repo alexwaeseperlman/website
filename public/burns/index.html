@@ -343,7 +343,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 279bb99 · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 58bee20 · Oct 14</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -6766,6 +6766,7 @@ else{renderMenuTop();renderDaily()}
    sim is seeded per level, so replaying the plan replays the burn; shop items with random motion (tornado, dragon, lightning)
    can play out a little differently. Replays never touch best scores, rewards or the inventory. */
 const HIST_MAX=20;
+const SHARE_SVG='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="#4a2e1f" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11H5a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 5 21h14a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 19 11h-1" fill="none" stroke="#4a2e1f" stroke-width="2.6" stroke-linecap="round"/></svg>';
 const IA=window.ITEMS_API||{ITEM:{},IS:()=>S.items||(S.items={marks:[],loan:{}}),trayCounts:()=>{}};
 let HIST=STORE.get('hist')||{};
 function saveHist(){STORE.put('hist',HIST)}
@@ -6837,8 +6838,29 @@ showMenu=function(){showReplayTag(false);_hShowMenu()};
 function showReplayEnd(){const run=S.replay,total=S.score+S.coinsLeft*5,stars=S.th.filter(v=>total>=v).length,ov=$('ovResult');
   ov.hidden=false;music('result');try{AU&&AU.setFire(0)}catch(e){}
   $('rTitle').textContent='Replay';$('rStars').innerHTML=[0,1,2].map(k=>ICON.star(k<stars)).join('');$('rScore').textContent=total.toLocaleString();
-  $('rRows').innerHTML=`<div class="row"><span>Played</span><b>${when(run.t)}</b></div><div class="row"><span>Score back then</span><b>${run.total.toLocaleString()}</b></div>`;
+  $('rTitle').textContent=run.shared?'Shared replay':'Replay';
+  $('rRows').innerHTML=`<div class="row"><span>Played</span><b>${when(run.t)}</b></div><div class="row"><span>${run.shared?'Their score':'Score back then'}</span><b>${run.total.toLocaleString()}</b></div>`;
   const old=$('rRew');if(old)old.remove();}
+
+/* ---------- sharing: a run's plan packed into a link; opening it plays the replay (nothing is spent or scored) ---------- */
+// #r=<base64url JSON>: {v, l: level id, t: tools [[id,x,y]], m: sky marks, g: gas cells as base-36 gaps, s: spark [x,y], k: light, sc: score, at: time}
+const SHARE_HOSTS=['alexwp.com','www.alexwp.com','localhost','127.0.0.1'];
+const shareBase=()=>SHARE_HOSTS.includes(location.hostname)?location.origin+location.pathname:'https://alexwp.com/burns/';
+const b64u=s=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u=s=>decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
+function shareLink(id,run){const p=run.plan,gas=p.gas.slice().sort((a,b)=>a-b);let last=0;
+  const g=gas.map(i=>{const d=i-last;last=i;return d.toString(36)}).join('.'),r=v=>Math.round(v);
+  const o={v:1,l:id,t:p.tools.map(([t,x,y])=>[t,r(x),r(y)]),m:(p.marks||[]).map(([t,x,y])=>[t,r(x),r(y)]),g,s:p.light.map(r),k:p.lk,sc:run.total,at:run.t};
+  return shareBase()+'#r='+b64u(JSON.stringify(o))}
+function parseShare(code){try{const o=JSON.parse(unb64u(code));if(!o||!LEVELS.some(l=>l.id===o.l))return null;let last=0;
+    const gas=o.g?o.g.split('.').map(d=>last+=parseInt(d,36)):[];
+    return{id:o.l,run:{t:o.at||Date.now(),total:o.sc||0,shared:true,plan:{tools:o.t||[],marks:o.m||[],gas,light:o.s,lk:o.k}}}}catch(e){return null}}
+async function shareRun(id,run){const url=shareLink(id,run),def=LEVELS.find(l=>l.id===id);
+  const text=`I scored ${run.total.toLocaleString()} on ${def?def.name:id} in Burns. Watch the replay:`;
+  if(navigator.share){try{await navigator.share({title:'Burns replay',text,url});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(url);toast('Replay link copied',1800)}catch(e){prompt('Copy this replay link',url)}}
+// called by home.js when the address is a shared replay
+window.openSharedRun=code=>{const s=parseShare(code);if(!s){toast("That replay link doesn't work",2200);return false}replayRun(s.id,s.run);return true};
 
 /* ---------- the viewer ---------- */
 function when(t){const d=new Date(t),now=new Date(),day=86400000,mid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
@@ -6854,11 +6876,12 @@ function openHistory(id){const def=LEVELS.find(l=>l.id===id),runs=runsOf(id),ov=
   $('hList').innerHTML=runs.length?runs.map((r,k)=>`<div class="hrun${r===best?' best':''}" data-k="${k}">
     <div class="hr-top"><span class="hr-when">${when(r.t)}</span>${r===best?'<span class="hr-best">Best</span>':''}<span class="hr-stars">${[0,1,2].map(q=>ICON.star(q<r.stars)).join('')}</span><b class="hr-score">${r.total.toLocaleString()}</b></div>
     <div class="hr-plan">${planText(r.plan)} · ${r.dead} of ${r.all} destroyed</div>
-    <div class="hr-btns"><button class="btn sm go" data-a="watch">Watch replay</button><button class="btn sm" data-a="plan">Use this plan</button></div></div>`).join('')
+    <div class="hr-btns"><button class="btn sm go" data-a="watch">Watch replay</button><button class="btn sm" data-a="plan">Use this plan</button><button class="btn sm hr-share" data-a="share" aria-label="Share this replay">${SHARE_SVG}</button></div></div>`).join('')
     :'<p class="hr-empty">No runs yet. Finish a burn and it shows up here.</p>';
   $('hList').querySelectorAll('.hrun').forEach(el=>{const r=runs[+el.dataset.k];
     el.querySelector('[data-a="watch"]').onclick=()=>{sfx('select');$('ovResult').hidden=true;$('ovPause').hidden=true;replayRun(id,r)};
-    el.querySelector('[data-a="plan"]').onclick=()=>{sfx('select');confirmPlan(id,r)}});
+    el.querySelector('[data-a="plan"]').onclick=()=>{sfx('select');confirmPlan(id,r)};
+    el.querySelector('[data-a="share"]').onclick=()=>{sfx('select');shareRun(id,r)}});
   ov.hidden=false}
 (function setupHistoryUI(){
   const ov=document.createElement('div');ov.className='ov';ov.id='ovHist';ov.hidden=true;
@@ -6869,6 +6892,8 @@ function openHistory(id){const def=LEVELS.find(l=>l.id===id),runs=runsOf(id),ov=
   ov.after(pb);pb.addEventListener('click',e=>{if(e.target===pb)pb.hidden=true});
   const add=(after,id,label)=>{const b=document.createElement('button');b.className='btn';b.id=id;b.textContent=label;after.after(b);return b};
   add($('pRestart'),'pHist','Past runs').onclick=()=>{if(S)openHistory(S.def.id)};
+  const sh=document.createElement('button');sh.className='h-link r-share';sh.id='rShare';sh.innerHTML=SHARE_SVG+'<span>Share this replay</span>';$('rRows').after(sh);
+  sh.onclick=()=>{if(!S)return;const run=S.replay||runsOf(S.def.id)[0];if(run){sfx('select');shareRun(S.def.id,run)}};
   const rb=$('rLevels'),hb=document.createElement('button');hb.className='btn';hb.id='rHist';hb.textContent='Past runs';rb.before(hb);hb.onclick=()=>{if(S)openHistory(S.def.id)};
   const st=document.createElement('style');st.textContent=`
 #ovHist{z-index:60}.card.hist{box-sizing:border-box;width:100%;max-width:420px;min-width:0;max-height:calc(100dvh - 48px);display:flex;flex-direction:column;padding:16px 14px 12px}
@@ -6877,7 +6902,7 @@ function openHistory(id){const def=LEVELS.find(l=>l.id===id),runs=runsOf(id),ov=
 .hrun{text-align:left;border-radius:14px;padding:10px 12px;background:rgba(0,0,0,.05);box-shadow:inset 0 0 0 2px rgba(0,0,0,.08)}.hrun.best{box-shadow:inset 0 0 0 2px #f5b51c;background:rgba(245,181,28,.12)}
 .hr-top{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}.hr-when{font-weight:700;flex:1;white-space:nowrap}.hr-best{font-size:12px;font-weight:800;background:#f5b51c;color:#3a2a10;border-radius:8px;padding:1px 7px}
 .hr-stars svg{width:16px;height:16px;vertical-align:-3px}.hr-score{font-size:18px}.hr-plan{font-size:13px;opacity:.75;margin:4px 0 8px}
-.hr-btns{display:flex;gap:8px}.hr-btns .btn{flex:1;min-width:0;height:auto;padding:9px 6px;font-size:15px;line-height:1.15}.hr-empty{opacity:.7;text-align:center;margin:18px 0}
+.hr-btns{display:flex;gap:8px}.hr-btns .hr-share{flex:none;width:46px;padding:0;display:grid;place-items:center}.r-share{display:inline-flex;align-items:center;gap:6px;margin:4px auto 12px;font-size:16px}.r-share svg{width:18px;height:18px}.hr-btns .btn{flex:1;min-width:0;height:auto;padding:9px 6px;font-size:15px;line-height:1.15}.hr-empty{opacity:.7;text-align:center;margin:18px 0}
 .replay-tag{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);background:rgba(20,14,10,.78);color:#fff;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:12px;padding:4px 12px;border-radius:999px;pointer-events:none;z-index:5}
 .lvl .lvl-h{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;background:rgba(255,250,240,.92);box-shadow:0 2px 0 rgba(0,0,0,.25);display:grid;place-items:center}
 .lvl .lvl-h svg{width:18px;height:18px}.lvl{position:relative}
@@ -6931,6 +6956,7 @@ const _leave=showMenu;   // stops a level and shows the old menu (history.js cle
 function show(id){for(const s of ['home','menu','howto'])$(s).hidden=s!==id}
 function leaveGame(){if(S||!$('game').hidden)_leave()}
 function route(){if(skip){skip=false;return}const h=location.hash.slice(1);
+  if(h.startsWith('r=')&&window.openSharedRun){if(window.openSharedRun(h.slice(2)))return;setHash('');h2home();return}
   if(h==='unlockall'){unlockAll=true;try{localStorage.setItem('burns_unlock','1')}catch(e){}setHash('levels');return route()}
   if(h==='play'){if(!(S&&!$('game').hidden))startLevel(curLevel().id);return}
   if(LEVELS.some(l=>l.id===h)){if(!(S&&S.def.id===h&&!$('game').hidden))startLevel(h);return}   // direct links (and tests) skip the locks
@@ -6938,6 +6964,7 @@ function route(){if(skip){skip=false;return}const h=location.hash.slice(1);
   if(h==='levels'){show('menu');renderMenu();const c=document.querySelector('#packs .lvl.cur');if(c)c.scrollIntoView({block:'center'})}
   else if(h==='howto'){show('howto');renderHowto();$('howto').scrollTop=0}
   else{show('home');renderHome()}}
+function h2home(){show('home');renderHome()}
 addEventListener('hashchange',route);
 
 // every level start (Play, a level card, Next, Retry, a replay) remembers the level and puts #play in the address
@@ -7015,7 +7042,7 @@ function renderHowto(){const ic=a=>{const s=document.createElement('span');s.app
 // boot: game.js leaves the first screen to us
 window.BURNS_NAV={go,levelOpen,packOpen,curLevel,renderHome};
 route();
-{const h=location.hash.slice(1);if(h!=='play'&&!LEVELS.some(l=>l.id===h))music('menu')}
+{const h=location.hash.slice(1);if(h!=='play'&&!h.startsWith('r=')&&!LEVELS.some(l=>l.id===h))music('menu')}
 })();
 
 </script>
