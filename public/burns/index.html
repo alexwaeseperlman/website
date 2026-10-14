@@ -343,7 +343,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build dab0924 · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build ed6e88d · Oct 14</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -6749,7 +6749,10 @@ Object.assign(window.__T,{
   items:ITEMS.map(i=>i.id),rewards:id=>levelRewards(LEVELS.find(l=>l.id===id)),
 });
 // for history.js
-window.ITEMS_API={ITEM,IS,trayCounts};
+window.ITEMS_API={ITEM,IS,trayCounts,itemIcon,CHAR_SVG,inv:id=>SAVE.inv[id]||0,charcoal:()=>SAVE.charcoal,
+  // buy several items at once ({id: count}); false (and nothing bought) if the charcoal doesn't cover all of them
+  buyMany:need=>{let cost=0;for(const id in need)cost+=ITEM[id].price*need[id];if(cost>SAVE.charcoal)return false;
+    SAVE.charcoal-=cost;for(const id in need)SAVE.inv[id]=(SAVE.inv[id]||0)+need[id];save();renderMenuTop();return true}};
 window.renderMenuTop=renderMenuTop;window.renderDaily=renderDaily;   // for home.js
 if(S){TOOLSET=TOOLSET.filter(t=>!t.item);renderTools();refreshMode()}
 else{renderMenuTop();renderDaily()}
@@ -6804,6 +6807,26 @@ function replayRun(id,run){$('ovHist').hidden=true;startLevel(id).then(()=>{if(!
   $('btnUndo').hidden=true;lightAt(run.plan.light[0],run.plan.light[1]);showReplayTag(true)})}
 function planFrom(id,run){$('ovHist').hidden=true;startLevel(id).then(()=>{if(!S||S.def.id!==id)return;closeTutorial();
   const miss=applyPlan(run.plan,false);toast(miss.length?`Plan loaded. Some of it didn't fit (${[...new Set(miss)].join(', ')}): check your coins and items.`:'Plan loaded. Change anything you like, then ignite.',2600)})}
+// "Use this plan" with shop items in it: show every item the plan lays out, what you already own, and the charcoal for the rest.
+// Buying gets all the missing ones in one go and loads the plan; you can also load it without them (those spots stay empty).
+function planItems(p){const n={};for(const [t] of p.tools.concat(p.marks||[]))if(IA.ITEM[t])n[t]=(n[t]||0)+1;return n}
+function confirmPlan(id,run){const need=planItems(run.plan),ids=Object.keys(need);
+  const go=()=>{$('ovPlanBuy').hidden=true;$('ovResult').hidden=true;$('ovPause').hidden=true;planFrom(id,run)};
+  if(!ids.length||!IA.buyMany){go();return}
+  const miss={};let cost=0,nMiss=0;
+  const rows=ids.map(t=>{const it=IA.ITEM[t],have=IA.inv(t),m=Math.max(0,need[t]-have);if(m){miss[t]=m;cost+=m*it.price;nMiss+=m}
+    return `<div class="pb-row${m?' miss':''}"><span class="pb-ic" data-i="${t}"></span><div class="pb-t"><b>${it.name}${need[t]>1?' ×'+need[t]:''}</b>
+      <small>${m?`You have ${have} · buy ${m}`:`You have ${have}`}</small></div><span class="pb-c">${m?`${IA.CHAR_SVG}${(m*it.price).toLocaleString()}`:'✓'}</span></div>`}).join('');
+  const char=IA.charcoal(),can=char>=cost;
+  $('pbBody').innerHTML=`<p class="pb-sub">This plan uses ${ids.reduce((a,t)=>a+need[t],0)} shop item${ids.reduce((a,t)=>a+need[t],0)>1?'s':''}.</p>${rows}`+
+    (nMiss?`<div class="pb-total"><span>Total to buy</span><b>${IA.CHAR_SVG}${cost.toLocaleString()}</b></div><p class="pb-have">You have ${char.toLocaleString()} charcoal${can?'':`, ${(cost-char).toLocaleString()} short`}.</p>`:'');
+  $('pbBody').querySelectorAll('.pb-ic').forEach(s=>s.appendChild(IA.itemIcon(IA.ITEM[s.dataset.i],40)));
+  const B=$('pbBtns');B.innerHTML='';const btn=(label,cls,fn,dis)=>{const b=document.createElement('button');b.className='btn'+(cls?' '+cls:'');b.textContent=label;if(dis)b.disabled=true;b.onclick=fn;B.appendChild(b)};
+  if(!nMiss)btn('Load plan','go',go);
+  else{btn(can?`Buy ${nMiss} and load`:'Not enough charcoal','go',()=>{if(IA.buyMany(miss)){sfx('pickup');go()}else sfx('error')},!can);
+    btn('Load without them','',go)}
+  btn('Cancel','',()=>{$('ovPlanBuy').hidden=true});
+  $('ovPlanBuy').hidden=false}
 function closeTutorial(){const t=$('ovTut');if(t)t.hidden=true}
 function showReplayTag(on){let el=$('replayTag');if(!el){el=document.createElement('div');el.id='replayTag';el.className='replay-tag';el.textContent='Replay';$('game').appendChild(el)}el.hidden=!on}
 const _hStartLevelNow=startLevelNow;
@@ -6835,12 +6858,15 @@ function openHistory(id){const def=LEVELS.find(l=>l.id===id),runs=runsOf(id),ov=
     :'<p class="hr-empty">No runs yet. Finish a burn and it shows up here.</p>';
   $('hList').querySelectorAll('.hrun').forEach(el=>{const r=runs[+el.dataset.k];
     el.querySelector('[data-a="watch"]').onclick=()=>{sfx('select');$('ovResult').hidden=true;$('ovPause').hidden=true;replayRun(id,r)};
-    el.querySelector('[data-a="plan"]').onclick=()=>{sfx('select');$('ovResult').hidden=true;$('ovPause').hidden=true;planFrom(id,r)}});
+    el.querySelector('[data-a="plan"]').onclick=()=>{sfx('select');confirmPlan(id,r)}});
   ov.hidden=false}
 (function setupHistoryUI(){
   const ov=document.createElement('div');ov.className='ov';ov.id='ovHist';ov.hidden=true;
   ov.innerHTML='<div class="card hist"><div class="hist-h"><h3>Past runs</h3><button class="shop-x" id="hX" aria-label="Close past runs">×</button></div><div class="hist-sub" id="hTitle"></div><div class="hlist" id="hList"></div></div>';
   $('ovShop').parentNode.appendChild(ov);$('hX').onclick=()=>{ov.hidden=true};ov.addEventListener('click',e=>{if(e.target===ov)ov.hidden=true});
+  const pb=document.createElement('div');pb.className='ov';pb.id='ovPlanBuy';pb.hidden=true;
+  pb.innerHTML='<div class="card planbuy"><h3>Use this plan</h3><div id="pbBody"></div><div class="pb-btns" id="pbBtns"></div></div>';
+  ov.after(pb);pb.addEventListener('click',e=>{if(e.target===pb)pb.hidden=true});
   const add=(after,id,label)=>{const b=document.createElement('button');b.className='btn';b.id=id;b.textContent=label;after.after(b);return b};
   add($('pRestart'),'pHist','Past runs').onclick=()=>{if(S)openHistory(S.def.id)};
   const rb=$('rLevels'),hb=document.createElement('button');hb.className='btn';hb.id='rHist';hb.textContent='Past runs';rb.before(hb);hb.onclick=()=>{if(S)openHistory(S.def.id)};
@@ -6854,7 +6880,13 @@ function openHistory(id){const def=LEVELS.find(l=>l.id===id),runs=runsOf(id),ov=
 .hr-btns{display:flex;gap:8px}.hr-btns .btn{flex:1;min-width:0;height:auto;padding:9px 6px;font-size:15px;line-height:1.15}.hr-empty{opacity:.7;text-align:center;margin:18px 0}
 .replay-tag{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 70px);transform:translateX(-50%);background:rgba(20,14,10,.78);color:#fff;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:12px;padding:4px 12px;border-radius:999px;pointer-events:none;z-index:5}
 .lvl .lvl-h{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;background:rgba(255,250,240,.92);box-shadow:0 2px 0 rgba(0,0,0,.25);display:grid;place-items:center}
-.lvl .lvl-h svg{width:18px;height:18px}.lvl{position:relative}`;
+.lvl .lvl-h svg{width:18px;height:18px}.lvl{position:relative}
+#ovPlanBuy{z-index:61}.card.planbuy{max-width:380px;text-align:left;max-height:calc(100dvh - 48px);overflow-y:auto}.card.planbuy h3{font-size:26px}
+.pb-sub{margin:4px 0 10px;opacity:.75}.pb-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;background:rgba(0,0,0,.04);margin-bottom:8px}
+.pb-row.miss{background:rgba(245,181,28,.14);box-shadow:inset 0 0 0 2px rgba(245,181,28,.6)}.pb-ic{width:40px;height:40px;flex:none;display:grid;place-items:center}
+.pb-t{flex:1;min-width:0;display:flex;flex-direction:column}.pb-t small{opacity:.7;font-size:13px}.pb-c{display:flex;align-items:center;gap:4px;font-weight:800}
+.pb-c svg,.pb-total svg{width:18px;height:18px}.pb-total{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:18px}.pb-total b{display:flex;align-items:center;gap:5px}
+.pb-have{margin:4px 0 0;font-size:13px;opacity:.7}.pb-btns{display:flex;flex-direction:column;gap:10px;margin-top:14px}.pb-btns .btn{flex:none}.pb-btns .btn:disabled{opacity:.5}`;
   document.head.appendChild(st)})();
 // a clock badge on menu cards for levels that have past runs
 const HIST_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="#fff" stroke="#3a2a1e" stroke-width="2.2"/><path d="M12 7.5V12l3 2" fill="none" stroke="#3a2a1e" stroke-width="2.2" stroke-linecap="round"/></svg>';
