@@ -7081,7 +7081,14 @@ async function onSignedIn(u){
   const here = STORE.all(), remote = data && data.data, mine = hasProgress(here), theirs = hasProgress(remote);
   if (here.owner === u.id || !mine){   // already this account's copy, or nothing to lose
     ready = true; state = 'synced';
-    if (remote){ const m = merge(here, remote); if (JSON.stringify(m.best) !== JSON.stringify(here.best || {}) || here.owner !== u.id) return apply(m); }
+    // take the merge whenever it raises anything here (best scores, charcoal and items, or runs this device lacks),
+    // not just best scores; otherwise the push below would overwrite the account with this device's older copy.
+    // At most once per page load, so a merge that never settles can't loop reloads.
+    if (remote){ const m = merge(here, remote), canon = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, q) => (o[q] = x[q], o), {}) : x);
+      const runs = h => new Set(Object.values(h || {}).flat().map(r => r && r.t)), seen = runs(here.hist);
+      const raised = canon(m.best || {}) !== canon(here.best || {}) || canon(m.items || null) !== canon(here.items || null) || [...runs(remote.hist)].some(t => !seen.has(t));
+      let again = false; try{ again = sessionStorage.getItem('burns-merged') === '1'; sessionStorage.removeItem('burns-merged'); }catch(e){}
+      if (!again && (raised || here.owner !== u.id)){ try{ sessionStorage.setItem('burns-merged', '1'); }catch(e){} return apply(m); } }
     else { here.owner = u.id; STORE.replace(here); }
     push(); render(); return; }
   const n = starCount(here), m = theirs ? starCount(remote) : 0, later = ['Decide later', '', () => { close(); render(); }];
