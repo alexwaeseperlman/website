@@ -35,6 +35,119 @@
   cursor: grab;
 }
 
+#compass {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+#compass:hover,
+#compass:active {
+  background: transparent;
+}
+
+#compass:focus-visible {
+  outline: 2px solid #005f7f;
+  outline-offset: 2px;
+}
+
+#compass.dragging {
+  cursor: grabbing;
+}
+
+#compass svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.compass-face {
+  fill: rgba(255, 255, 255, 0.92);
+  stroke: #0079ac;
+  stroke-width: 1.5;
+}
+
+.compass-north {
+  fill: #e0592a;
+}
+
+.compass-south {
+  fill: #0079ac;
+  opacity: 0.45;
+}
+
+.compass-n {
+  font: bold 8px Roboto, sans-serif;
+  fill: #005f7f;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: white;
+  stroke-width: 2px;
+}
+
+#globe-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+#globe-canvas {
+  flex: 0 0 auto;
+  pointer-events: auto;
+  width: 140px;
+  height: 140px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.globe-legend {
+  font-size: 13px;
+  color: black;
+}
+
+.globe-legend p {
+  margin: 0 0 4px;
+}
+
+.legend-dot,
+.legend-dash,
+.legend-seam {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #005f7f;
+}
+
+.legend-dash {
+  width: 16px;
+  border-top: 2px dashed #005f7f;
+}
+
+.legend-seam {
+  width: 16px;
+  border-top: 2px solid #e0592a;
+}
+
+#globe-canvas.dragging {
+  cursor: grabbing;
+}
+
 #map-canvas.adding {
   cursor: crosshair;
 }
@@ -117,6 +230,36 @@
   margin: 0 0 12px;
   color: black;
   font-size: 15px;
+}
+
+#route-section {
+  margin-bottom: 12px;
+  padding-top: 10px;
+  border-top: 2px solid #0001;
+}
+
+.section-title {
+  font-family: "Roboto Slab";
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+#route-controls[hidden],
+#route-help[hidden] {
+  display: none;
+}
+
+#route-controls .marker-select {
+  flex: 1;
+}
+
+#route-distance {
+  margin: 8px 0;
+}
+
+#straighten-btn {
+  width: 100%;
+  font-size: 18px;
 }
 
 #marker-list {
@@ -218,6 +361,18 @@
 
   #map-controls {
     padding: 10px;
+  }
+
+  #compass {
+    width: 44px;
+    height: 44px;
+    top: 6px;
+    right: 6px;
+  }
+
+  #straighten-btn {
+    height: 34px;
+    font-size: 16px;
   }
 
   #projection-row {
