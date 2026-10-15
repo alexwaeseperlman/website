@@ -362,7 +362,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 10f8a34 · Oct 15</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build aab5819 · Oct 15</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -594,7 +594,6 @@ const STORE = (function () {
 const MESH_CS = 8;
 
 function planesOut(bytes, n, stride) { const out = new Uint8Array(n * stride); for (let k = 0; k < stride; k++) for (let i = 0; i < n; i++) out[k * n + i] = bytes[i * stride + k]; return out; }
-function planesIn(src, o, n, stride) { const out = new Uint8Array(n * stride); for (let k = 0; k < stride; k++) { const b = o + k * n; for (let i = 0; i < n; i++) out[i * stride + k] = src[b + i]; } return out; }
 
 // raw arrays + ranges → BSM3 body parts (Uint8Arrays) and the unique-vertex count
 function encodeMesh(P, C, U, T, ranges, cells) {
@@ -619,21 +618,24 @@ function decodeMesh(buf) {
   const b = new Uint8Array(buf), dv = new DataView(buf), magic = String.fromCharCode(b[0], b[1], b[2], b[3]);
   if (magic !== 'BSM3') throw new Error('not a BSM3 mesh (' + magic + '): re-run tools/bake');
   const hl = dv.getUint32(4, true), h = JSON.parse(new TextDecoder().decode(b.subarray(8, 8 + hl))), n = h.vcount, nv = h.nv; let o = 8 + hl;
-  const dp = new Int16Array(planesIn(b, o, nv, 4).buffer); o += nv * 4;
-  const dc = planesIn(b, o, nv, 4); o += nv * 4;
-  const du = new Int16Array(planesIn(b, o, nv, 4).buffer); o += nv * 4;
-  const vt = b.subarray(o, o + nv); o += nv;
-  const ie = new Int32Array(planesIn(b, o, n, 4).buffer); o += n * 4;
-  for (let i = 2; i < nv * 2; i++) { dp[i] += dp[i - 2]; du[i] += du[i - 2]; }
-  for (let i = 4; i < nv * 4; i++) dc[i] = (dc[i] + dc[i - 4]) & 255;
+  // byte planes → values, undoing the delta / index coding in the same pass (one sequential read per plane, no temporaries)
+  const P = new Int16Array(nv * 2), C = new Uint8Array(nv * 4), U = new Int16Array(nv * 2), I = new Uint32Array(n);
+  const vec = (out, o) => { const p0 = o, p1 = o + nv, p2 = o + 2 * nv, p3 = o + 3 * nv; let x = 0, y = 0;
+    for (let i = 0; i < nv; i++) { x = (x + (b[p0 + i] | b[p1 + i] << 8)) << 16 >> 16; y = (y + (b[p2 + i] | b[p3 + i] << 8)) << 16 >> 16; out[2 * i] = x; out[2 * i + 1] = y; } };
+  vec(P, o); o += nv * 4;
+  { const p0 = o, p1 = o + nv, p2 = o + 2 * nv, p3 = o + 3 * nv; let r = 0, g = 0, bl = 0, a = 0;
+    for (let i = 0; i < nv; i++) { r = (r + b[p0 + i]) & 255; g = (g + b[p1 + i]) & 255; bl = (bl + b[p2 + i]) & 255; a = (a + b[p3 + i]) & 255; const k = 4 * i; C[k] = r; C[k + 1] = g; C[k + 2] = bl; C[k + 3] = a; } }
+  o += nv * 4;
+  vec(U, o); o += nv * 4;
+  const T = b.slice(o, o + nv); o += nv;
   // the game draws indexed: unique vertices plus an index per triangle corner (pieces' ranges are ranges of I)
-  const I = new Uint32Array(n); let mx = -1;
-  for (let v = 0; v < n; v++) { const i = mx + 1 - ie[v]; if (i > mx) mx = i; I[v] = i; }
-  const P = dp, C = dc, U = du, T = vt.slice();
+  { const p0 = o, p1 = o + n, p2 = o + 2 * n, p3 = o + 3 * n; let mx = -1;
+    for (let v = 0; v < n; v++) { const i = mx + 1 - (b[p0 + v] | b[p1 + v] << 8 | b[p2 + v] << 16 | b[p3 + v] << 24); if (i > mx) mx = i; I[v] = i; } }
+  o += n * 4;
   const M = { h, P, C, U, T, I, n, nv };
   if (h.cells) { const np = h.pieces.length, cnt = new Uint32Array(buf.slice(o, o + np * 4)); o += np * 4; let tot = 0; for (const c of cnt) tot += c;
-    const xy = new Uint16Array(planesIn(b, o, tot, 4).buffer); M.cells = []; let k = 0;
-    for (const c of cnt) { const l = []; for (let q = 0; q < c; q++, k += 2) l.push([xy[k], xy[k + 1]]); M.cells.push(l); } }
+    const p0 = o, p1 = o + tot, p2 = o + 2 * tot, p3 = o + 3 * tot; M.cells = []; let k = 0;
+    for (const c of cnt) { const l = []; for (let q = 0; q < c; q++, k++) l.push([b[p0 + k] | b[p1 + k] << 8, b[p2 + k] | b[p3 + k] << 8]); M.cells.push(l); } }
   return M;
 }
 
@@ -874,8 +876,8 @@ if(uFinal>.5){gl_FragColor=vec4(texture2D(uRaw,v).rgb,min(1.,s*55./255.));}else{
    is burning nearby; also carries explosions and item effects). Both get a slow, blobby flicker. uFarK is
    the per-preset strength of the wide glow (subtle in the afternoon, strong at dusk and night). */
 const FS_MAIN=FS_COMMON+`
-uniform sampler2D uFire,uSh,uFar,LI0,LI1,LI2,LI3,LB0,LB1,LB2,LB3;uniform vec2 uCam,uView,uWorld,uFarSz,uOut,uLOff,uLSize;uniform vec4 uAct;uniform float uZ,uTime,uDbg,uFarK;uniform vec3 uBg,uAmb,uSun,uFireCol;
-void main(){vec2 wp=uCam+vec2(gl_FragCoord.x,uView.y-gl_FragCoord.y)/uZ;vec2 t=wp/uWorld;vec2 s=(gl_FragCoord.xy+uLOff)/uLSize;
+uniform sampler2D uFire,uSh,uFar,LI0,LI1,LI2,LI3,LB0,LB1,LB2,LB3;uniform vec2 uCam,uView,uWorld,uFarSz,uOut,uLOff,uLSize;uniform float uLK;uniform vec4 uAct;uniform float uZ,uTime,uDbg,uFarK;uniform vec3 uBg,uAmb,uSun,uFireCol;
+void main(){vec2 wp=uCam+vec2(gl_FragCoord.x,uView.y-gl_FragCoord.y)/uZ;vec2 t=wp/uWorld;vec2 s=(gl_FragCoord.xy*uLK+uLOff)/uLSize;
 vec3 alb;vec3 em=vec3(0.);vec4 f=vec4(0.);float sh;vec2 shv=vec2(1.);vec2 oa=vec2(0.);
 if(t.x<0.||t.y<0.||t.x>1.||t.y>1.){alb=uBg;sh=1.;// the camera never shows past the map; this is only a guard
 }else{
@@ -1011,38 +1013,69 @@ Renderer.prototype.setWorld=function(world){
 Renderer.prototype.refreshLayers=function(){ this.world.ver++; };
 
 // draw one layer's art (v: 0 intact, 1 burnt): the level's pieces, then tools placed in that layer
-Renderer.prototype.drawLayer=function(L,v,mode,cam,z,vw,vh,fy){ const gl=this.gl, p=this.pMesh, u=n=>this.u(p,n), w=this.world;
+Renderer.prototype.drawLayer=function(L,v,mode,cam,z,vw,vh,fy){ const gl=this.gl, p=this.pMesh, u=n=>this.u(p,n), w=this.world, cb=this.cullBox;
   gl.useProgram(p); gl.uniform2f(u('uCam'),cam.x,cam.y); gl.uniform1f(u('uZ'),z); gl.uniform2f(u('uView'),vw,vh); gl.uniform1f(u('uFy'),fy); gl.uniform1i(u('uMode'),mode); gl.uniform1i(u('uT0'),0); gl.uniform1i(u('uT1'),1); gl.uniform1i(u('uT2'),2);
   const use=g=>{ gl.bindVertexArray(g.vao); g.arrays.forEach((t,k)=>{ gl.activeTexture(gl.TEXTURE0+k); gl.bindTexture(gl.TEXTURE_2D_ARRAY,t); }); gl.uniform1fv(u('uS[0]'),g.S); gl.uniform1iv(u('uTA[0]'),g.TA); gl.uniform1f(u('uQ'),g.M.h.q); gl.uniform1f(u('uQU'),g.M.h.qu); };
   const r=this.lvl.ranges[L][v];
   if(r.n){ use(this.lvl); gl.uniform2f(u('uOff'),0,0); gl.uniform1f(u('uHv'),-1);
-    if(fy<0) gl.drawElements(gl.TRIANGLES,r.n,gl.UNSIGNED_INT,r.s*4);
-    else { // screen pass: skip pieces outside the view (with a margin), merging neighbouring visible pieces into one draw
-      const m=8, X0=cam.x-m, Y0=cam.y-m, X1=cam.x+vw/z+m, Y1=cam.y+vh/z+m, R=r.runs; let a=-1, b=0;
+    if(fy<0&&!cb) gl.drawElements(gl.TRIANGLES,r.n,gl.UNSIGNED_INT,r.s*4);
+    else { // screen pass (or a partial map redraw, cullBox): skip pieces outside the view with a margin, merging neighbouring visible pieces into one draw
+      const m=8, X0=(cb?cb[0]:cam.x)-m, Y0=(cb?cb[1]:cam.y)-m, X1=(cb?cb[2]:cam.x+vw/z)+m, Y1=(cb?cb[3]:cam.y+vh/z)+m, R=r.runs; let a=-1, b=0;
       for(let k=0;k<R.length;k+=6){ if(R[k+2]>X1||R[k+4]<X0||R[k+3]>Y1||R[k+5]<Y0) continue;
         if(a>=0&&R[k]===b){ b+=R[k+1]; continue; } if(a>=0) gl.drawElements(gl.TRIANGLES,b-a,gl.UNSIGNED_INT,a*4); a=R[k]; b=a+R[k+1]; }
       if(a>=0) gl.drawElements(gl.TRIANGLES,b-a,gl.UNSIGNED_INT,a*4); } }
   let bound=false; for(const it of w.insts){ if(!it.item||it.L!==L) continue; const pc=it.piece, s0=v?pc[3]:pc[1], c=v?pc[4]:pc[2]; if(!c) continue;
     if(fy>0){ const e=8+Math.max(it.w,it.h)/2; if(it.x+it.w<cam.x-e||it.y+it.h<cam.y-e||it.x>cam.x+vw/z+e||it.y>cam.y+vh/z+e) continue; }
+    else if(cb){ const e=8+Math.max(it.w,it.h)/2; if(it.x+it.w<cb[0]-e||it.y+it.h<cb[1]-e||it.x>cb[2]+e||it.y>cb[3]+e) continue; }
     if(!bound){ use(this.items); bound=true; }
     gl.uniform2f(u('uOff'),it.x,it.y); gl.uniform1f(u('uHv'),instHv(it)); gl.drawElements(gl.TRIANGLES,c,gl.UNSIGNED_INT,s0*4); }
   gl.bindVertexArray(null); };
-// world-space coverage and height maps (row 0 = world y 0, like the sim textures)
-Renderer.prototype.renderMaps=function(){ const gl=this.gl, w=this.world, ms=this.msaa(w.W,w.H);
+// world box of a placed tool's art (its intact and burnt ranges), cached per baked piece
+Renderer.prototype.itemBox=function(it){ const pc=it.piece; let b=pc.box;
+  if(!b){ const M=it.mesh, P=M.P, I=M.I, q=M.h.q; b=[1e9,1e9,-1e9,-1e9];
+    for(const [s0,c] of [[pc[1],pc[2]],[pc[3],pc[4]]]) for(let t=s0;t<s0+c;t++){ const i=I[t], x=P[i*2]/q, y=P[i*2+1]/q; if(x<b[0])b[0]=x; if(y<b[1])b[1]=y; if(x>b[2])b[2]=x; if(y>b[3])b[3]=y; }
+    pc.box=b; }
+  return [it.x+b[0],it.y+b[1],it.x+b[2],it.y+b[3]]; };
+// world-space coverage and height maps (row 0 = world y 0, like the sim textures). The level's own pieces never change, so
+// after the first draw only the area of tools placed, moved or picked up since is redrawn (the maps are a MAX of all the art,
+// so drawing everything clipped to that box gives the same texels a full redraw would), and its shadows are redone there.
+Renderer.prototype.renderMaps=function(){ const gl=this.gl, w=this.world, items=new Map();
+  for(const it of w.insts) if(it.item) items.set(it,{k:it.x+','+it.y+','+it.name,b:this.itemBox(it)});
+  let box=null; const add=b=>{ if(!box) box=b.slice(); else { box[0]=Math.min(box[0],b[0]); box[1]=Math.min(box[1],b[1]); box[2]=Math.max(box[2],b[2]); box[3]=Math.max(box[3],b[3]); } };
+  const prev=this.mapWorld===w?this.mapItems:null;
+  if(prev){ for(const [it,e] of items){ const p=prev.get(it); if(!p||p.k!==e.k){ add(e.b); if(p) add(p.b); } }
+    for(const [it,p] of prev) if(!items.has(it)) add(p.b); }
+  this.mapWorld=w; this.mapItems=items;
+  let x0=0, y0=0, bw=w.W, bh=w.H;
+  if(prev){ if(!box) return; x0=Math.max(0,Math.floor(box[0])-2); y0=Math.max(0,Math.floor(box[1])-2); bw=Math.min(w.W,Math.ceil(box[2])+2)-x0; bh=Math.min(w.H,Math.ceil(box[3])+2)-y0; if(bw<=0||bh<=0) return; }
+  // (a multisample resolve must keep the same rectangle, so the MSAA buffer stays world-sized and only the box is drawn into)
+  // (same transform as a full redraw, so every sample is covered exactly as it would be; the scissor limits the work to the box)
+  const ms=this.msaa(w.W,w.H), tmp=prev?this.fbo(w.W,w.H):null; this.cullBox=prev?[x0,y0,x0+bw,y0+bh]:null;
   gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE,gl.ONE);
+  if(prev){ gl.enable(gl.SCISSOR_TEST); gl.scissor(x0,y0,bw,bh); }
   for(const [dst,mode,v] of [[this.aI,1,0],[this.aB,1,1],[this.hMap,2,0]]){
     gl.bindFramebuffer(gl.FRAMEBUFFER,ms.f); gl.viewport(0,0,w.W,w.H); gl.colorMask(true,true,true,true); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
     for(let L=0;L<NL;L++){ gl.colorMask(L===0,L===1,L===2,L===3); this.drawLayer(L,v,mode,{x:0,y:0},1,w.W,w.H,-1); }
-    gl.colorMask(true,true,true,true); this.resolve(ms,dst); }
-  gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-  gl.deleteRenderbuffer(ms.rb); gl.deleteFramebuffer(ms.f); this.visDirty=true; };
+    gl.colorMask(true,true,true,true);
+    if(!prev){ this.resolve(ms,dst); continue; }
+    // resolve the whole buffer the same way a full redraw does (a scissored multisample resolve can round differently),
+    // then copy just the box across
+    gl.disable(gl.SCISSOR_TEST); this.resolve(ms,tmp);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER,tmp.f); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,dst.f); gl.blitFramebuffer(x0,y0,x0+bw,y0+bh,x0,y0,x0+bw,y0+bh,gl.COLOR_BUFFER_BIT,gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null); gl.enable(gl.SCISSOR_TEST); }
+  gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND); gl.disable(gl.SCISSOR_TEST); this.cullBox=null;
+  gl.deleteRenderbuffer(ms.rb); gl.deleteFramebuffer(ms.f); if(tmp){ gl.deleteTexture(tmp.t); gl.deleteFramebuffer(tmp.f); }
+  if(!prev) this.visDirty=true;
+  else { const c=[Math.floor(x0/CS),Math.floor(y0/CS),Math.floor((x0+bw-1)/CS),Math.floor((y0+bh-1)/CS)], d=this.mBox;
+    if(!d) this.mBox=c; else { d[0]=Math.min(d[0],c[0]); d[1]=Math.min(d[1],c[1]); d[2]=Math.max(d[2],c[2]); d[3]=Math.max(d[3],c[3]); }
+    this.shadowNow=true; } };
 // screen-space layer art for the current view: LI (intact) and LB (burnt) per layer. The layers cover the view plus SCR_M
 // device px on every side, so a small pan or a screen shake only moves where the main pass reads them (whole pixels,
 // see render) instead of redrawing all eight layers with MSAA, which is the most expensive thing the renderer does.
 const SCR_M=48;
 Renderer.prototype.renderScreen=function(o){ const gl=this.gl, M=SCR_M, vw=o.viewW+2*M, vh=o.viewH+2*M, cam={x:o.cam.x-M/o.z,y:o.cam.y-M/o.z};
   if(!this.scr||this.scr.w!==vw||this.scr.h!==vh){ this.freeScreen(); const s=this.scr={w:vw,h:vh,ms:this.msaa(vw,vh),LI:[],LB:[]}; for(let L=0;L<NL;L++){ s.LI.push(this.fbo(vw,vh)); s.LB.push(this.fbo(vw,vh)); } }
-  this.scr.cx=o.cam.x; this.scr.cy=o.cam.y;
+  this.scr.cx=o.cam.x; this.scr.cy=o.cam.y; this.scr.z=o.z;
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
   const nb=o.burnt===false; // planning: nothing has burnt yet, so the burnt layers are left clear (the main pass gives them no weight)
   if(nb&&!this.scr.clearB){ for(const f of this.scr.LB){ gl.bindFramebuffer(gl.FRAMEBUFFER,f.f); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); } }
@@ -1059,18 +1092,23 @@ Renderer.prototype.bindCommon=function(p){ const gl=this.gl, w=this.world, u=n=>
 Renderer.prototype.render=function(o){ // o: {cam, z (device), viewW, viewH, time, light}
   const gl=this.gl, w=this.world;
   if(this.mapsVer!==w.ver){ this.mapsVer=w.ver; this.renderMaps(); }
-  const base=o.z+','+o.viewW+','+o.viewH+','+w.ver+','+(o.burnt!==false), key=o.cam.x+','+o.cam.y+','+base;
-  // reuse the layers while the view only moved by up to SCR_M device px. The offset is rounded to whole pixels, so while the
-  // camera moves (pan, shake) the art can sit up to half a device pixel off; once it stops, any such remainder is redrawn
-  // exactly, so a view at rest is drawn just as before.
-  let ox=0, oy=0, s=this.scr, ok=base===this.scrKey&&s;
-  const moving=o.cam.x!==this.lastCX||o.cam.y!==this.lastCY; this.lastCX=o.cam.x; this.lastCY=o.cam.y;
-  if(ok){ const ex=(o.cam.x-s.cx)*o.z, ey=(o.cam.y-s.cy)*o.z; ox=Math.round(ex); oy=Math.round(ey);
-    ok=Math.abs(ox)<=SCR_M&&Math.abs(oy)<=SCR_M&&(moving||(Math.abs(ex-ox)<1e-3&&Math.abs(ey-oy)<1e-3)); }
-  if(!ok){ this.scrKey=base; this.renderScreen(o); ox=oy=0; this.shown=''; }
-  this.scrOX=ox; this.scrOY=oy;
+  const base=o.viewW+','+o.viewH+','+w.ver+','+(o.burnt!==false), key=o.cam.x+','+o.cam.y+','+o.z+','+base;
+  // reuse the layers while the view moves (pan, shake, pinch) and they still cover it. Same scale: read at a whole-pixel
+  // offset (at most half a device pixel off); another scale (a pinch in progress): read scaled, filtered, as long as the scale
+  // is within 12% of the one they were drawn at. Once the view stops, any remainder is redrawn exactly, so a view at rest
+  // is drawn just as before.
+  let s=this.scr, ok=base===this.scrKey&&s;
+  const moving=o.cam.x!==this.lastCX||o.cam.y!==this.lastCY||o.z!==this.lastZ; this.lastCX=o.cam.x; this.lastCY=o.cam.y; this.lastZ=o.z;
+  let k=1, lx=SCR_M, ly=SCR_M;
+  if(ok){ const ex=(o.cam.x-s.cx)*s.z, ey=(o.cam.y-s.cy)*s.z;
+    if(o.z===s.z){ const ox=Math.round(ex), oy=Math.round(ey); lx=SCR_M+ox; ly=SCR_M-oy;
+      ok=Math.abs(ox)<=SCR_M&&Math.abs(oy)<=SCR_M&&(moving||(Math.abs(ex-ox)<1e-3&&Math.abs(ey-oy)<1e-3)); }
+    else { k=s.z/o.z; lx=SCR_M+ex; ly=SCR_M+o.viewH*(1-k)-ey;
+      ok=moving&&Math.abs(k-1)<=.12&&lx>=0&&ly>=0&&lx+o.viewW*k<=s.w&&ly+o.viewH*k<=s.h; } }
+  if(!ok){ this.scrKey=base; this.renderScreen(o); k=1; lx=ly=SCR_M; this.shown=''; }
+  this.scrK=k; this.scrLX=lx; this.scrLY=ly;
   if(o.light!==this.lastLight){ this.lastLight=o.light; this.visDirty=true; }
-  if(this.visDirty||(this.maskDirty&&(o.time-this.visT>=.15||o.time<this.visT))){ this.renderShadows(o,this.visDirty?null:this.mBox); this.visDirty=false; this.maskDirty=false; this.mBox=null; this.visT=o.time; this.shown=''; }
+  if(this.visDirty||this.shadowNow||(this.maskDirty&&(o.time-this.visT>=.15||o.time<this.visT))){ this.renderShadows(o,this.visDirty?null:this.mBox); this.visDirty=false; this.shadowNow=false; this.maskDirty=false; this.mBox=null; this.visT=o.time; this.shown=''; }
   // o.still: nothing is lit, so time drives nothing on screen. If the view, light and every texture the main pass reads
   // are also unchanged since the last frame, the canvas already shows this exact image: skip the full-screen pass
   // (keeps the GPU idle while planning). Uploads, blurs and shadow passes clear this.shown.
@@ -1112,7 +1150,7 @@ Renderer.prototype.renderMain=function(o){ const gl=this.gl, w=this.world; let u
   for(let L=0;L<NL;L++){ gl.activeTexture(gl.TEXTURE0+L); gl.bindTexture(gl.TEXTURE_2D,this.scr.LI[L].t); gl.uniform1i(u('LI'+L),L); gl.activeTexture(gl.TEXTURE4+L); gl.bindTexture(gl.TEXTURE_2D,this.scr.LB[L].t); gl.uniform1i(u('LB'+L),4+L); }
   gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D,this.lightB.t); gl.uniform1i(u('uFire'),10);
   gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D,this.shadowB.t); gl.uniform1i(u('uSh'),11);
-  gl.uniform1f(u('uDbg'),window.SHDBG?1:0);gl.activeTexture(gl.TEXTURE12);gl.bindTexture(gl.TEXTURE_2D,this.farTex);gl.uniform1i(u('uFar'),12);const AC=w.def.active||[0,0,w.W,w.H],O=w.def.outside||{};gl.uniform4f(u('uAct'),AC[0],AC[1],AC[0]+AC[2],AC[1]+AC[3]);gl.uniform2f(u('uOut'),O.grey??.6,O.dim??.8);gl.uniform2f(u('uFarSz'),this.farW*FAR_PX,this.farH*FAR_PX);gl.uniform1f(u('uFarK'),Lt.glow);gl.uniform2f(u('uCam'),o.cam.x,o.cam.y); gl.uniform2f(u('uView'),o.viewW,o.viewH); gl.uniform2f(u('uLOff'),SCR_M+this.scrOX,SCR_M-this.scrOY); gl.uniform2f(u('uLSize'),this.scr.w,this.scr.h); gl.uniform2f(u('uWorld'),w.W,w.H); gl.uniform1f(u('uZ'),o.z); gl.uniform1f(u('uTime'),o.time);
+  gl.uniform1f(u('uDbg'),window.SHDBG?1:0);gl.activeTexture(gl.TEXTURE12);gl.bindTexture(gl.TEXTURE_2D,this.farTex);gl.uniform1i(u('uFar'),12);const AC=w.def.active||[0,0,w.W,w.H],O=w.def.outside||{};gl.uniform4f(u('uAct'),AC[0],AC[1],AC[0]+AC[2],AC[1]+AC[3]);gl.uniform2f(u('uOut'),O.grey??.6,O.dim??.8);gl.uniform2f(u('uFarSz'),this.farW*FAR_PX,this.farH*FAR_PX);gl.uniform1f(u('uFarK'),Lt.glow);gl.uniform2f(u('uCam'),o.cam.x,o.cam.y); gl.uniform2f(u('uView'),o.viewW,o.viewH); gl.uniform2f(u('uLOff'),this.scrLX,this.scrLY); gl.uniform1f(u('uLK'),this.scrK); gl.uniform2f(u('uLSize'),this.scr.w,this.scr.h); gl.uniform2f(u('uWorld'),w.W,w.H); gl.uniform1f(u('uZ'),o.z); gl.uniform1f(u('uTime'),o.time);
   gl.uniform3fv(u('uBg'),o.bg||Lt.bg); const A=Lt.amb, Sn=Lt.sun, dm=o.dim; gl.uniform3f(u('uAmb'),A[0]*dm,A[1]*dm,A[2]*dm); gl.uniform3f(u('uSun'),Sn[0]*dm,Sn[1]*dm,Sn[2]*dm); gl.uniform3fv(u('uFireCol'),Lt.fire);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 };
@@ -6194,7 +6232,7 @@ function lightAt(x,y){const it=itemAt(x,y);const i=it?cellAt(it.x+it.w/2,it.y+it
   S.spark={x:(gx+.5)*CS,y:(gy+.5)*CS,cells,t:SPARK.dur};S.picking=false;startBurn()}
 function startBurn(){S.phase='burn';S.igniteAt=.9;evacuate();closeInspect();$('planBar').hidden=true;$('burnBar').hidden=false;$('btnUndo').hidden=true;$('toolInfo').hidden=true;
   $('hudIcon').innerHTML=ICON.flameInk;S.coinsLeft=S.coins;setupBar();setSpeed(1);clampCam();updateHUD();
-  S.pops.push({x:S.spark.x,y:S.spark.y-16,txt:'3… 2… 1…',life:0,max:.9,word:true,small:true});sfx('ignite');music('burn');setTimeout(()=>{for(let k=0;k<Math.min(4,S.people.length);k++)setTimeout(()=>sfx('scream'),k*260+Math.random()*200)},350)}
+  S.pops.push({x:S.spark.x,y:S.spark.y-16,txt:'3… 2… 1…',life:0,max:.9,word:true,small:true});sfx('ignite');music('burn');setTimeout(()=>{if(!S)return;for(let k=0;k<Math.min(4,S.people.length);k++)setTimeout(()=>sfx('scream'),k*260+Math.random()*200)},350)}
 function setupBar(){const bar=$('bar');bar.querySelectorAll('em').forEach(e=>e.remove());const max=S.th[2]*1.12;S.barMax=max;S.th.forEach((v,k)=>{const e=document.createElement('em');e.style.left=(v/max*100)+'%';e.innerHTML=ICON.star(false);e.dataset.k=k;bar.appendChild(e)})}
 function finish(){if(S.phase!=='burn')return;S.phase='done';const bonus=S.coinsLeft*5,total=S.score+bonus;const stars=S.th.filter(v=>total>=v).length;const prev=BEST[S.def.id]||0;if(total>prev){BEST[S.def.id]=total;saveBest()}setTimeout(()=>showResult(total,bonus,stars,prev),700)}
 function showResult(total,bonus,stars,prev){$('ovResult').hidden=false;closeInspect();music('result');try{AU&&AU.setFire(0)}catch(e){}sfx(stars?'win':'lose');for(let k=0;k<stars;k++)setTimeout(()=>sfx('star',{index:k}),500+k*180);
