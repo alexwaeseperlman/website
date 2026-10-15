@@ -19,6 +19,16 @@ stylesheets:
         <div id="map-viewport">
           <div id="map-canvas-wrap">
             <canvas id="map-canvas"></canvas>
+            <button id="compass" type="button" title="Drag to turn the map. Click to put north up." aria-label="Map rotation: drag to turn, click to put north up">
+              <svg viewBox="-20 -20 40 40" aria-hidden="true">
+                <circle r="18" class="compass-face" />
+                <g id="compass-needle">
+                  <path d="M0 -14 L4.5 0 L-4.5 0 Z" class="compass-north" />
+                  <path d="M0 14 L4.5 0 L-4.5 0 Z" class="compass-south" />
+                  <text y="-16.5" class="compass-n">N</text>
+                </g>
+              </svg>
+            </button>
           </div>
           <div id="map-status"></div>
         </div>
@@ -36,12 +46,40 @@ stylesheets:
             </select>
           </div>
 
-          <p class="helper-text">Drag anywhere on the map to rotate the globe. The point you grab stays under your cursor.</p>
+          <p class="helper-text">
+            Drag the map to pan. Turn the compass to change which way is up, and click it to put north back up.
+          </p>
+          <div id="globe-row">
+            <canvas id="globe-canvas" title="Drag the globe to spin the world"></canvas>
+            <div class="globe-legend">
+              <p>Drag the globe to spin the whole world under the map.</p>
+              <p><span class="legend-dot"></span> map center</p>
+              <p><span class="legend-dash"></span> equator</p>
+              <p><span class="legend-seam"></span> where the map is cut open</p>
+            </div>
+          </div>
           <div id="button-row">
             <button id="add-marker-btn">Add marker</button>
             <button id="reset-view-btn">Reset view</button>
           </div>
           <p class="helper-text" id="add-marker-help">Click "Add marker" to place a new marker.</p>
+
+          <div id="route-section">
+            <div class="section-title">Route</div>
+            <p class="helper-text" id="route-help">Add two markers to draw the shortest route between them.</p>
+            <div id="route-controls">
+              <div class="marker-row">
+                <label for="route-from">From</label>
+                <select id="route-from" class="marker-select"></select>
+              </div>
+              <div class="marker-row">
+                <label for="route-to">To</label>
+                <select id="route-to" class="marker-select"></select>
+              </div>
+              <p class="helper-text" id="route-distance"></p>
+              <button id="straighten-btn" type="button">Straighten route</button>
+            </div>
+          </div>
 
           <div id="marker-list"></div>
         </div>
@@ -59,6 +97,8 @@ stylesheets:
   const MAX_MERCATOR_LAT = 85.05112878 * DEG2RAD;
   const MAP_PADDING_PX = 8;
   const CLICK_SLOP_PX = 4;
+  const EARTH_RADIUS_KM = 6371;
+  const ROUTE_COLOR = "#8a3ffc";
 
   const canvas = document.getElementById("map-canvas");
   const ctx = canvas.getContext("2d");
@@ -66,6 +106,16 @@ stylesheets:
   const addMarkerBtn = document.getElementById("add-marker-btn");
   const addMarkerHelp = document.getElementById("add-marker-help");
   const resetViewBtn = document.getElementById("reset-view-btn");
+  const compassEl = document.getElementById("compass");
+  const compassNeedle = document.getElementById("compass-needle");
+  const globeCanvas = document.getElementById("globe-canvas");
+  const globeCtx = globeCanvas.getContext("2d");
+  const routeFromSelect = document.getElementById("route-from");
+  const routeToSelect = document.getElementById("route-to");
+  const routeHelp = document.getElementById("route-help");
+  const routeControls = document.getElementById("route-controls");
+  const routeDistance = document.getElementById("route-distance");
+  const straightenBtn = document.getElementById("straighten-btn");
   const projectionSelect = document.getElementById("projection-select");
   const statusEl = document.getElementById("map-status");
 
@@ -83,15 +133,20 @@ stylesheets:
       dragging: false,
       pointerId: null,
       // World point grabbed at pointerdown; it stays under the cursor.
-      grabWorld: null,
-      // Equator point whose screen position stays fixed while it slides
-      // along the equator, which pins down the rest of the rotation.
-      anchorLon: null,
-      anchorLocal: null,
+      grabLat: 0,
+      grabLon: 0,
+      // Longitude offset of the grabbed point from the map center. Tracked so
+      // the pan picks the continuous one of its two possible solutions.
+      grabDeltaLon: 0,
       dragDistance: 0,
       lastX: 0,
       lastY: 0,
     },
+    route: { fromId: null, toId: null },
+    globe: { dragging: false, pointerId: null, last: null, size: 140 },
+    compass: { dragging: false, pointerId: null, startAngle: 0, startRotation: 0, moved: false },
+    // Animated change of orientation (route straightening, reset, north-up).
+    viewAnim: null,
     viewport: {
       width: 800,
       height: 500,
@@ -524,41 +579,25 @@ stylesheets:
     };
   }
 
-  function localVectorAt(x, y) {
-    const local = localFromXY(x, y);
-    return latLonToVector(local.lat, local.lon);
+  function cancelViewAnimation() {
+    state.viewAnim = null;
   }
+
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
   canvas.addEventListener("pointerdown", (event) => {
     if (state.pointer.dragging || event.button !== 0) return;
     const p = getEventPoint(event);
     if (!isOnMap(p.x, p.y)) return;
+    cancelViewAnimation();
 
-    const grabLocal = localFromXY(p.x, p.y);
-    const grabLL = rotateFromView(grabLocal.lat, grabLocal.lon);
-    const grabWorld = latLonToVector(grabLL.lat, grabLL.lon);
-
-    // Anchor: of the two equator points 90° from the grabbed point, the one
-    // nearer the middle of the view. It keeps its screen position while
-    // sliding along the equator during the drag.
-    const alpha = Math.atan2(grabWorld.y, grabWorld.x);
-    let anchorLon = null;
-    let anchorLocal = null;
-    for (const lon of [alpha + Math.PI / 2, alpha - Math.PI / 2]) {
-      const ll = rotateToViewWithCenter(0, lon, state.centerLat, state.centerLon, state.viewRotation);
-      const v = latLonToVector(ll.lat, ll.lon);
-      if (!anchorLocal || v.x > anchorLocal.x) {
-        anchorLon = wrapLonRad(lon);
-        anchorLocal = v;
-      }
-    }
-
+    const grab = unprojectXY(p.x, p.y);
     Object.assign(state.pointer, {
       dragging: true,
       pointerId: event.pointerId,
-      grabWorld,
-      anchorLon,
-      anchorLocal,
+      grabLat: grab.lat,
+      grabLon: grab.lon,
+      grabDeltaLon: wrapLonRad(grab.lon - state.centerLon),
       dragDistance: 0,
       lastX: p.x,
       lastY: p.y,
@@ -577,7 +616,7 @@ stylesheets:
       state.pointer.lastY = p.y;
       // Ignore tiny jitter so a click in add-marker mode doesn't nudge the view.
       if (state.pointer.dragDistance >= CLICK_SLOP_PX) {
-        rotateToKeepGrabUnderCursor(p.x, p.y);
+        panToKeepGrabUnderCursor(p.x, p.y);
       }
       requestRender();
     }
@@ -591,13 +630,8 @@ stylesheets:
   function endDrag(event) {
     if (!state.pointer.dragging || event.pointerId !== state.pointer.pointerId) return false;
     const wasClick = state.pointer.dragDistance < CLICK_SLOP_PX;
-    Object.assign(state.pointer, {
-      dragging: false,
-      pointerId: null,
-      grabWorld: null,
-      anchorLon: null,
-      anchorLocal: null,
-    });
+    state.pointer.dragging = false;
+    state.pointer.pointerId = null;
     canvas.classList.remove("dragging");
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     requestRender();
@@ -624,95 +658,483 @@ stylesheets:
     }
   });
 
-  /* ── 3-vector helpers ── */
+  /**
+   * Pan: move the map center so the grabbed point sits under the cursor while
+   * the map's rotation (the compass) stays as it is. With the compass at north
+   * this is ordinary north-up panning; it stops at the poles.
+   */
+  function panToKeepGrabUnderCursor(cursorX, cursorY) {
+    const local = localFromXY(cursorX, cursorY);
+    const q = latLonToVector(local.lat, local.lon);
+
+    // Undo the compass rotation to get the cursor in the north-up frame.
+    const cosR = Math.cos(state.viewRotation);
+    const sinR = Math.sin(state.viewRotation);
+    const qx = q.x;
+    const qy = q.y * cosR + q.z * sinR;
+    const qz = -q.y * sinR + q.z * cosR;
+
+    // In the north-up frame a world point at (lat, lon) lands at
+    //   y = cos(lat)·sin(lon - lon0)
+    //   (x, z) = (a, b) turned by -lat0, with a = cos(lat)·cos(lon - lon0), b = sin(lat).
+    // Solve the first for lon - lon0, then the second for lat0.
+    const { grabLat, grabLon } = state.pointer;
+    const cosLat = Math.cos(grabLat);
+    const s = cosLat < 1e-9 ? 0 : Math.max(-1, Math.min(1, qy / cosLat));
+    const d1 = Math.asin(s);
+    const d2 = wrapLonRad(Math.PI - d1);
+    const prev = state.pointer.grabDeltaLon;
+    const dLon = Math.abs(shortestPeriodicDelta(d1 - prev, 2 * Math.PI))
+      <= Math.abs(shortestPeriodicDelta(d2 - prev, 2 * Math.PI)) ? d1 : d2;
+
+    const a = cosLat * Math.cos(dLon);
+    const b = Math.sin(grabLat);
+    let lat0 = shortestPeriodicDelta(Math.atan2(b, a) - Math.atan2(qz, qx), 2 * Math.PI);
+    // Panning stops at the poles: past one, stay on the pole we were nearest.
+    if (Math.abs(lat0) > Math.PI / 2) lat0 = state.centerLat >= 0 ? Math.PI / 2 : -Math.PI / 2;
+
+    state.centerLat = lat0;
+    state.centerLon = wrapLonRad(grabLon - dLon);
+    state.pointer.grabDeltaLon = dLon;
+  }
+
+  /* ── 3-vector and rotation helpers ── */
   function dot3(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
   function cross3(a, b) {
     return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
   }
   function scale3(v, s) { return { x: v.x * s, y: v.y * s, z: v.z * s }; }
   function sub3(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
-
-  /**
-   * Triad solver — find the rotation (centerLat, centerLon, viewRotation) that
-   * takes world vector pK exactly onto view vector qK, and world vector pO onto
-   * view vector qO as closely as possible.
-   */
-  function solveRotation(pK, qK, pO, qO) {
-    // Build orthonormal bases via Gram-Schmidt (Triad method)
-    const e1 = pK;
-    const e2raw = sub3(pO, scale3(e1, dot3(pO, e1)));
-    const e2len = Math.hypot(e2raw.x, e2raw.y, e2raw.z);
-    if (e2len < 1e-9) return null;
-    const e2 = scale3(e2raw, 1 / e2len);
-    const e3 = cross3(e1, e2);
-
-    const f1 = qK;
-    const f2raw = sub3(qO, scale3(f1, dot3(qO, f1)));
-    const f2len = Math.hypot(f2raw.x, f2raw.y, f2raw.z);
-    if (f2len < 1e-9) return null;
-    const f2 = scale3(f2raw, 1 / f2len);
-    const f3 = cross3(f1, f2);
-
-    // R = F * E^T   (maps world → view;  R * e_k = f_k)
-    const comp = (v, i) => (i === 0 ? v.x : i === 1 ? v.y : v.z);
-    const R = Array.from({ length: 3 }, (_, i) =>
-      Array.from({ length: 3 }, (_, j) =>
-        comp(f1, i) * comp(e1, j) + comp(f2, i) * comp(e2, j) + comp(f3, i) * comp(e3, j)
-      )
-    );
-
-    // Extract center from first row of R
-    const centerWorld = { x: R[0][0], y: R[0][1], z: R[0][2] };
-    const centerLL = vectorToLatLon(centerWorld);
-
-    // Extract viewRotation from second row of R
-    const eastActual = { x: R[1][0], y: R[1][1], z: R[1][2] };
-    const canonical = getCenterBasis(centerLL.lat, centerLL.lon);
-    const cosTheta = dot3(eastActual, canonical.east);
-    const sinTheta = -dot3(eastActual, canonical.north);
-    const viewRotation = Math.atan2(sinTheta, cosTheta);
-
-    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation };
+  function add3(a, b) { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; }
+  function norm3(v) {
+    const len = Math.hypot(v.x, v.y, v.z);
+    return len < 1e-12 ? null : scale3(v, 1 / len);
+  }
+  function rowsToMatrix(r0, r1, r2) {
+    return [[r0.x, r0.y, r0.z], [r1.x, r1.y, r1.z], [r2.x, r2.y, r2.z]];
+  }
+  function matMul(A, B) {
+    return A.map((row) => [0, 1, 2].map((j) => row[0] * B[0][j] + row[1] * B[1][j] + row[2] * B[2][j]));
+  }
+  function transpose(A) {
+    return [0, 1, 2].map((i) => [A[0][i], A[1][i], A[2][i]]);
+  }
+  function matVec(A, v) {
+    return {
+      x: A[0][0] * v.x + A[0][1] * v.y + A[0][2] * v.z,
+      y: A[1][0] * v.x + A[1][1] * v.y + A[1][2] * v.z,
+      z: A[2][0] * v.x + A[2][1] * v.y + A[2][2] * v.z,
+    };
   }
 
-  /**
-   * Rotate the globe so the grabbed point sits under the cursor, while the
-   * anchor keeps its screen position by sliding along the equator.
-   */
-  function rotateToKeepGrabUnderCursor(cursorX, cursorY) {
-    const { grabWorld, anchorLocal } = state.pointer;
-    const qK = localVectorAt(cursorX, cursorY);
+  // World → view rotation for the current orientation. Rows are the view's
+  // axes in world coordinates: toward the viewer (map center), right, up.
+  function getViewMatrix() {
+    const basis = getCenterBasis(state.centerLat, state.centerLon);
+    const c = Math.cos(state.viewRotation);
+    const sn = Math.sin(state.viewRotation);
+    return rowsToMatrix(
+      basis.up,
+      sub3(scale3(basis.east, c), scale3(basis.north, sn)),
+      add3(scale3(basis.east, sn), scale3(basis.north, c)),
+    );
+  }
 
-    // The anchor must stay at the same angular distance from the grabbed point
-    // as their view positions are apart: solve cos(lon - alpha)·r = target.
-    const target = Math.max(-1, Math.min(1, dot3(qK, anchorLocal)));
-    const r = Math.hypot(grabWorld.x, grabWorld.y);
-    let anchorLon = state.pointer.anchorLon;
-    if (r > 1e-6) {
-      const alpha = Math.atan2(grabWorld.y, grabWorld.x);
-      const delta = Math.acos(Math.max(-1, Math.min(1, target / r)));
-      const c1 = wrapLonRad(alpha + delta);
-      const c2 = wrapLonRad(alpha - delta);
-      const d1 = Math.abs(shortestPeriodicDelta(c1 - anchorLon, 2 * Math.PI));
-      const d2 = Math.abs(shortestPeriodicDelta(c2 - anchorLon, 2 * Math.PI));
-      anchorLon = d1 <= d2 ? c1 : c2;
+  function setViewFromMatrix(R) {
+    const centerLL = vectorToLatLon({ x: R[0][0], y: R[0][1], z: R[0][2] });
+    const right = { x: R[1][0], y: R[1][1], z: R[1][2] };
+    const canonical = getCenterBasis(centerLL.lat, centerLL.lon);
+    state.centerLat = centerLL.lat;
+    state.centerLon = centerLL.lon;
+    state.viewRotation = Math.atan2(-dot3(right, canonical.north), dot3(right, canonical.east));
+  }
+
+  function matToQuat(m) {
+    const tr = m[0][0] + m[1][1] + m[2][2];
+    let w, x, y, z;
+    if (tr > 0) {
+      const s = Math.sqrt(tr + 1) * 2;
+      w = s / 4; x = (m[2][1] - m[1][2]) / s; y = (m[0][2] - m[2][0]) / s; z = (m[1][0] - m[0][1]) / s;
+    } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+      const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
+      w = (m[2][1] - m[1][2]) / s; x = s / 4; y = (m[0][1] + m[1][0]) / s; z = (m[0][2] + m[2][0]) / s;
+    } else if (m[1][1] > m[2][2]) {
+      const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
+      w = (m[0][2] - m[2][0]) / s; x = (m[0][1] + m[1][0]) / s; y = s / 4; z = (m[1][2] + m[2][1]) / s;
+    } else {
+      const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
+      w = (m[1][0] - m[0][1]) / s; x = (m[0][2] + m[2][0]) / s; y = (m[1][2] + m[2][1]) / s; z = s / 4;
     }
+    return [w, x, y, z];
+  }
 
-    const result = solveRotation(grabWorld, qK, latLonToVector(0, anchorLon), anchorLocal);
-    if (!result) return;
+  function quatToMat([w, x, y, z]) {
+    return [
+      [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+      [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+      [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ];
+  }
 
-    state.centerLat = result.centerLat;
-    state.centerLon = result.centerLon;
-    state.viewRotation = result.viewRotation;
-    state.pointer.anchorLon = anchorLon;
+  function slerp(a, b, t) {
+    let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    if (d < 0) { b = b.map((v) => -v); d = -d; }
+    if (d > 0.9995) {
+      const r = a.map((v, i) => v + (b[i] - v) * t);
+      const len = Math.hypot(...r);
+      return r.map((v) => v / len);
+    }
+    const theta = Math.acos(d);
+    const sa = Math.sin((1 - t) * theta) / Math.sin(theta);
+    const sb = Math.sin(t * theta) / Math.sin(theta);
+    return a.map((v, i) => v * sa + b[i] * sb);
+  }
+
+  // Smoothly turn the globe to the orientation given by a world → view matrix.
+  function animateViewTo(target, duration = 700) {
+    state.viewAnim = {
+      from: matToQuat(getViewMatrix()),
+      to: matToQuat(target),
+      startTime: performance.now(),
+      duration,
+    };
+    requestRender();
+  }
+
+  function stepViewAnimation() {
+    const anim = state.viewAnim;
+    if (!anim) return;
+    const raw = Math.min(1, (performance.now() - anim.startTime) / anim.duration);
+    setViewFromMatrix(quatToMat(slerp(anim.from, anim.to, easeInOutCubic(raw))));
+    if (raw >= 1) state.viewAnim = null;
+    requestRender();
   }
 
   function resetView() {
-    state.centerLat = 0;
-    state.centerLon = 0;
-    state.viewRotation = 0;
+    animateViewTo(rowsToMatrix({ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }));
+  }
+
+  // Keep the center where it is but turn the map so north points up.
+  function northUp() {
+    const basis = getCenterBasis(state.centerLat, state.centerLon);
+    animateViewTo(rowsToMatrix(basis.up, basis.east, basis.north), 400);
+  }
+
+  /* ── Compass: turns the map around its center ── */
+  function compassAngleAt(event) {
+    const rect = compassEl.getBoundingClientRect();
+    return Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2));
+  }
+
+  compassEl.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    cancelViewAnimation();
+    Object.assign(state.compass, {
+      dragging: true,
+      pointerId: event.pointerId,
+      startAngle: compassAngleAt(event),
+      startRotation: state.viewRotation,
+      moved: false,
+    });
+    compassEl.setPointerCapture(event.pointerId);
+    compassEl.classList.add("dragging");
+  });
+
+  compassEl.addEventListener("pointermove", (event) => {
+    const c = state.compass;
+    if (!c.dragging || event.pointerId !== c.pointerId) return;
+    // Screen angles grow clockwise; viewRotation grows counterclockwise.
+    const delta = shortestPeriodicDelta(compassAngleAt(event) - c.startAngle, 2 * Math.PI);
+    if (Math.abs(delta) > 0.03) c.moved = true;
+    if (c.moved) {
+      state.viewRotation = wrapLonRad(c.startRotation - delta);
+      requestRender();
+    }
+  });
+
+  function endCompassDrag(event) {
+    const c = state.compass;
+    if (!c.dragging || event.pointerId !== c.pointerId) return;
+    c.dragging = false;
+    compassEl.classList.remove("dragging");
+    if (compassEl.hasPointerCapture(event.pointerId)) compassEl.releasePointerCapture(event.pointerId);
+    if (!c.moved && event.type === "pointerup") northUp();
+  }
+
+  compassEl.addEventListener("pointerup", endCompassDrag);
+  compassEl.addEventListener("pointercancel", endCompassDrag);
+
+  compassEl.addEventListener("keydown", (event) => {
+    const step = 5 * DEG2RAD;
+    if (event.key === "ArrowLeft") state.viewRotation = wrapLonRad(state.viewRotation + step);
+    else if (event.key === "ArrowRight") state.viewRotation = wrapLonRad(state.viewRotation - step);
+    else return;
+    event.preventDefault();
+    cancelViewAnimation();
+    requestRender();
+  });
+
+  // The keyboard path for a click; pointer clicks are handled in endCompassDrag.
+  compassEl.addEventListener("click", (event) => {
+    if (event.detail === 0) northUp();
+  });
+
+  function updateCompass() {
+    compassNeedle.setAttribute("transform", `rotate(${-state.viewRotation * RAD2DEG})`);
+  }
+
+  /* ── Globe inset: the map's view of the sphere, seen slightly from the side ── */
+
+  // View frame (toward viewer, right, up) → globe camera (right, up, toward
+  // viewer), turned 25° and tipped 20° so the map's equator reads as an ellipse
+  // and the seam on the far side peeks round the edge.
+  const GLOBE_CAMERA = (() => {
+    const toCamera = [[0, 1, 0], [0, 0, 1], [1, 0, 0]];
+    const yaw = -25 * DEG2RAD;
+    const pitch = 20 * DEG2RAD;
+    const Ry = [[Math.cos(yaw), 0, Math.sin(yaw)], [0, 1, 0], [-Math.sin(yaw), 0, Math.cos(yaw)]];
+    const Rx = [[1, 0, 0], [0, Math.cos(pitch), -Math.sin(pitch)], [0, Math.sin(pitch), Math.cos(pitch)]];
+    return matMul(Rx, matMul(Ry, toCamera));
+  })();
+
+  function globeGeometry() {
+    const size = state.globe.size;
+    return { cx: size / 2, cy: size / 2, r: size / 2 - 4 };
+  }
+
+  function globePointAt(event) {
+    const rect = globeCanvas.getBoundingClientRect();
+    const { cx, cy, r } = globeGeometry();
+    const x = (event.clientX - rect.left - cx) / r;
+    const y = -(event.clientY - rect.top - cy) / r;
+    const d = x * x + y * y;
+    // Points off the disc slide onto its rim, so dragging there spins the globe.
+    return d >= 1 ? norm3({ x, y, z: 0 }) : { x, y, z: Math.sqrt(1 - d) };
+  }
+
+  globeCanvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    cancelViewAnimation();
+    Object.assign(state.globe, { dragging: true, pointerId: event.pointerId, last: globePointAt(event) });
+    globeCanvas.setPointerCapture(event.pointerId);
+    globeCanvas.classList.add("dragging");
+  });
+
+  globeCanvas.addEventListener("pointermove", (event) => {
+    const g = state.globe;
+    if (!g.dragging || event.pointerId !== g.pointerId) return;
+    const next = globePointAt(event);
+    const axis = norm3(cross3(g.last, next));
+    if (!axis) return;
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot3(g.last, next))));
+    g.last = next;
+
+    // Rotate the world in camera space by the arcball step, then carry that
+    // back into the map's view: R' = Cᵀ · step · C · R.
+    const half = angle / 2;
+    const step = quatToMat([Math.cos(half), axis.x * Math.sin(half), axis.y * Math.sin(half), axis.z * Math.sin(half)]);
+    const C = GLOBE_CAMERA;
+    setViewFromMatrix(matMul(transpose(C), matMul(step, matMul(C, getViewMatrix()))));
+    requestRender();
+  });
+
+  function endGlobeDrag(event) {
+    const g = state.globe;
+    if (!g.dragging || event.pointerId !== g.pointerId) return;
+    g.dragging = false;
+    globeCanvas.classList.remove("dragging");
+    if (globeCanvas.hasPointerCapture(event.pointerId)) globeCanvas.releasePointerCapture(event.pointerId);
+  }
+
+  globeCanvas.addEventListener("pointerup", endGlobeDrag);
+  globeCanvas.addEventListener("pointercancel", endGlobeDrag);
+
+  function resizeGlobe() {
+    const size = window.matchMedia("(max-width: 600px)").matches ? 96 : 140;
+    const dpr = window.devicePixelRatio || 1;
+    state.globe.size = size;
+    globeCanvas.style.width = `${size}px`;
+    globeCanvas.style.height = `${size}px`;
+    globeCanvas.width = Math.floor(size * dpr);
+    globeCanvas.height = Math.floor(size * dpr);
+    globeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     requestRender();
   }
+
+  // Draw a polyline of view-frame vectors on the globe: the near side solid,
+  // the far side faint.
+  function drawGlobeLine(localVectors, color, lineWidth, dash = [], backAlpha = 0.08) {
+    const { cx, cy, r } = globeGeometry();
+    const C = GLOBE_CAMERA;
+    for (const front of [false, true]) {
+      globeCtx.save();
+      globeCtx.strokeStyle = color;
+      globeCtx.lineWidth = lineWidth;
+      globeCtx.globalAlpha = front ? 1 : backAlpha;
+      globeCtx.setLineDash(front ? dash : [3, 3]);
+      globeCtx.beginPath();
+      let pen = false;
+      for (const v of localVectors) {
+        const c = matVec(C, v);
+        if ((c.z >= 0) !== front) { pen = false; continue; }
+        const x = cx + c.x * r;
+        const y = cy - c.y * r;
+        if (pen) globeCtx.lineTo(x, y);
+        else globeCtx.moveTo(x, y);
+        pen = true;
+      }
+      globeCtx.stroke();
+      globeCtx.restore();
+    }
+  }
+
+  function drawGlobe() {
+    const size = state.globe.size;
+    const { cx, cy, r } = globeGeometry();
+    globeCtx.clearRect(0, 0, size, size);
+
+    globeCtx.beginPath();
+    globeCtx.arc(cx, cy, r, 0, 2 * Math.PI);
+    globeCtx.fillStyle = "rgba(246, 253, 255, 0.92)";
+    globeCtx.fill();
+
+    const R = getViewMatrix();
+    const toLocal = (lonDeg, latDeg) => matVec(R, latLonToVector(latDeg * DEG2RAD, lonDeg * DEG2RAD));
+    for (const featureItem of state.worldFeatures) {
+      const polygons = featureItem.geometry.type === "Polygon"
+        ? [featureItem.geometry.coordinates]
+        : featureItem.geometry.type === "MultiPolygon" ? featureItem.geometry.coordinates : [];
+      for (const polygon of polygons) {
+        for (const ring of polygon) {
+          drawGlobeLine(ring.map(([lon, lat]) => toLocal(lon, lat)), "#0079ac", 0.6);
+        }
+      }
+    }
+
+    const circle = (fn) => Array.from({ length: 121 }, (_, i) => fn((2 * Math.PI * i) / 120));
+    // The equator, dashed like on the map.
+    drawGlobeLine(circle((t) => matVec(R, { x: Math.cos(t), y: Math.sin(t), z: 0 })), "#005f7f", 1.5, [4, 3], 0.4);
+    // The seam: the meridian behind the map's center, where the map is cut open.
+    drawGlobeLine(
+      Array.from({ length: 61 }, (_, i) => {
+        const lat = -Math.PI / 2 + (Math.PI * i) / 60;
+        return { x: -Math.cos(lat), y: 0, z: Math.sin(lat) };
+      }),
+      "#e0592a", 2, [], 0.5,
+    );
+
+    const route = getRouteMarkers();
+    if (route) {
+      drawGlobeLine(greatCircleArc(route[0], route[1]).map((p) => matVec(R, latLonToVector(p.lat, p.lon))), ROUTE_COLOR, 2.5, [], 0.4);
+    }
+
+    // The map's center.
+    const center = matVec(GLOBE_CAMERA, { x: 1, y: 0, z: 0 });
+    globeCtx.fillStyle = "#005f7f";
+    globeCtx.beginPath();
+    globeCtx.arc(cx + center.x * r, cy - center.y * r, 3, 0, 2 * Math.PI);
+    globeCtx.fill();
+
+    globeCtx.beginPath();
+    globeCtx.arc(cx, cy, r, 0, 2 * Math.PI);
+    globeCtx.strokeStyle = "#0079ac";
+    globeCtx.lineWidth = 1.5;
+    globeCtx.stroke();
+  }
+
+  /* ── Route between two markers ── */
+  function getRouteMarkers() {
+    const from = state.markers.find((m) => m.id === state.route.fromId);
+    const to = state.markers.find((m) => m.id === state.route.toId);
+    return from && to && from !== to ? [from, to] : null;
+  }
+
+  // Points along the shorter great-circle arc from a to b.
+  function greatCircleArc(a, b, steps = 120) {
+    const va = latLonToVector(a.lat, a.lon);
+    const vb = latLonToVector(b.lat, b.lon);
+    const omega = Math.acos(Math.max(-1, Math.min(1, dot3(va, vb))));
+    if (omega < 1e-9) return [a, b];
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const sa = Math.sin((1 - t) * omega) / Math.sin(omega);
+      const sb = Math.sin(t * omega) / Math.sin(omega);
+      points.push(vectorToLatLon(add3(scale3(va, sa), scale3(vb, sb))));
+    }
+    return points;
+  }
+
+  function syncRouteUi() {
+    const markers = state.markers;
+    const ids = new Set(markers.map((m) => m.id));
+    if (!ids.has(state.route.fromId)) state.route.fromId = null;
+    if (!ids.has(state.route.toId)) state.route.toId = null;
+    // Default to the first two markers so a route shows up as soon as it can.
+    if (markers.length >= 2) {
+      if (!state.route.fromId) state.route.fromId = markers.find((m) => m.id !== state.route.toId).id;
+      if (!state.route.toId) state.route.toId = markers.find((m) => m.id !== state.route.fromId).id;
+    }
+
+    for (const [select, key] of [[routeFromSelect, "fromId"], [routeToSelect, "toId"]]) {
+      select.innerHTML = "";
+      markers.forEach((marker, index) => {
+        const option = document.createElement("option");
+        option.value = marker.id;
+        option.textContent = `Marker ${index + 1}`;
+        select.appendChild(option);
+      });
+      select.value = state.route[key] || "";
+    }
+
+    routeHelp.hidden = markers.length >= 2;
+    routeControls.hidden = markers.length < 2;
+    const route = getRouteMarkers();
+    if (route) {
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot3(
+        latLonToVector(route[0].lat, route[0].lon), latLonToVector(route[1].lat, route[1].lon)))));
+      routeDistance.textContent = `Shortest route: ${Math.round(angle * EARTH_RADIUS_KM).toLocaleString()} km`;
+    } else {
+      routeDistance.textContent = "Pick two different markers.";
+    }
+    straightenBtn.disabled = !route;
+  }
+
+  routeFromSelect.addEventListener("change", () => {
+    state.route.fromId = routeFromSelect.value;
+    syncRouteUi();
+    requestRender();
+  });
+
+  routeToSelect.addEventListener("change", () => {
+    state.route.toId = routeToSelect.value;
+    syncRouteUi();
+    requestRender();
+  });
+
+  // Turn the globe so the route runs straight along the map's equator,
+  // centered on the map, from left to right.
+  straightenBtn.addEventListener("click", () => {
+    const route = getRouteMarkers();
+    if (!route) return;
+    const a = latLonToVector(route[0].lat, route[0].lon);
+    const b = latLonToVector(route[1].lat, route[1].lon);
+    let mid = norm3(add3(a, b));
+    let right;
+    if (mid) {
+      right = norm3(sub3(b, scale3(mid, dot3(b, mid))));
+    } else {
+      // Antipodal markers: every great circle through them works, so center
+      // on the one nearest the current map center.
+      right = b;
+      const R = getViewMatrix();
+      const center = { x: R[0][0], y: R[0][1], z: R[0][2] };
+      mid = norm3(sub3(center, scale3(b, dot3(center, b))))
+        || norm3(cross3(b, { x: 0, y: 0, z: 1 }))
+        || { x: 1, y: 0, z: 0 };
+    }
+    animateViewTo(rowsToMatrix(mid, right, cross3(mid, right)));
+  });
 
   function addMarker(lat, lon) {
     state.markers.push({
@@ -739,6 +1161,7 @@ stylesheets:
   }
 
   function renderMarkerList() {
+    syncRouteUi();
     markerListEl.innerHTML = "";
 
     if (state.markers.length === 0) {
@@ -1096,9 +1519,13 @@ stylesheets:
     drawWorld();
     drawEquator();
 
-    for (const marker of state.markers) {
+    const route = getRouteMarkers();
+    if (route) drawProjectedPolyline(greatCircleArc(route[0], route[1]), ROUTE_COLOR, 2.5);
+
+    state.markers.forEach((marker, index) => {
       drawMarker(marker);
-    }
+      drawMarkerLabel(marker, index + 1);
+    });
 
     if (state.addMode && state.hoverMarker) {
       drawMarker({
@@ -1118,9 +1545,25 @@ stylesheets:
     ctx.strokeStyle = "#0079ac";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    updateCompass();
+    drawGlobe();
+  }
+
+  function drawMarkerLabel(marker, number) {
+    const p = projectLatLonRad(marker.lat, marker.lon);
+    ctx.font = "bold 12px Roboto";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "white";
+    ctx.strokeText(String(number), p.x + 4, p.y - 2);
+    ctx.fillStyle = marker.color;
+    ctx.fillText(String(number), p.x + 4, p.y - 2);
   }
 
   function animationLoop() {
+    stepViewAnimation();
     if (state.transition.active) {
       const elapsed = performance.now() - state.transition.startTime;
       if (elapsed >= state.transition.duration) {
@@ -1175,7 +1618,10 @@ stylesheets:
   new ResizeObserver(resizeCanvas).observe(canvas);
 
   refreshAddModeUi();
+  window.matchMedia("(max-width: 600px)").addEventListener("change", resizeGlobe);
+
   renderMarkerList();
+  resizeGlobe();
   resizeCanvas();
   requestRender();
   animationLoop();
