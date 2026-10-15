@@ -36,7 +36,11 @@ stylesheets:
             </select>
           </div>
 
-          <button id="add-marker-btn">Add marker</button>
+          <p class="helper-text">Drag anywhere on the map to rotate the globe. The point you grab stays under your cursor.</p>
+          <div id="button-row">
+            <button id="add-marker-btn">Add marker</button>
+            <button id="reset-view-btn">Reset view</button>
+          </div>
           <p class="helper-text" id="add-marker-help">Click "Add marker" to place a new marker.</p>
 
           <div id="marker-list"></div>
@@ -53,12 +57,15 @@ stylesheets:
   const DEG2RAD = Math.PI / 180;
   const RAD2DEG = 180 / Math.PI;
   const MAX_MERCATOR_LAT = 85.05112878 * DEG2RAD;
+  const MAP_PADDING_PX = 8;
+  const CLICK_SLOP_PX = 4;
 
   const canvas = document.getElementById("map-canvas");
   const ctx = canvas.getContext("2d");
   const markerListEl = document.getElementById("marker-list");
   const addMarkerBtn = document.getElementById("add-marker-btn");
   const addMarkerHelp = document.getElementById("add-marker-help");
+  const resetViewBtn = document.getElementById("reset-view-btn");
   const projectionSelect = document.getElementById("projection-select");
   const statusEl = document.getElementById("map-status");
 
@@ -70,20 +77,17 @@ stylesheets:
     viewRotation: 0,
     zoom: 1,
     markers: [],
-    handles: [
-      { id: "A", lat: 0, lon: -50 * DEG2RAD },
-      { id: "B", lat: 0, lon: 55 * DEG2RAD },
-    ],
     addMode: false,
     hoverMarker: null,
     pointer: {
       dragging: false,
-      dragHandleId: null,
-      dragHandleLon: null,
-      freeHandleId: null,
-      freeHandleLon: null,
-      freeHandleScreenX: null,
-      freeHandleScreenY: null,
+      pointerId: null,
+      // World point grabbed at pointerdown; it stays under the cursor.
+      grabWorld: null,
+      // Equator point whose screen position stays fixed while it slides
+      // along the equator, which pins down the rest of the rotation.
+      anchorLon: null,
+      anchorLocal: null,
       dragDistance: 0,
       lastX: 0,
       lastY: 0,
@@ -115,28 +119,22 @@ stylesheets:
 
   const projectionMath = {
     mercator: {
-      xExtent: 2 * Math.PI,
-      yExtent: 2 * mercatorLatToY(MAX_MERCATOR_LAT),
       forwardRadians(lat, lon) {
         return { x: wrapLonRad(lon), y: mercatorLatToY(lat) };
       },
       inverseRadians(x, y) {
-        return { lon: wrapLonRad(x), lat: mercatorYToLat(y) };
+        return { lon: clampLonRad(x), lat: mercatorYToLat(y) };
       },
     },
     equirectangular: {
-      xExtent: 2 * Math.PI,
-      yExtent: Math.PI,
       forwardRadians(lat, lon) {
         return { x: wrapLonRad(lon), y: lat };
       },
       inverseRadians(x, y) {
-        return { lon: wrapLonRad(x), lat: clampLatRad(y) };
+        return { lon: clampLonRad(x), lat: clampLatRad(y) };
       },
     },
     sinusoidal: {
-      xExtent: 2 * Math.PI,
-      yExtent: Math.PI,
       forwardRadians(lat, lon) {
         return { x: wrapLonRad(lon) * Math.cos(lat), y: lat };
       },
@@ -144,18 +142,19 @@ stylesheets:
         const lat = clampLatRad(y);
         const cosLat = Math.cos(lat);
         if (Math.abs(cosLat) < 1e-9) return { lon: 0, lat };
-        return { lon: wrapLonRad(x / cosLat), lat };
+        return { lon: clampLonRad(x / cosLat), lat };
       },
     },
     mollweide: {
-      xExtent: 2 * Math.PI,
-      yExtent: Math.PI,
       forwardRadians(lat, lon) {
         // Newton iteration to solve 2θ + sin(2θ) = π sin(lat)
         let theta = lat;
         const target = Math.PI * Math.sin(lat);
         for (let i = 0; i < 20; i++) {
-          const dt = -(2 * theta + Math.sin(2 * theta) - target) / (2 + 2 * Math.cos(2 * theta));
+          // The derivative vanishes at the poles, where θ = lat already.
+          const fp = 2 + 2 * Math.cos(2 * theta);
+          if (fp < 1e-12) break;
+          const dt = -(2 * theta + Math.sin(2 * theta) - target) / fp;
           theta += dt;
           if (Math.abs(dt) < 1e-10) break;
         }
@@ -166,15 +165,13 @@ stylesheets:
       inverseRadians(x, y) {
         const theta = Math.asin(Math.max(-1, Math.min(1, y / Math.SQRT2)));
         const cosTheta = Math.cos(theta);
-        const lon = Math.abs(cosTheta) < 1e-9 ? 0 : wrapLonRad((Math.PI * x) / (2 * Math.SQRT2 * cosTheta));
+        const lon = Math.abs(cosTheta) < 1e-9 ? 0 : clampLonRad((Math.PI * x) / (2 * Math.SQRT2 * cosTheta));
         const sinLat = (2 * theta + Math.sin(2 * theta)) / Math.PI;
         const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
         return { lon, lat };
       },
     },
     eckert4: {
-      xExtent: 2 * Math.PI,
-      yExtent: Math.PI,
       forwardRadians(lat, lon) {
         // Newton iteration: θ + sin(2θ)/2 + 2sin(θ) = (2 + π/2)·sin(lat)
         const C = 2 + Math.PI / 2;
@@ -199,15 +196,13 @@ stylesheets:
         const sinTheta = Math.max(-1, Math.min(1, y / (2 * k * Math.sqrt(Math.PI))));
         const theta = Math.asin(sinTheta);
         const cosTheta = Math.cos(theta);
-        const lon = Math.abs(1 + cosTheta) < 1e-9 ? 0 : wrapLonRad(x / (k * (1 + cosTheta)));
+        const lon = Math.abs(1 + cosTheta) < 1e-9 ? 0 : clampLonRad(x / (k * (1 + cosTheta)));
         const sinLat = (theta + Math.sin(2 * theta) / 2 + 2 * Math.sin(theta)) / C;
         const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
         return { lon, lat };
       },
     },
     winkelTripel: {
-      xExtent: 2 * Math.PI,
-      yExtent: Math.PI,
       forwardRadians(lat, lon) {
         const halfLon = wrapLonRad(lon) / 2;
         const cosLat = Math.cos(lat);
@@ -242,11 +237,29 @@ stylesheets:
           lon -= (dydlat * errX - dxdlat * errY) / det;
           lat -= (-dydlon * errX + dxdlon * errY) / det;
           lat = clampLatRad(lat);
+          lon = clampLonRad(lon);
         }
-        return { lon: wrapLonRad(lon), lat: clampLatRad(lat) };
+        return { lon: clampLonRad(lon), lat: clampLatRad(lat) };
       },
     },
   };
+
+  // Measure each projection's true extent by sampling the sphere, so the
+  // whole map always fits in the canvas (hard-coded extents clipped Eckert IV).
+  for (const proj of Object.values(projectionMath)) {
+    let maxX = 0, maxY = 0;
+    for (let i = 0; i <= 180; i++) {
+      const lat = clampLatRad(-Math.PI / 2 + (Math.PI * i) / 180);
+      for (let j = 0; j <= 360; j++) {
+        const lon = j === 360 ? Math.PI : -Math.PI + (2 * Math.PI * j) / 360;
+        const p = proj.forwardRadians(lat, lon);
+        maxX = Math.max(maxX, Math.abs(p.x));
+        maxY = Math.max(maxY, Math.abs(p.y));
+      }
+    }
+    proj.xExtent = 2 * maxX;
+    proj.yExtent = 2 * maxY;
+  }
 
   window.mapProjectionMath = Object.fromEntries(
     Object.entries(projectionMath).map(([name, proj]) => [name, {
@@ -280,11 +293,23 @@ stylesheets:
     requestRender();
   });
 
+  resetViewBtn.addEventListener("click", resetView);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.addMode) {
+      state.addMode = false;
+      state.hoverMarker = null;
+      refreshAddModeUi();
+      requestRender();
+    }
+  });
+
   function refreshAddModeUi() {
     addMarkerBtn.classList.toggle("active", state.addMode);
+    canvas.classList.toggle("adding", state.addMode);
     addMarkerBtn.textContent = state.addMode ? "Cancel add marker" : "Add marker";
     addMarkerHelp.textContent = state.addMode
-      ? "Add marker mode: move your mouse over the map and click to place."
+      ? "Click the map to place a marker (Esc to cancel). You can still drag to rotate."
       : 'Click "Add marker" to place a new marker.';
   }
 
@@ -297,6 +322,12 @@ stylesheets:
     while (v > Math.PI) v -= 2 * Math.PI;
     while (v < -Math.PI) v += 2 * Math.PI;
     return v;
+  }
+
+  // Inverses clamp rather than wrap longitude, so a point just outside the
+  // map's edge maps to the nearest edge instead of jumping to the far side.
+  function clampLonRad(lon) {
+    return Math.max(-Math.PI, Math.min(Math.PI, lon));
   }
 
   function clampLatRad(lat) {
@@ -341,10 +372,11 @@ stylesheets:
 
   function getScaleForProjection(projName) {
     const proj = projectionMath[projName];
-    return Math.min(
-      state.viewport.width / proj.xExtent,
-      state.viewport.height / proj.yExtent
-    ) * state.zoom;
+    const pad = MAP_PADDING_PX * 2;
+    return Math.max(0, Math.min(
+      (state.viewport.width - pad) / proj.xExtent,
+      (state.viewport.height - pad) / proj.yExtent
+    )) * state.zoom;
   }
 
   function getScale() {
@@ -439,6 +471,11 @@ stylesheets:
 
   function projectLatLonWithCenter(lat, lon, centerLat, centerLon, viewRotation = 0, projectionName = state.projection) {
     const local = rotateToViewWithCenter(lat, lon, centerLat, centerLon, viewRotation);
+    return projectLocal(local, projectionName);
+  }
+
+  // Screen position of a point given in view-local (already rotated) coords.
+  function projectLocal(local, projectionName = state.projection) {
     const scale = getScale();
     const t = getTransitionT();
 
@@ -470,6 +507,15 @@ stylesheets:
     return rotateFromView(local.lat, local.lon);
   }
 
+  // True when (x, y) lies on the drawn map rather than in the blank area
+  // around it: the inverse projection round-trips only for points inside.
+  function isOnMap(x, y) {
+    if (state.transition.active) return true;
+    const local = localFromXY(x, y);
+    const back = projectLocal(local);
+    return Math.hypot(back.x - x, back.y - y) < 1.5;
+  }
+
   function getEventPoint(event) {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -478,30 +524,45 @@ stylesheets:
     };
   }
 
+  function localVectorAt(x, y) {
+    const local = localFromXY(x, y);
+    return latLonToVector(local.lat, local.lon);
+  }
+
   canvas.addEventListener("pointerdown", (event) => {
+    if (state.pointer.dragging || event.button !== 0) return;
     const p = getEventPoint(event);
-    const handleHit = state.addMode ? null : getHandleAtPoint(p.x, p.y);
+    if (!isOnMap(p.x, p.y)) return;
 
-    if (!handleHit) {
-      state.pointer.dragging = false;
-      state.pointer.dragHandleId = null;
-      return;
+    const grabLocal = localFromXY(p.x, p.y);
+    const grabLL = rotateFromView(grabLocal.lat, grabLocal.lon);
+    const grabWorld = latLonToVector(grabLL.lat, grabLL.lon);
+
+    // Anchor: of the two equator points 90° from the grabbed point, the one
+    // nearer the middle of the view. It keeps its screen position while
+    // sliding along the equator during the drag.
+    const alpha = Math.atan2(grabWorld.y, grabWorld.x);
+    let anchorLon = null;
+    let anchorLocal = null;
+    for (const lon of [alpha + Math.PI / 2, alpha - Math.PI / 2]) {
+      const ll = rotateToViewWithCenter(0, lon, state.centerLat, state.centerLon, state.viewRotation);
+      const v = latLonToVector(ll.lat, ll.lon);
+      if (!anchorLocal || v.x > anchorLocal.x) {
+        anchorLon = wrapLonRad(lon);
+        anchorLocal = v;
+      }
     }
 
-    state.pointer.dragging = true;
-    state.pointer.dragHandleId = handleHit.id;
-    state.pointer.dragHandleLon = handleHit.lon;
-    const freeHandle = state.handles.find((h) => h.id !== handleHit.id) || null;
-    state.pointer.freeHandleId = freeHandle ? freeHandle.id : null;
-    if (freeHandle) {
-      state.pointer.freeHandleLon = freeHandle.lon;
-      const fp = projectLatLonRad(freeHandle.lat, freeHandle.lon);
-      state.pointer.freeHandleScreenX = fp.x;
-      state.pointer.freeHandleScreenY = fp.y;
-    }
-    state.pointer.dragDistance = 0;
-    state.pointer.lastX = p.x;
-    state.pointer.lastY = p.y;
+    Object.assign(state.pointer, {
+      dragging: true,
+      pointerId: event.pointerId,
+      grabWorld,
+      anchorLon,
+      anchorLocal,
+      dragDistance: 0,
+      lastX: p.x,
+      lastY: p.y,
+    });
 
     canvas.classList.add("dragging");
     canvas.setPointerCapture(event.pointerId);
@@ -510,50 +571,51 @@ stylesheets:
   canvas.addEventListener("pointermove", (event) => {
     const p = getEventPoint(event);
 
-    if (state.pointer.dragging) {
-      const dx = p.x - state.pointer.lastX;
-      const dy = p.y - state.pointer.lastY;
-      state.pointer.dragDistance += Math.abs(dx) + Math.abs(dy);
+    if (state.pointer.dragging && event.pointerId === state.pointer.pointerId) {
+      state.pointer.dragDistance += Math.abs(p.x - state.pointer.lastX) + Math.abs(p.y - state.pointer.lastY);
       state.pointer.lastX = p.x;
       state.pointer.lastY = p.y;
-
-      updateHandlesAndCenterFromScreenspace(p.x, p.y);
-
+      // Ignore tiny jitter so a click in add-marker mode doesn't nudge the view.
+      if (state.pointer.dragDistance >= CLICK_SLOP_PX) {
+        rotateToKeepGrabUnderCursor(p.x, p.y);
+      }
       requestRender();
     }
 
     if (state.addMode) {
-      state.hoverMarker = unprojectXY(p.x, p.y);
+      state.hoverMarker = !state.pointer.dragging && isOnMap(p.x, p.y) ? unprojectXY(p.x, p.y) : null;
       requestRender();
     }
   });
 
-  canvas.addEventListener("pointerup", (event) => {
-    const p = getEventPoint(event);
+  function endDrag(event) {
+    if (!state.pointer.dragging || event.pointerId !== state.pointer.pointerId) return false;
+    const wasClick = state.pointer.dragDistance < CLICK_SLOP_PX;
+    Object.assign(state.pointer, {
+      dragging: false,
+      pointerId: null,
+      grabWorld: null,
+      anchorLon: null,
+      anchorLocal: null,
+    });
+    canvas.classList.remove("dragging");
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    requestRender();
+    return wasClick;
+  }
 
-    if (!state.pointer.dragging) {
-      if (state.addMode) {
+  canvas.addEventListener("pointerup", (event) => {
+    const wasClick = endDrag(event);
+    if (wasClick && state.addMode) {
+      const p = getEventPoint(event);
+      if (isOnMap(p.x, p.y)) {
         const target = unprojectXY(p.x, p.y);
         addMarker(target.lat, target.lon);
       }
-      return;
-    }
-
-    const isClick = state.pointer.dragDistance < 3;
-    state.pointer.dragging = false;
-    state.pointer.dragHandleId = null;
-    state.pointer.dragHandleLon = null;
-    state.pointer.freeHandleId = null;
-    state.pointer.freeHandleLon = null;
-    state.pointer.freeHandleScreenX = null;
-    state.pointer.freeHandleScreenY = null;
-    canvas.classList.remove("dragging");
-    canvas.releasePointerCapture(event.pointerId);
-
-    if (isClick && state.addMode && state.hoverMarker) {
-      addMarker(state.hoverMarker.lat, state.hoverMarker.lon);
     }
   });
+
+  canvas.addEventListener("pointercancel", endDrag);
 
   canvas.addEventListener("pointerleave", () => {
     if (state.addMode && !state.pointer.dragging) {
@@ -571,43 +633,21 @@ stylesheets:
   function sub3(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; }
 
   /**
-   * Triad solver — given two equator handles' screen positions and one known
-   * world lon, find the unique 3-DOF rotation (centerLat, centerLon, viewRotation)
-   * plus the other handle's world lon.
-   *
-   * knownLon/knownSX/knownSY: handle with fixed world lon, known screen pos.
-   * otherSX/otherSY/currentOtherLon: handle whose screen is fixed but world lon slides.
+   * Triad solver — find the rotation (centerLat, centerLon, viewRotation) that
+   * takes world vector pK exactly onto view vector qK, and world vector pO onto
+   * view vector qO as closely as possible.
    */
-  function solveRotationFromHandles(knownLon, knownSX, knownSY, otherSX, otherSY, currentOtherLon) {
-    const pK = latLonToVector(0, knownLon);
-
-    const localK = localFromXY(knownSX, knownSY);
-    const qK = latLonToVector(localK.lat, localK.lon);
-    const localO = localFromXY(otherSX, otherSY);
-    const qO = latLonToVector(localO.lat, localO.lon);
-
-    // Angle between the two view vectors = angle between the two world vectors
-    const qDot = Math.max(-1, Math.min(1, dot3(qK, qO)));
-    const angleSep = Math.acos(qDot);
-    const cand1 = wrapLonRad(knownLon + angleSep);
-    const cand2 = wrapLonRad(knownLon - angleSep);
-    const d1 = Math.abs(shortestPeriodicDelta(cand1 - currentOtherLon, 2 * Math.PI));
-    const d2 = Math.abs(shortestPeriodicDelta(cand2 - currentOtherLon, 2 * Math.PI));
-    const otherLon = d1 <= d2 ? cand1 : cand2;
-    const pO = latLonToVector(0, otherLon);
-
+  function solveRotation(pK, qK, pO, qO) {
     // Build orthonormal bases via Gram-Schmidt (Triad method)
     const e1 = pK;
-    const pOpKdot = dot3(pO, e1);
-    const e2raw = sub3(pO, scale3(e1, pOpKdot));
+    const e2raw = sub3(pO, scale3(e1, dot3(pO, e1)));
     const e2len = Math.hypot(e2raw.x, e2raw.y, e2raw.z);
     if (e2len < 1e-9) return null;
     const e2 = scale3(e2raw, 1 / e2len);
     const e3 = cross3(e1, e2);
 
     const f1 = qK;
-    const qOqKdot = dot3(qO, f1);
-    const f2raw = sub3(qO, scale3(f1, qOqKdot));
+    const f2raw = sub3(qO, scale3(f1, dot3(qO, f1)));
     const f2len = Math.hypot(f2raw.x, f2raw.y, f2raw.z);
     if (f2len < 1e-9) return null;
     const f2 = scale3(f2raw, 1 / f2len);
@@ -632,55 +672,46 @@ stylesheets:
     const sinTheta = -dot3(eastActual, canonical.north);
     const viewRotation = Math.atan2(sinTheta, cosTheta);
 
-    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation, otherLon };
+    return { centerLat: centerLL.lat, centerLon: centerLL.lon, viewRotation };
   }
 
-  function pinHandlesToEquator() {
-    for (const handle of state.handles) {
-      handle.lat = 0;
-      handle.lon = wrapLonRad(handle.lon);
+  /**
+   * Rotate the globe so the grabbed point sits under the cursor, while the
+   * anchor keeps its screen position by sliding along the equator.
+   */
+  function rotateToKeepGrabUnderCursor(cursorX, cursorY) {
+    const { grabWorld, anchorLocal } = state.pointer;
+    const qK = localVectorAt(cursorX, cursorY);
+
+    // The anchor must stay at the same angular distance from the grabbed point
+    // as their view positions are apart: solve cos(lon - alpha)·r = target.
+    const target = Math.max(-1, Math.min(1, dot3(qK, anchorLocal)));
+    const r = Math.hypot(grabWorld.x, grabWorld.y);
+    let anchorLon = state.pointer.anchorLon;
+    if (r > 1e-6) {
+      const alpha = Math.atan2(grabWorld.y, grabWorld.x);
+      const delta = Math.acos(Math.max(-1, Math.min(1, target / r)));
+      const c1 = wrapLonRad(alpha + delta);
+      const c2 = wrapLonRad(alpha - delta);
+      const d1 = Math.abs(shortestPeriodicDelta(c1 - anchorLon, 2 * Math.PI));
+      const d2 = Math.abs(shortestPeriodicDelta(c2 - anchorLon, 2 * Math.PI));
+      anchorLon = d1 <= d2 ? c1 : c2;
     }
-  }
 
-  function updateHandlesAndCenterFromScreenspace(cursorX, cursorY) {
-    const dragLon = state.pointer.dragHandleLon;
-    const freeSX = state.pointer.freeHandleScreenX;
-    const freeSY = state.pointer.freeHandleScreenY;
-    const freeHandleId = state.pointer.freeHandleId;
-    const currentFreeLon = state.pointer.freeHandleLon;
-    if (dragLon == null || freeSX == null || freeSY == null || currentFreeLon == null) return;
-
-    const result = solveRotationFromHandles(
-      dragLon, cursorX, cursorY,
-      freeSX, freeSY,
-      currentFreeLon
-    );
+    const result = solveRotation(grabWorld, qK, latLonToVector(0, anchorLon), anchorLocal);
     if (!result) return;
 
     state.centerLat = result.centerLat;
     state.centerLon = result.centerLon;
     state.viewRotation = result.viewRotation;
-
-    // Update the free handle's world lon (it slides along equator)
-    const freeHandle = state.handles.find((h) => h.id === freeHandleId);
-    if (freeHandle) {
-      freeHandle.lon = result.otherLon;
-      state.pointer.freeHandleLon = result.otherLon;
-    }
+    state.pointer.anchorLon = anchorLon;
   }
 
-  function isTouchDevice() {
-    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  }
-
-  function getHandleAtPoint(x, y) {
-    const hitRadius = isTouchDevice() ? 24 : 12;
-    for (const handle of state.handles) {
-      const p = projectLatLonRad(handle.lat, handle.lon);
-      const distance = Math.hypot(x - p.x, y - p.y);
-      if (distance <= hitRadius) return handle;
-    }
-    return null;
+  function resetView() {
+    state.centerLat = 0;
+    state.centerLon = 0;
+    state.viewRotation = 0;
+    requestRender();
   }
 
   function addMarker(lat, lon) {
@@ -967,8 +998,8 @@ stylesheets:
 
   function drawEquator() {
     const steps = 360;
-    ctx.strokeStyle = "#0079ac";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "#005f7f";
+    ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
 
@@ -1005,30 +1036,42 @@ stylesheets:
     ctx.stroke();
   }
 
-  function drawHandles() {
-    pinHandlesToEquator();
+  // Outline of the whole projected sphere, traced along the edge of the
+  // projection's lat/lon domain in view-local coordinates.
+  function traceMapOutline() {
+    const steps = 90;
+    const maxLat = Math.PI / 2; // Mercator clamps this to its own limit
+    const edge = [];
+    for (let i = 0; i <= steps; i++) edge.push([-maxLat + (2 * maxLat * i) / steps, -Math.PI]);
+    for (let i = 0; i <= steps; i++) edge.push([maxLat, -Math.PI + (2 * Math.PI * i) / steps]);
+    for (let i = 0; i <= steps; i++) edge.push([maxLat - (2 * maxLat * i) / steps, Math.PI]);
+    for (let i = 0; i <= steps; i++) edge.push([-maxLat, Math.PI - (2 * Math.PI * i) / steps]);
 
-    const handleColor = "#005f7f";
-    const activeColor = "#0079ac";
+    ctx.beginPath();
+    edge.forEach(([lat, lon], i) => {
+      const p = projectLocal({ lat: clampLatRad(lat), lon });
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+  }
 
-    for (const handle of state.handles) {
-      const p = projectLatLonRad(handle.lat, handle.lon);
-      const isActive = state.pointer.dragging && state.pointer.dragHandleId === handle.id;
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = isActive ? activeColor : handleColor;
-      ctx.fillStyle = "white";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = isActive ? activeColor : handleColor;
-      ctx.font = "bold 12px Roboto";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(handle.id, p.x, p.y - 14);
+  function drawGraticule() {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    const step = 30 * DEG2RAD;
+    for (let lon = -Math.PI; lon < Math.PI - 1e-9; lon += step) {
+      const points = [];
+      for (let i = 0; i <= 90; i++) points.push({ lat: -Math.PI / 2 + (Math.PI * i) / 90, lon });
+      drawProjectedPolyline(points, "#0079ac", 1);
     }
+    for (let lat = -60 * DEG2RAD; lat <= 60 * DEG2RAD + 1e-9; lat += step) {
+      if (Math.abs(lat) < 1e-9) continue; // the equator is drawn separately
+      const points = [];
+      for (let i = 0; i <= 180; i++) points.push({ lat, lon: -Math.PI + (2 * Math.PI * i) / 180 });
+      drawProjectedPolyline(points, "#0079ac", 1);
+    }
+    ctx.restore();
   }
 
   function drawFrame() {
@@ -1039,9 +1082,19 @@ stylesheets:
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, state.viewport.width, state.viewport.height);
 
+    traceMapOutline();
+    ctx.fillStyle = "#f6fdff";
+    ctx.fill();
+
+    // Keep everything inside the map's outline so lines that cross the
+    // projection's seam or pole never spill into the blank area around it.
+    ctx.save();
+    traceMapOutline();
+    ctx.clip();
+
+    drawGraticule();
     drawWorld();
     drawEquator();
-    drawHandles();
 
     for (const marker of state.markers) {
       drawMarker(marker);
@@ -1058,6 +1111,13 @@ stylesheets:
       }, true);
       drawCrosshairMarker(state.hoverMarker.lat, state.hoverMarker.lon);
     }
+
+    ctx.restore();
+
+    traceMapOutline();
+    ctx.strokeStyle = "#0079ac";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
   }
 
   function animationLoop() {
@@ -1075,6 +1135,9 @@ stylesheets:
   function resizeCanvas() {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+
+    if (rect.width === state.viewport.width && rect.height === state.viewport.height
+        && canvas.width === Math.max(1, Math.floor(rect.width * dpr))) return;
 
     state.viewport.width = rect.width;
     state.viewport.height = rect.height;
@@ -1107,9 +1170,10 @@ stylesheets:
     }
   }
 
-  window.addEventListener("resize", resizeCanvas);
+  // Watch the canvas box itself (not just the window) so the drawing never
+  // goes stale when the layout shifts, e.g. as fonts load or the marker list grows.
+  new ResizeObserver(resizeCanvas).observe(canvas);
 
-  pinHandlesToEquator();
   refreshAddModeUi();
   renderMarkerList();
   resizeCanvas();
