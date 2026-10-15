@@ -362,7 +362,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 6463a79 · Oct 14</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 10f8a34 · Oct 15</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -838,10 +838,11 @@ float bAmt(float m,vec2 t){float n=texture2D(uNoise,t*uNS).r;return smoothstep(.
 // world-space coverage of intact (uAI) and burnt (uAB) art per layer (rgba = layers 0..3), and art height (uH)
 const FS_VIS=FS_COMMON+`uniform sampler2D uH,uAI,uAB;uniform float uCanBase;
 void main(){vec2 t=v;vec4 m=texture2D(uMask,t);vec4 h=texture2D(uH,t),ai=texture2D(uAI,t),ab=texture2D(uAB,t);float vh=0.;float b;float a;
-b=bAmt(m.r,t);a=mix(ai.r,ab.r,b);vh=max(vh,step(.5,a)*h.r);
-b=bAmt(m.g,t);a=mix(ai.g,ab.g,b);vh=max(vh,step(.5,a)*h.g*mix(1.,.35,b));
-b=bAmt(m.b,t);a=mix(ai.b,ab.b,b);vh=max(vh,step(.5,a)*h.b*mix(1.,.8,b));
-b=bAmt(m.a,t);a=mix(ai.a,ab.a,b);float ct=step(.5,a)*h.a;float cbase=ct>0.?max(uCanBase,ct-1.3/8.):0.;
+float bn=(texture2D(uNoise,t*uNS).r-.5)*.5;// bAmt's noise, read once
+b=smoothstep(.42,.58,m.r*1.05+bn);a=mix(ai.r,ab.r,b);vh=max(vh,step(.5,a)*h.r);
+b=smoothstep(.42,.58,m.g*1.05+bn);a=mix(ai.g,ab.g,b);vh=max(vh,step(.5,a)*h.g*mix(1.,.35,b));
+b=smoothstep(.42,.58,m.b*1.05+bn);a=mix(ai.b,ab.b,b);vh=max(vh,step(.5,a)*h.b*mix(1.,.8,b));
+b=smoothstep(.42,.58,m.a*1.05+bn);a=mix(ai.a,ab.a,b);float ct=step(.5,a)*h.a;float cbase=ct>0.?max(uCanBase,ct-1.3/8.):0.;
 gl_FragColor=vec4(vh,ct,cbase,1.);}`;
 const FS_SHADOW=`precision mediump float;varying vec2 v;uniform sampler2D uVH;uniform vec2 uStep;uniform float uRise;
 void main(){vec4 q0=texture2D(uVH,v);float h0=max(q0.r,q0.g);float occ=0.;
@@ -873,23 +874,27 @@ if(uFinal>.5){gl_FragColor=vec4(texture2D(uRaw,v).rgb,min(1.,s*55./255.));}else{
    is burning nearby; also carries explosions and item effects). Both get a slow, blobby flicker. uFarK is
    the per-preset strength of the wide glow (subtle in the afternoon, strong at dusk and night). */
 const FS_MAIN=FS_COMMON+`
-uniform sampler2D uFire,uSh,uFar,LI0,LI1,LI2,LI3,LB0,LB1,LB2,LB3;uniform vec2 uCam,uView,uWorld,uFarSz,uOut;uniform vec4 uAct;uniform float uZ,uTime,uDbg,uFarK;uniform vec3 uBg,uAmb,uSun,uFireCol;
-void main(){vec2 wp=uCam+vec2(gl_FragCoord.x,uView.y-gl_FragCoord.y)/uZ;vec2 t=wp/uWorld;vec2 s=gl_FragCoord.xy/uView;
+uniform sampler2D uFire,uSh,uFar,LI0,LI1,LI2,LI3,LB0,LB1,LB2,LB3;uniform vec2 uCam,uView,uWorld,uFarSz,uOut,uLOff,uLSize;uniform vec4 uAct;uniform float uZ,uTime,uDbg,uFarK;uniform vec3 uBg,uAmb,uSun,uFireCol;
+void main(){vec2 wp=uCam+vec2(gl_FragCoord.x,uView.y-gl_FragCoord.y)/uZ;vec2 t=wp/uWorld;vec2 s=(gl_FragCoord.xy+uLOff)/uLSize;
 vec3 alb;vec3 em=vec3(0.);vec4 f=vec4(0.);float sh;vec2 shv=vec2(1.);vec2 oa=vec2(0.);
 if(t.x<0.||t.y<0.||t.x>1.||t.y>1.){alb=uBg;sh=1.;// the camera never shows past the map; this is only a guard
 }else{
-vec4 m=texture2D(uMask,t);f=texture2D(uFire,t);float n2=texture2D(uNoise,t*7.+vec2(uTime*.05,uTime*.08)).r;
-vec4 acc=vec4(0.);vec3 ember=vec3(1.,.42,.1);float b;vec4 c;float w;
-b=bAmt(m.a,t);c=mix(texture2D(LI3,s),texture2D(LB3,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.b*ember*(.3+.9*n2);
-b=bAmt(m.b,t);c=mix(texture2D(LI2,s),texture2D(LB2,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.b*ember*(.3+.9*n2);
-b=bAmt(m.g,t);c=mix(texture2D(LI1,s),texture2D(LB1,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.g*ember*(.3+.9*n2);
-b=bAmt(m.r,t);c=mix(texture2D(LI0,s),texture2D(LB0,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.r*ember*(.3+.9*n2);
+vec4 m=texture2D(uMask,t);f=texture2D(uFire,t);
+// same maths as before with fewer texture reads: the burn-edge noise is read once (bAmt read the same texel four times),
+// the ember noise only where something glows, a burnt layer only where it shows (b>0), and nothing under a layer that's
+// already opaque (w would be 0)
+float bn=(texture2D(uNoise,t*uNS).r-.5)*.5;vec3 ke=vec3(0.);
+if(f.r+f.g+f.b>0.){float n2=texture2D(uNoise,t*7.+vec2(uTime*.05,uTime*.08)).r;ke=vec3(1.,.42,.1)*(.3+.9*n2);}
+vec4 acc=vec4(0.);float b;vec4 c;float w;
+b=smoothstep(.42,.58,m.a*1.05+bn);c=texture2D(LI3,s);if(b>0.)c=mix(c,texture2D(LB3,s),b);acc=c;em+=c.a*f.b*ke;
+if(acc.a<1.){b=smoothstep(.42,.58,m.b*1.05+bn);c=texture2D(LI2,s);if(b>0.)c=mix(c,texture2D(LB2,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.b*ke;
+if(acc.a<1.){b=smoothstep(.42,.58,m.g*1.05+bn);c=texture2D(LI1,s);if(b>0.)c=mix(c,texture2D(LB1,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.g*ke;
+if(acc.a<1.){b=smoothstep(.42,.58,m.r*1.05+bn);c=texture2D(LI0,s);if(b>0.)c=mix(c,texture2D(LB0,s),b);w=1.-acc.a;acc+=w*c;em+=w*c.a*f.r*ke;}}}
 alb=acc.rgb+(1.-acc.a)*uBg;shv=texture2D(uSh,t).rg;sh=shv.r;
 // the margin around the active area is the level's own scenery but out of play: washed out (uOut.x = how grey, uOut.y = brightness)
 oa=max(max(uAct.xy-wp,wp-uAct.zw),0.);if(max(oa.x,oa.y)>0.){float lum=dot(alb,vec3(.3,.55,.15));alb=mix(alb,vec3(lum),uOut.x)*uOut.y;}}
-float fv=texture2D(uFar,wp/uFarSz).a;vec2 fp=wp/5200.;
-float fl=1.+(texture2D(uNoise,fp+uTime*vec2(.031,.022)).r+texture2D(uNoise,fp*1.7-uTime*vec2(.047,.036)).r-1.)*1.1;
-float lin=(f.a*2.4+fv*uFarK)*fl;float li=2.6*(1.-exp(-lin/2.6));
+float fv=texture2D(uFar,wp/uFarSz).a;float lin=f.a*2.4+fv*uFarK;
+if(lin>0.){vec2 fp=wp/5200.;lin*=1.+(texture2D(uNoise,fp+uTime*vec2(.031,.022)).r+texture2D(uNoise,fp*1.7-uTime*vec2(.047,.036)).r-1.)*1.1;}float li=2.6*(1.-exp(-lin/2.6));
 if(uDbg>.5){float vh2=shv.g;gl_FragColor=vec4(mix(vec3(vh2*1.6),vec3(.2,.3,1.),(1.-sh)*.8),1.);return;}
 vec3 fc=uFireCol*mix(vec3(1.,.72,.5),vec3(1.),clamp(li*.45,0.,1.));// faint light is deep orange, strong light yellower
 vec3 col=alb*(uAmb+uSun*sh)+alb*fc*li*1.25+fc*li*li*.06+em*.85;
@@ -929,7 +934,10 @@ Renderer.prototype.tex=function(w,h,data,repeat){ const gl=this.gl, t=gl.createT
 Renderer.prototype.uploadData=function(t,w,h,data){ const gl=this.gl; this.shown=''; gl.bindTexture(gl.TEXTURE_2D,t); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,data); };
 // upload only rows y0..y1 (inclusive) of a w-wide RGBA grid
 Renderer.prototype.uploadRows=function(t,w,y0,y1,data){ if(y1<y0) return; const gl=this.gl; this.shown=''; gl.bindTexture(gl.TEXTURE_2D,t); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false); gl.texSubImage2D(gl.TEXTURE_2D,0,0,y0,w,y1-y0+1,gl.RGBA,gl.UNSIGNED_BYTE,data.subarray(y0*w*4,(y1+1)*w*4)); };
-Renderer.prototype.uploadMask=function(y0,y1,data){ this.uploadRows(this.maskTex,this.world.g.gw,y0,y1,data); if(y1>=y0) this.maskDirty=true; };
+// x0..x1, y0..y1: the cells that changed; collected (as a box) until the next shadow pass, which only redoes that area
+Renderer.prototype.uploadMask=function(y0,y1,data,x0,x1){ const gw=this.world.g.gw; this.uploadRows(this.maskTex,gw,y0,y1,data); if(y1<y0) return;
+  if(x0===undefined){ x0=0; x1=gw-1; } const d=this.mBox; this.maskDirty=true;
+  if(!d) this.mBox=[x0,y0,x1,y1]; else { if(x0<d[0])d[0]=x0; if(y0<d[1])d[1]=y0; if(x1>d[2])d[2]=x1; if(y1>d[3])d[3]=y1; } };
 // blur the raw firelight (fire texture alpha) into lightB (4 tiny passes on the cell grid)
 Renderer.prototype.blurLight=function(){ this.shown=''; const gl=this.gl, g=this.world.g, p=this.pBlur, u=n=>this.u(p,n);
   gl.bindVertexArray(this.quad); gl.disable(gl.BLEND);
@@ -1028,15 +1036,19 @@ Renderer.prototype.renderMaps=function(){ const gl=this.gl, w=this.world, ms=thi
     gl.colorMask(true,true,true,true); this.resolve(ms,dst); }
   gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
   gl.deleteRenderbuffer(ms.rb); gl.deleteFramebuffer(ms.f); this.visDirty=true; };
-// screen-space layer art for the current view: LI (intact) and LB (burnt) per layer
-Renderer.prototype.renderScreen=function(o){ const gl=this.gl, vw=o.viewW, vh=o.viewH;
+// screen-space layer art for the current view: LI (intact) and LB (burnt) per layer. The layers cover the view plus SCR_M
+// device px on every side, so a small pan or a screen shake only moves where the main pass reads them (whole pixels,
+// see render) instead of redrawing all eight layers with MSAA, which is the most expensive thing the renderer does.
+const SCR_M=48;
+Renderer.prototype.renderScreen=function(o){ const gl=this.gl, M=SCR_M, vw=o.viewW+2*M, vh=o.viewH+2*M, cam={x:o.cam.x-M/o.z,y:o.cam.y-M/o.z};
   if(!this.scr||this.scr.w!==vw||this.scr.h!==vh){ this.freeScreen(); const s=this.scr={w:vw,h:vh,ms:this.msaa(vw,vh),LI:[],LB:[]}; for(let L=0;L<NL;L++){ s.LI.push(this.fbo(vw,vh)); s.LB.push(this.fbo(vw,vh)); } }
+  this.scr.cx=o.cam.x; this.scr.cy=o.cam.y;
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
   const nb=o.burnt===false; // planning: nothing has burnt yet, so the burnt layers are left clear (the main pass gives them no weight)
   if(nb&&!this.scr.clearB){ for(const f of this.scr.LB){ gl.bindFramebuffer(gl.FRAMEBUFFER,f.f); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); } }
   this.scr.clearB=nb;
   for(let L=0;L<NL;L++) for(let v=0;v<(nb?1:2);v++){ gl.bindFramebuffer(gl.FRAMEBUFFER,this.scr.ms.f); gl.viewport(0,0,vw,vh); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-    this.drawLayer(L,v,0,o.cam,o.z,vw,vh,1); this.resolve(this.scr.ms,(v?this.scr.LB:this.scr.LI)[L]); }
+    this.drawLayer(L,v,0,cam,o.z,vw,vh,1); this.resolve(this.scr.ms,(v?this.scr.LB:this.scr.LI)[L]); }
   gl.disable(gl.BLEND); };
 Renderer.prototype.freeScreen=function(){ const gl=this.gl, s=this.scr; if(!s) return; gl.deleteRenderbuffer(s.ms.rb); gl.deleteFramebuffer(s.ms.f); for(const f of s.LI.concat(s.LB)){ gl.deleteTexture(f.t); gl.deleteFramebuffer(f.f); } this.scr=null; };
 Renderer.prototype.bindCommon=function(p){ const gl=this.gl, w=this.world, u=n=>this.u(p,n);
@@ -1047,10 +1059,18 @@ Renderer.prototype.bindCommon=function(p){ const gl=this.gl, w=this.world, u=n=>
 Renderer.prototype.render=function(o){ // o: {cam, z (device), viewW, viewH, time, light}
   const gl=this.gl, w=this.world;
   if(this.mapsVer!==w.ver){ this.mapsVer=w.ver; this.renderMaps(); }
-  const key=[o.cam.x,o.cam.y,o.z,o.viewW,o.viewH,w.ver,o.burnt!==false].join();
-  if(key!==this.scrKey){ this.scrKey=key; this.renderScreen(o); }
+  const base=o.z+','+o.viewW+','+o.viewH+','+w.ver+','+(o.burnt!==false), key=o.cam.x+','+o.cam.y+','+base;
+  // reuse the layers while the view only moved by up to SCR_M device px. The offset is rounded to whole pixels, so while the
+  // camera moves (pan, shake) the art can sit up to half a device pixel off; once it stops, any such remainder is redrawn
+  // exactly, so a view at rest is drawn just as before.
+  let ox=0, oy=0, s=this.scr, ok=base===this.scrKey&&s;
+  const moving=o.cam.x!==this.lastCX||o.cam.y!==this.lastCY; this.lastCX=o.cam.x; this.lastCY=o.cam.y;
+  if(ok){ const ex=(o.cam.x-s.cx)*o.z, ey=(o.cam.y-s.cy)*o.z; ox=Math.round(ex); oy=Math.round(ey);
+    ok=Math.abs(ox)<=SCR_M&&Math.abs(oy)<=SCR_M&&(moving||(Math.abs(ex-ox)<1e-3&&Math.abs(ey-oy)<1e-3)); }
+  if(!ok){ this.scrKey=base; this.renderScreen(o); ox=oy=0; this.shown=''; }
+  this.scrOX=ox; this.scrOY=oy;
   if(o.light!==this.lastLight){ this.lastLight=o.light; this.visDirty=true; }
-  if(this.visDirty||(this.maskDirty&&(o.time-this.visT>=.15||o.time<this.visT))){ this.visDirty=false; this.maskDirty=false; this.visT=o.time; this.renderShadows(o); this.shown=''; }
+  if(this.visDirty||(this.maskDirty&&(o.time-this.visT>=.15||o.time<this.visT))){ this.renderShadows(o,this.visDirty?null:this.mBox); this.visDirty=false; this.maskDirty=false; this.mBox=null; this.visT=o.time; this.shown=''; }
   // o.still: nothing is lit, so time drives nothing on screen. If the view, light and every texture the main pass reads
   // are also unchanged since the last frame, the canvas already shows this exact image: skip the full-screen pass
   // (keeps the GPU idle while planning). Uploads, blurs and shadow passes clear this.shown.
@@ -1059,24 +1079,32 @@ Renderer.prototype.render=function(o){ // o: {cam, z (device), viewW, viewH, tim
   this.shown=sk;
   // composite + light to screen
   this.renderMain(o); };
-Renderer.prototype.renderShadows=function(o){ const gl=this.gl, w=this.world; let u;
+// box: only mask cells [x0,y0,x1,y1] changed since the last pass, so only texels that can depend on them are redone (scissor):
+// the visible height within a cell of the box; the shadow march for texels whose ray (40 steps toward the sun) passes it; the
+// blur one texel further. Everything outside keeps last pass's values, which are what a full pass would give again.
+Renderer.prototype.renderShadows=function(o,box){ const gl=this.gl, w=this.world; let u;
   gl.bindVertexArray(this.quad); gl.disable(gl.BLEND); const sw=this.vis.w, shh=this.vis.h;
+  const Lt=o.light, stepPx=2.6, sd=Lt.sunDir, kx=sw/w.W, ky=shh/w.H;
+  let sc=null;
+  if(box){ const X0=(box[0]-1)*CS*kx-2, Y0=(box[1]-1)*CS*ky-2, X1=(box[2]+2)*CS*kx+2, Y1=(box[3]+2)*CS*ky+2, rx=-sd[0]*stepPx*40*kx, ry=-sd[1]*stepPx*40*ky;
+    sc=(a,b,c,d,m)=>{ const x0=Math.max(0,Math.floor(a-m)), y0=Math.max(0,Math.floor(b-m)), x1=Math.min(sw,Math.ceil(c+m)), y1=Math.min(shh,Math.ceil(d+m)); gl.scissor(x0,y0,Math.max(0,x1-x0),Math.max(0,y1-y0)); };
+    sc.vis=[X0,Y0,X1,Y1]; sc.sh=[Math.min(X0,X0+rx),Math.min(Y0,Y0+ry),Math.max(X1,X1+rx),Math.max(Y1,Y1+ry)]; gl.enable(gl.SCISSOR_TEST); }
   // pass 1: visible height (world space)
-  gl.bindFramebuffer(gl.FRAMEBUFFER,this.vis.f); gl.viewport(0,0,sw,shh); gl.useProgram(this.pVis);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.vis.f); gl.viewport(0,0,sw,shh); gl.useProgram(this.pVis); if(sc) sc(...sc.vis,0);
   u=this.bindCommon(this.pVis);
   [[this.hMap,'uH'],[this.aI,'uAI'],[this.aB,'uAB']].forEach(([f,n],k)=>{ gl.activeTexture(gl.TEXTURE0+k); gl.bindTexture(gl.TEXTURE_2D,f.t); gl.uniform1i(u(n),k); });
   gl.uniform1f(u('uCanBase'),LAYER_BASE[3]/MAXH);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   // pass 2: sun shadows by marching the height field toward the sun
-  gl.bindFramebuffer(gl.FRAMEBUFFER,this.shadow.f); gl.useProgram(this.pSh); const us=n=>this.u(this.pSh,n);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,this.shadow.f); gl.useProgram(this.pSh); const us=n=>this.u(this.pSh,n); if(sc) sc(...sc.sh,2);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.vis.t); gl.uniform1i(us('uVH'),0);
-  const Lt=o.light, stepPx=2.6; const sd=Lt.sunDir; gl.uniform2f(us('uStep'),sd[0]*stepPx/w.W,sd[1]*stepPx/w.H);
+  gl.uniform2f(us('uStep'),sd[0]*stepPx/w.W,sd[1]*stepPx/w.H);
   gl.uniform1f(us('uRise'),(stepPx/BURN.PX_PER_M)*Lt.tanElev/MAXH);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   // pass 3: soften into shadowB, which the main pass reads
-  const pb=this.pSBlur, ub=n=>this.u(pb,n); gl.bindFramebuffer(gl.FRAMEBUFFER,this.shadowB.f); gl.useProgram(pb);
+  const pb=this.pSBlur, ub=n=>this.u(pb,n); gl.bindFramebuffer(gl.FRAMEBUFFER,this.shadowB.f); gl.useProgram(pb); if(sc) sc(...sc.sh,4);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.shadow.t); gl.uniform1i(ub('uSrc'),0); gl.uniform2f(ub('uTx'),1/sw,1/shh);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); };
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); gl.disable(gl.SCISSOR_TEST); };
 Renderer.prototype.renderMain=function(o){ const gl=this.gl, w=this.world; let u; const Lt=o.light;
   gl.bindVertexArray(this.quad); gl.disable(gl.BLEND);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,o.viewW,o.viewH); gl.useProgram(this.pMain);
@@ -1084,8 +1112,8 @@ Renderer.prototype.renderMain=function(o){ const gl=this.gl, w=this.world; let u
   for(let L=0;L<NL;L++){ gl.activeTexture(gl.TEXTURE0+L); gl.bindTexture(gl.TEXTURE_2D,this.scr.LI[L].t); gl.uniform1i(u('LI'+L),L); gl.activeTexture(gl.TEXTURE4+L); gl.bindTexture(gl.TEXTURE_2D,this.scr.LB[L].t); gl.uniform1i(u('LB'+L),4+L); }
   gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D,this.lightB.t); gl.uniform1i(u('uFire'),10);
   gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D,this.shadowB.t); gl.uniform1i(u('uSh'),11);
-  gl.uniform1f(u('uDbg'),window.SHDBG?1:0);gl.activeTexture(gl.TEXTURE12);gl.bindTexture(gl.TEXTURE_2D,this.farTex);gl.uniform1i(u('uFar'),12);const AC=w.def.active||[0,0,w.W,w.H],O=w.def.outside||{};gl.uniform4f(u('uAct'),AC[0],AC[1],AC[0]+AC[2],AC[1]+AC[3]);gl.uniform2f(u('uOut'),O.grey??.6,O.dim??.8);gl.uniform2f(u('uFarSz'),this.farW*FAR_PX,this.farH*FAR_PX);gl.uniform1f(u('uFarK'),Lt.glow);gl.uniform2f(u('uCam'),o.cam.x,o.cam.y); gl.uniform2f(u('uView'),o.viewW,o.viewH); gl.uniform2f(u('uWorld'),w.W,w.H); gl.uniform1f(u('uZ'),o.z); gl.uniform1f(u('uTime'),o.time);
-  gl.uniform3fv(u('uBg'),o.bg||Lt.bg); gl.uniform3fv(u('uAmb'),Lt.amb.map(v=>v*o.dim)); gl.uniform3fv(u('uSun'),Lt.sun.map(v=>v*o.dim)); gl.uniform3fv(u('uFireCol'),Lt.fire);
+  gl.uniform1f(u('uDbg'),window.SHDBG?1:0);gl.activeTexture(gl.TEXTURE12);gl.bindTexture(gl.TEXTURE_2D,this.farTex);gl.uniform1i(u('uFar'),12);const AC=w.def.active||[0,0,w.W,w.H],O=w.def.outside||{};gl.uniform4f(u('uAct'),AC[0],AC[1],AC[0]+AC[2],AC[1]+AC[3]);gl.uniform2f(u('uOut'),O.grey??.6,O.dim??.8);gl.uniform2f(u('uFarSz'),this.farW*FAR_PX,this.farH*FAR_PX);gl.uniform1f(u('uFarK'),Lt.glow);gl.uniform2f(u('uCam'),o.cam.x,o.cam.y); gl.uniform2f(u('uView'),o.viewW,o.viewH); gl.uniform2f(u('uLOff'),SCR_M+this.scrOX,SCR_M-this.scrOY); gl.uniform2f(u('uLSize'),this.scr.w,this.scr.h); gl.uniform2f(u('uWorld'),w.W,w.H); gl.uniform1f(u('uZ'),o.z); gl.uniform1f(u('uTime'),o.time);
+  gl.uniform3fv(u('uBg'),o.bg||Lt.bg); const A=Lt.amb, Sn=Lt.sun, dm=o.dim; gl.uniform3f(u('uAmb'),A[0]*dm,A[1]*dm,A[2]*dm); gl.uniform3f(u('uSun'),Sn[0]*dm,Sn[1]*dm,Sn[2]*dm); gl.uniform3fv(u('uFireCol'),Lt.fire);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 };
 
@@ -6077,12 +6105,17 @@ function maskLayer(L,i){const g=S.g;if(!g.m[L][i])return 0;const st=g.s[L][i];
   if(st===2)return 255;if(st===1)return(.15+.85*(1-g.f[L][i]/g.fm[L][i]))*235;
   const T=g.T[L][i];if(T>60){const ign=g.ign[L][i];return ign<INF?clamp((T-AMB_T)/(ign-AMB_T),0,1)*90:clamp((T-120)/500,0,.75)*255}return 0}
 function buildSimTextures(){const g=S.g,N=g.N,gw=g.gw,gh=g.gh,mk=S.mask,fr=S.fire,lt=S.lraw;
-  let y0=gh,y1=-1;
+  // y0..y1, x0..x1: the cells whose mask changed (the renderer redoes sun shadows only around them)
+  let y0=gh,y1=-1,x0=gw,x1=-1;
   // safety net for code that changes cell state without markCell (e.g. add-ons): full refresh every ~0.5 s while burning
   if(S.phase==='burn'&&(S.maskTick=(S.maskTick||0)+1)%30===0)S.maskAll=true;
-  // 1. mask: everything after a level (re)build, else just the queued cells
-  if(S.maskAll){S.maskAll=false;for(let i=0;i<N;i++)for(let L=0;L<NL;L++)mk[i*4+L]=maskLayer(L,i);y0=0;y1=gh-1;for(const i of S.dirty)S.dirtyF[i]=0}
-  else for(const i of S.dirty){S.dirtyF[i]=0;for(let L=0;L<NL;L++)mk[i*4+L]=maskLayer(L,i);const y=(i/gw)|0;if(y<y0)y0=y;if(y>y1)y1=y}
+  // 1. mask: everything after a level (re)build, else just the queued cells. A full refresh only counts cells whose value
+  // actually changed, unless the texture is new (another level, or a restored GPU context) and needs all of it.
+  const fresh=S.maskTexOf!==R.maskTex;S.maskTexOf=R.maskTex;
+  if(S.maskAll||fresh){S.maskAll=false;for(const i of S.dirty)S.dirtyF[i]=0;
+    if(fresh){for(let i=0;i<N;i++)for(let L=0;L<NL;L++)mk[i*4+L]=maskLayer(L,i);y0=0;y1=gh-1;x0=0;x1=gw-1}
+    else for(let i=0;i<N;i++)for(let L=0;L<NL;L++){const k=i*4+L,v=maskLayer(L,i)&255;if(mk[k]!==v){mk[k]=v;const y=(i/gw)|0,x=i-y*gw;if(y<y0)y0=y;if(y>y1)y1=y;if(x<x0)x0=x;if(x>x1)x1=x}}}
+  else for(const i of S.dirty){S.dirtyF[i]=0;for(let L=0;L<NL;L++)mk[i*4+L]=maskLayer(L,i);const y=(i/gw)|0,x=i-y*gw;if(y<y0)y0=y;if(y>y1)y1=y;if(x<x0)x0=x;if(x>x1)x1=x}
   S.dirty.length=0;
   // 2. fire + raw light: clear last frame's cells, then add this frame's burning cells, gas, booms and the spark
   const prev=S.litPrev,now=S.litNow;let fy0=gh,fy1=-1;
@@ -6092,11 +6125,11 @@ function buildSimTextures(){const g=S.g,N=g.N,gw=g.gw,gh=g.gh,mk=S.mask,fr=S.fir
     if(L===4){lt[i]+=.6;continue}
     const q=g.f[L][i]/g.fm[L][i],f=q>.85?(1-q)/.15:q<.3?q/.3:1;lt[i]+=f*(.7+.12*g.top[L][i]);
     mk[i*4+L]=(.15+.85*(1-q))*235;if(L<2)fr[i*4+L]=f*255;else fr[i*4+2]=Math.max(fr[i*4+2],f*255);
-    const y=(i/gw)|0;if(y<y0)y0=y;if(y>y1)y1=y}
+    const y=(i/gw)|0,x=i-y*gw;if(y<y0)y0=y;if(y>y1)y1=y;if(x<x0)x0=x;if(x>x1)x1=x}
   for(const b of S.booms){const ci=cellAt(b.x,b.y);if(ci<0)continue;const k=Math.max(0,1-b.life/.6)*4;lt[ci]+=k*6;now.push(ci)}
   if(S.spark&&S.spark.t>0){const ci=cellAt(S.spark.x,S.spark.y);if(ci>=0){lt[ci]+=1.2;now.push(ci)}}
   for(let k=0;k<now.length;k++){const i=now[k];fr[i*4+3]=Math.round(Math.sqrt(Math.min(1,lt[i]/LIGHT_MAX))*255);const y=(i/gw)|0;if(y<fy0)fy0=y;if(y>fy1)fy1=y}
-  R.uploadMask(y0,y1,mk);
+  R.uploadMask(y0,y1,mk,x0,x1);
   if(fy1>=fy0){R.uploadRows(R.fireTex,gw,fy0,fy1,fr);R.blurLight()}
   S.litPrev=now;S.litNow=prev;buildFarLight(now)}
 /* wide firelight: the raw light summed into a coarse grid (FAR_C cells = 1 m per texel), plus explosions and
@@ -6126,8 +6159,13 @@ function buildFarLight(now){if(!R.farW)return;const n=R.farW*R.farH,lt=S.lraw,gw
   const I=S.items;if(I&&I.fx)for(const f of I.fx){const q=fxLight(f);if(q&&q[2]>0){farAdd(q[0],q[1],q[2],q[3])}}
   if(!F.any&&!F.was)return;F.was=F.any;
   const fw=R.farW,fh=R.farH,K=FAR_KERN,r=(K.length-1)>>1,raw=F.raw,tmp=F.tmp,out=F.out,tx=F.tex;
-  for(let y=0;y<fh;y++){const o=y*fw;for(let x=0;x<fw;x++){let s=0;for(let d=-r;d<=r;d++){const xx=x+d;if(xx>=0&&xx<fw)s+=raw[o+xx]*K[d+r]}tmp[o+x]=s}}
-  for(let y=0;y<fh;y++)for(let x=0;x<fw;x++){let s=0;for(let d=-r;d<=r;d++){const yy=y+d;if(yy>=0&&yy<fh)s+=tmp[yy*fw+x]*K[d+r]}const v=1-Math.exp(-s*FAR_GAIN);out[y*fw+x]=v;tx[(y*fw+x)*4+3]=v*255}
+  // separable blur, only over the box the light can reach (lit texels plus the kernel radius); everywhere else the result is
+  // exactly 0, so it's just cleared. Same sums in the same order as a full pass, so the same values.
+  let bx0=fw,bx1=-1,by0=fh,by1=-1;for(let y=0;y<fh;y++){const o=y*fw;for(let x=0;x<fw;x++)if(raw[o+x]){if(x<bx0)bx0=x;if(x>bx1)bx1=x;if(y<by0)by0=y;if(y>by1)by1=y}}
+  out.fill(0);tx.fill(0);
+  if(bx1>=0){const X0=Math.max(0,bx0-r),X1=Math.min(fw-1,bx1+r),Y0=Math.max(0,by0-r),Y1=Math.min(fh-1,by1+r);
+    for(let y=by0;y<=by1;y++){const o=y*fw;for(let x=X0;x<=X1;x++){let s=0;const d0=Math.max(-r,-x),d1=Math.min(r,fw-1-x);for(let d=d0;d<=d1;d++)s+=raw[o+x+d]*K[d+r];tmp[o+x]=s}}
+    for(let y=Y0;y<=Y1;y++){const d0=Math.max(-r,by0-y),d1=Math.min(r,by1-y);for(let x=X0;x<=X1;x++){let s=0;for(let d=d0;d<=d1;d++)s+=tmp[(y+d)*fw+x]*K[d+r];const v=1-Math.exp(-s*FAR_GAIN);out[y*fw+x]=v;tx[(y*fw+x)*4+3]=v*255}}}
   R.uploadFar(tx)}
 // blurred firelight at one cell (same kernel as the GPU blur, away from the edges), for tinting people
 const LK=[1,2,3,4,5,4,3,2,1].map(v=>v/16);
@@ -6372,10 +6410,13 @@ function render(tm){if(!R||R.lost)return;const z=S.z,d=DPR;buildSimTextures();
   drawStrokes(c);drawWetHeat(c);drawValid(c,tm);drawPlanMarks(c,tm);if(window.coachDraw)coachDraw(c,tm);drawFlames(c,tm);drawParts(c);drawBooms(c);drawPeople(c,tm);drawGhost(c,tm);drawInspectMark(c,tm);
   c.setTransform(d,0,0,d,0,0);drawPops(c)}
 function splatPath(c,sp,dr=0){const n=sp.pts.length,r=sp.r+dr;for(let k=0;k<=n;k++){const a=sp.rot+k/n*6.283,q=r*sp.pts[k%n],x=sp.x+Math.cos(a)*q,y=sp.y+Math.sin(a)*q;k?c.lineTo(x,y):c.moveTo(x,y)}c.closePath()}
-function drawStrokes(c){const g=S.g;for(const s of S.strokes){const live=s.splats.filter(p=>g.ovs[p.i]!==2);if(!live.length)continue;
-    c.beginPath();for(const p of live)splatPath(c,p,1.3);c.fillStyle='rgba(38,22,40,.55)';c.fill();
-    c.beginPath();for(const p of live)splatPath(c,p);c.fillStyle='rgba(84,56,104,.88)';c.fill();
-    c.beginPath();for(const p of live){if(p.r<3)continue;c.moveTo(p.x-p.r*.03,p.y-p.r*.3);c.ellipse(p.x-p.r*.25,p.y-p.r*.3,p.r*.22,p.r*.12,-.5,0,6.283)}c.fillStyle='rgba(205,190,245,.6)';c.fill()}
+// each stroke's three paths (outline, body, highlights) are built once as Path2D and rebuilt only when its splats change
+// (more poured, some wiped, or burnt away): no per-frame trig and path building, and the canvas can reuse the tessellation
+function drawStrokes(c){const g=S.g;for(const s of S.strokes){const sp=s.splats;let n=0,h=0;for(let k=0;k<sp.length;k++)if(g.ovs[sp[k].i]!==2){n++;h+=sp[k].i*(k+1)}if(!n)continue;
+    let P=s._paths;if(!P||P.arr!==sp||P.len!==sp.length||P.n!==n||P.h!==h){const o=new Path2D(),b=new Path2D(),hi=new Path2D();
+      for(const p of sp){if(g.ovs[p.i]===2)continue;splatPath(o,p,1.3);splatPath(b,p);if(p.r>=3){hi.moveTo(p.x-p.r*.03,p.y-p.r*.3);hi.ellipse(p.x-p.r*.25,p.y-p.r*.3,p.r*.22,p.r*.12,-.5,0,6.283)}}
+      P=s._paths={arr:sp,len:sp.length,n,h,o,b,hi}}
+    c.fillStyle='rgba(38,22,40,.55)';c.fill(P.o);c.fillStyle='rgba(84,56,104,.88)';c.fill(P.b);c.fillStyle='rgba(205,190,245,.6)';c.fill(P.hi)}
   if(pour&&S.pourAt){const p=S.pourAt;c.save();c.translate(p.x+12,p.y-20);c.rotate(-.75);c.drawImage(gasIcon(),-12,-12,24,24);c.restore()}}
 let _gasIcon=null;function gasIcon(){return _gasIcon||(_gasIcon=assetIcon('gas_can',24))}
 let validCv=null;
