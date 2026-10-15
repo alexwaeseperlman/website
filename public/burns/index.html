@@ -362,7 +362,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build aab5819 · Oct 15</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 6f14d19 · Oct 15</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -6021,7 +6021,11 @@ function itemAt(x,y){return S.world.insts.find(it=>it.item&&x>=it.x-2&&x<=it.x+i
 
 /* ---------- placement ---------- */
 // where a w×h item centred at (x,y) would sit, on the cell grid; null if any cell isn't open ground
-function fitAt(x,y,w,h){const gx=Math.round((x-w/2)/CS)*CS,gy=Math.round((y-h/2)/CS)*CS,cells=rectCells(gx,gy,w,h);return cells&&cells.every(openGround)?{x:gx,y:gy}:null}
+// the cells a w×h item at x,y actually sits on: those whose centre is inside it (the same rule that maps its art to sim
+// cells). Checking the whole rect instead made a 20 px crate need a third, empty cell, so it could get flush against
+// something on its right or bottom side but not its left or top
+function footCells(x,y,w,h){const g=S.g,out=[];for(let cy=Math.ceil(y/CS-.5);(cy+.5)*CS<y+h;cy++)for(let cx=Math.ceil(x/CS-.5);(cx+.5)*CS<x+w;cx++){if(cx<0||cy<0||cx>=g.gw||cy>=g.gh)return null;out.push(cy*g.gw+cx)}return out}
+function fitAt(x,y,w,h){const gx=Math.round((x-w/2)/CS)*CS,gy=Math.round((y-h/2)/CS)*CS,cells=footCells(gx,gy,w,h);return cells&&cells.every(openGround)?{x:gx,y:gy}:null}
 // a tap on blocked ground snaps to the nearest spot the item fits, up to SNAP_R px away (about two item widths)
 const SNAP_R=40;
 function snapSpot(x,y,w,h){let f=fitAt(x,y,w,h);if(f)return f;let best=null,bd=1e9;
