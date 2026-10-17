@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>No Thanks!</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5fafd; --card:#ffffff; --ink:#1a1a1a; --blue:#3f75ad; --border:#e1e8ee;
+  --field:#f5fafd; --grey:#707070; --outline:#1a1a1a; --red:#d64541; --green:#2e9e6b; --gold:#e0a100;
+  --chip:#d64541; --chip-edge:#a8302d; --felt:#e8f1f8;
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; --chip:#e0524d; --chip-edge:#a8302d; --felt:#121c26; }
+}
+:root[data-theme="dark"]{ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; --chip:#e0524d; --chip-edge:#a8302d; --felt:#121c26; }
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--bg); color:var(--ink); font-family:"Roboto Slab",Rockwell,Georgia,serif; font-size:16px; line-height:1.4;
+  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+main{max-width:760px;margin:0 auto;padding:12px 16px 32px}
+header{display:flex;align-items:center;gap:8px;padding:4px 0 12px}
+h1{margin:0;font-weight:400;text-transform:uppercase;color:var(--blue);font-size:22px;line-height:1.2;flex:1}
+h1 a{color:inherit;text-decoration:none}
+h2{font-weight:600;font-size:18px;margin:0 0 8px}
+p{margin:0 0 10px}
+.muted{color:var(--grey)}
+.err{color:var(--red)}
+button,input{font:inherit;font-size:15px;color:var(--ink)}
+button{background:var(--field);border:2px solid var(--outline);border-radius:8px;padding:8px 14px;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+button:disabled{opacity:.35;cursor:default}
+button.primary{background:var(--blue);border-color:var(--blue);color:var(--card);font-weight:600}
+button.link{border:0;background:none;padding:4px 6px;color:var(--blue);text-decoration:underline}
+input{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:8px 10px;min-width:0}
+input.code{text-transform:uppercase;letter-spacing:.2em;width:7.5em}
+.panel{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+[hidden]{display:none !important}
+.seg{display:inline-flex;border:2px solid var(--outline);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 12px}
+.seg button[aria-pressed="true"]{background:var(--blue);color:var(--card);font-weight:600}
+
+/* lobby */
+.roomcode{font-size:40px;font-weight:700;letter-spacing:.18em;color:var(--blue);line-height:1}
+.plist{list-style:none;margin:10px 0;padding:0}
+.plist li{padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px}
+.plist li:last-child{border-bottom:0}
+.tag{font-size:12px;border:1px solid var(--border);border-radius:99px;padding:1px 8px;color:var(--grey);align-self:center}
+
+/* cards and chips */
+.card{
+  --h:210; position:relative; width:46px; height:66px; border-radius:7px; flex:none;
+  background:hsl(var(--h) 70% 94%); border:2px solid hsl(var(--h) 45% 45%); color:hsl(var(--h) 55% 28%);
+  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px; font-variant-numeric:tabular-nums;
+  box-shadow:0 1px 2px rgba(0,0,0,.15);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .card{background:hsl(var(--h) 35% 20%);color:hsl(var(--h) 80% 85%);border-color:hsl(var(--h) 45% 55%)} }
+:root[data-theme="dark"] .card{background:hsl(var(--h) 35% 20%);color:hsl(var(--h) 80% 85%);border-color:hsl(var(--h) 45% 55%)}
+.card.big{width:118px;height:168px;border-radius:14px;font-size:58px;border-width:3px}
+.card.big.flip{animation:flip .35s ease-out}
+@keyframes flip{from{transform:rotateY(90deg) scale(.9)}to{transform:none}}
+.card .corner{position:absolute;top:6px;left:9px;font-size:16px;opacity:.7}
+.card.back{background:repeating-linear-gradient(45deg,var(--blue) 0 6px,color-mix(in srgb,var(--blue) 75%,var(--card)) 6px 12px);border-color:var(--blue);color:var(--card)}
+.runs{display:flex;flex-wrap:wrap;gap:10px;min-height:66px;align-items:flex-start}
+.run{display:flex}
+.run .card + .card{margin-left:-22px;justify-content:flex-end;padding-right:4px;font-size:16px}
+.runs.small .card{width:34px;height:48px;font-size:15px;border-radius:6px}
+.runs.small .run .card + .card{margin-left:-14px;font-size:13px;padding-right:2px}
+.runs.small{min-height:48px;gap:6px}
+.chip{display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--chip);border:3px solid var(--chip-edge);vertical-align:-4px;box-shadow:0 1px 1px rgba(0,0,0,.25)}
+.chips{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* table */
+.opps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:14px}
+.opp{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:10px 12px}
+.opp.turn,.mine.turn{border-color:var(--gold);box-shadow:0 0 0 2px color-mix(in srgb,var(--gold) 35%,transparent)}
+.opp .head,.mine .head{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}
+.opp .name,.mine .name{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.center{display:flex;gap:22px;align-items:center;justify-content:center;padding:18px 12px;background:var(--felt);border-radius:16px;margin-bottom:14px;flex-wrap:wrap}
+.pot{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:96px}
+.potchips{display:flex;flex-wrap:wrap;gap:3px;max-width:120px;justify-content:center;min-height:22px}
+.deck{display:flex;flex-direction:column;align-items:center;gap:6px}
+.deck .card{width:48px;height:68px}
+.status{font-weight:600;color:var(--blue);text-align:center;min-height:1.4em;margin:0 0 6px}
+.last{text-align:center;color:var(--grey);min-height:1.4em;margin:0 0 10px;font-size:15px}
+.actions{display:flex;gap:10px;margin-top:12px}
+.actions button{flex:1;padding:12px 10px;font-size:17px}
+.score{font-variant-numeric:tabular-nums}
+table.results{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.results th,table.results td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--border)}
+table.results th:first-child,table.results td:first-child{text-align:left}
+table.results tr.win td{color:var(--green);font-weight:700}
+
+/* sheets */
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.sheet .panel{max-width:520px;width:100%;max-height:90vh;overflow:auto;margin:0}
+.sheet ol,.sheet ul{padding-left:20px;margin:0 0 10px}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:15px;z-index:20;max-width:calc(100% - 32px)}
+@media (max-width:480px){
+  .card.big{width:96px;height:138px;font-size:48px}
+  .center{gap:14px;padding:14px 8px}
+  .opps{grid-template-columns:1fr 1fr}
+  .opp{padding:8px}
+  .runs.small .card{width:28px;height:40px;font-size:13px}
+  .runs.small .run .card + .card{margin-left:-11px;font-size:12px;padding-right:1px}
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><a href="./">No Thanks!</a></h1>
+    <button class="link" id="rulesBtn">Rules</button>
+  </header>
+
+  <!-- home -->
+  <section id="home" hidden>
+    <div class="panel">
+      <h2>Play with friends</h2>
+      <p class="muted">Make a room and send its link, or type the code a friend gave you. 3 to 7 players is the real game; 2 works too.</p>
+      <div class="row" style="margin-bottom:10px">
+        <label for="nameInput">Your name</label>
+        <input id="nameInput" class="grow" maxlength="20" autocomplete="nickname" placeholder="Name">
+      </div>
+      <div id="onlineBox">
+        <div class="row">
+          <button class="primary" id="createBtn">Create a room</button>
+          <span class="muted">or</span>
+          <form class="row" id="joinForm">
+            <input id="codeInput" class="code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" aria-label="Room code">
+            <button type="submit">Join</button>
+          </form>
+        </div>
+        <p id="rejoin" class="muted" style="margin-top:10px" hidden></p>
+      </div>
+      <p id="offlineNote" class="muted" hidden>Online rooms only work on <a href="https://alexwp.com/no_thanks/">alexwp.com/no_thanks</a>. You can still practise against bots here.</p>
+      <p id="homeMsg" class="err"></p>
+    </div>
+    <div class="panel">
+      <h2>Practise against bots</h2>
+      <div class="row">
+        <span>Bots</span>
+        <div class="seg" id="botSeg"></div>
+        <button id="practiceBtn">Play</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- lobby -->
+  <section id="lobby" hidden>
+    <div class="panel">
+      <p class="muted" style="margin-bottom:4px">Room code</p>
+      <div class="row" style="margin-bottom:10px">
+        <span class="roomcode" id="lobbyCode"></span>
+        <button id="copyBtn">Copy invite link</button>
+      </div>
+      <h2 id="lobbyCount"></h2>
+      <ul class="plist" id="lobbyList"></ul>
+      <p id="lobbyHint" class="muted"></p>
+      <div class="row">
+        <button class="primary" id="startBtn">Start game</button>
+        <button id="leaveBtn">Leave room</button>
+      </div>
+      <p id="lobbyMsg" class="err"></p>
+    </div>
+  </section>
+
+  <!-- table -->
+  <section id="table" hidden>
+    <div class="opps" id="opps"></div>
+    <div class="center">
+      <div class="deck"><div class="card back" id="deckCard"></div><span class="muted" id="deckLeft"></span></div>
+      <div class="card big" id="curCard"></div>
+      <div class="pot"><div class="potchips" id="potChips"></div><span id="potLabel"></span></div>
+    </div>
+    <p class="status" id="status"></p>
+    <p class="last" id="lastMove"></p>
+    <div class="panel mine" id="mine">
+      <div class="head"><span class="name" id="myName"></span><span class="chips"><span class="chip"></span><span id="myChips"></span></span><span class="score muted" id="myScore"></span></div>
+      <div class="runs" id="myCards"></div>
+      <div class="actions">
+        <button class="primary" id="passBtn">No thanks!</button>
+        <button id="takeBtn">Take it</button>
+      </div>
+    </div>
+    <div class="row"><button class="link" id="quitBtn">Leave table</button><span class="grow"></span><span class="muted" id="tableCode"></span></div>
+  </section>
+
+  <!-- results -->
+  <section id="results" hidden>
+    <div class="panel">
+      <h2 id="winner"></h2>
+      <table class="results"><thead><tr><th>Player</th><th>Cards</th><th>Chips</th><th>Score</th></tr></thead><tbody id="resultRows"></tbody></table>
+      <div id="resultCards" style="margin-top:14px"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="againBtn">Play again</button>
+        <button id="homeBtn">Back</button>
+      </div>
+      <p id="againHint" class="muted" style="margin-top:8px"></p>
+      <p id="resultsMsg" class="err"></p>
+    </div>
+  </section>
+</main>
+
+<div class="sheet" id="rulesSheet" hidden>
+  <div class="panel" role="dialog" aria-labelledby="rulesTitle">
+    <h2 id="rulesTitle">How to play</h2>
+    <p>No Thanks! by Thorsten Gimmler (Amigo), for 3 to 7 players.</p>
+    <ol>
+      <li>The deck is the cards 3 to 35. Nine are removed unseen, so nobody knows which numbers are missing.</li>
+      <li>Everyone starts with 11 chips (9 with six players, 7 with seven). Chips are kept secret.</li>
+      <li>On your turn, the top card is face up. Either say <b>No thanks!</b> by putting one of your chips on it and passing it to the next player, or <b>take it</b> along with every chip on it.</li>
+      <li>If you take a card, you turn over the next one and decide again. If you're out of chips, you must take it.</li>
+      <li>The game ends when the last card is taken.</li>
+    </ol>
+    <p><b>Scoring:</b> each card counts its number as points, but a run of consecutive cards only counts its lowest card (27, 28, 29 scores 27). Each chip takes a point off. <b>Lowest score wins</b>; tied players share the win.</p>
+    <div class="row"><span class="grow"></span><button class="primary" id="rulesClose">Got it</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ================= No Thanks! =================
+   Two ways to play, drawn by the same table code:
+   - online rooms, run by Supabase functions (tools/supabase/nothanks_schema.sql): the deck and everyone's chips are
+     kept on the server, and every move is checked there. Each browser holds a random secret token in localStorage,
+     which is its seat in a room, so a reload or a lost connection rejoins the same seat.
+   - practice against bots, played entirely on this device with the same rules.
+   Both produce a "view": the room's public state plus this player's pid and chips. */
+window.NOTHANKS_ONLINE = window.NOTHANKS_ONLINE || {
+  // Turns' Supabase project. The publishable key is meant to be public: the deck and chips stay in tables only
+  // the game's functions can read.
+  url: 'https://wgysofnocxigucqocxed.supabase.co', anonKey: 'sb_publishable_m9npQPFI2rwsFo40wY9FMg_rKHZxf80',
+  hosts: ['alexwp.com', 'www.alexwp.com', 'localhost', '127.0.0.1'],
+};
+(function(){
+const $ = id => document.getElementById(id);
+const store = {
+  get(k){ try { return localStorage.getItem('nothanks.' + k); } catch(e){ return null; } },
+  set(k, v){ try { v == null ? localStorage.removeItem('nothanks.' + k) : localStorage.setItem('nothanks.' + k, v); } catch(e){} },
+};
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+  const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+const token = store.get('token') || uuid(); store.set('token', token);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+/* ---------- rules ---------- */
+const chipsFor = n => n <= 5 ? 11 : n === 6 ? 9 : 7;
+const cardPoints = cards => { const s = new Set(cards); return cards.reduce((t, c) => t + (s.has(c - 1) ? 0 : c), 0); };
+const score = (cards, chips) => cardPoints(cards) - chips;
+const runsOf = cards => { const out = []; for (const c of [...cards].sort((a, b) => a - b)){ const r = out[out.length - 1]; if (r && r[r.length - 1] === c - 1) r.push(c); else out.push([c]); } return out; };
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/* ---------- screens ---------- */
+const screens = ['home', 'lobby', 'table', 'results'];
+const show = id => screens.forEach(s => { $(s).hidden = s !== id; });
+let toastT = 0;
+function toast(t){ const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2600); }
+$('rulesBtn').onclick = () => { $('rulesSheet').hidden = false; };
+$('rulesClose').onclick = () => { $('rulesSheet').hidden = true; };
+$('rulesSheet').onclick = e => { if (e.target === $('rulesSheet')) $('rulesSheet').hidden = true; };
+
+/* ---------- the current game: a source (online room or local bots) and the latest view ---------- */
+let src = null, view = null, lastCardShown = null, busy = false;
+
+function setView(v){
+  if (!v) return;
+  if (view && v.round === view.round && v.v < view.v) return;   // an older update arriving late
+  view = v; render();
+}
+
+function render(){
+  const v = view; if (!v || !src) return;
+  if (v.phase === 'lobby') return renderLobby(v);
+  if (v.phase === 'done') return renderResults(v);
+  renderTable(v);
+}
+
+function hue(c){ return 210 - (c - 3) / 32 * 200; }   // low cards blue, high cards red
+function cardEl(c, cls = '', css = ''){ return `<div class="card ${cls}" style="--h:${hue(c)};${css}">${c}</div>`; }
+function runsHtml(cards){
+  return runsOf(cards).map(r => '<div class="run">' + r.map((c, i) => cardEl(c, '', `z-index:${r.length - i}`)).join('') + '</div>').join('');
+}
+const nameOf = (v, pid) => { const p = v.players.find(p => p.pid === pid); return p ? p.name : 'Someone'; };
+const isMe = (v, pid) => pid === v.me;
+const you = (v, p) => isMe(v, p.pid) && p.name !== 'You' ? ' (you)' : '';
+
+function renderLobby(v){
+  show('lobby');
+  $('lobbyCode').textContent = v.code;
+  const n = v.players.length, host = v.host === v.me;
+  $('lobbyCount').textContent = `${n} player${n === 1 ? '' : 's'} at the table`;
+  $('lobbyList').innerHTML = v.players.map(p => `<li><span class="grow">${esc(p.name)}</span>${p.pid === v.host ? '<span class="tag">host</span>' : ''}${isMe(v, p.pid) ? '<span class="tag">you</span>' : ''}</li>`).join('');
+  $('startBtn').hidden = !host;
+  $('startBtn').disabled = n < 2;
+  $('lobbyHint').textContent = !host ? `Waiting for ${nameOf(v, v.host)} to start the game.`
+    : n < 2 ? 'Send the invite link to your friends. You need at least 2 players.'
+    : n === 2 ? 'Two players is unofficial, but it works. The real game is 3 to 7.' : `Everyone gets ${chipsFor(n)} chips.`;
+}
+
+function renderTable(v){
+  show('table');
+  const me = v.players.find(p => isMe(v, p.pid)), turnP = v.players[v.turn], myTurn = turnP && isMe(v, turnP.pid);
+  // everyone else, in seat order starting after me
+  const i0 = v.players.findIndex(p => isMe(v, p.pid));
+  const others = v.players.map((p, i) => [p, i]).filter(([p]) => !isMe(v, p.pid));
+  others.sort((a, b) => ((a[1] - i0 + 99) % v.players.length) - ((b[1] - i0 + 99) % v.players.length));
+  $('opps').innerHTML = others.map(([p, i]) => `<div class="opp${i === v.turn ? ' turn' : ''}">
+      <div class="head"><span class="name">${esc(p.name)}</span><span class="chips"><span class="chip"></span>?</span><span class="score muted">${cardPoints(p.cards)} pts</span></div>
+      <div class="runs small">${p.cards.length ? runsHtml(p.cards) : '<span class="muted">No cards</span>'}</div></div>`).join('');
+  const cur = $('curCard');
+  cur.style.setProperty('--h', hue(v.card)); cur.innerHTML = v.card;
+  const key = v.round + ':' + v.card + ':' + v.left;
+  if (lastCardShown !== key){ cur.classList.remove('flip'); void cur.offsetWidth; cur.classList.add('flip'); lastCardShown = key; }
+  $('deckLeft').textContent = `${v.left} left`;
+  $('deckCard').style.visibility = v.left ? 'visible' : 'hidden';
+  $('potChips').innerHTML = '<span class="chip"></span>'.repeat(v.pot);
+  $('potLabel').textContent = v.pot ? `${v.pot} chip${v.pot === 1 ? '' : 's'}` : 'No chips';
+  $('status').textContent = myTurn ? 'Your turn' : turnP ? `${turnP.name}'s turn` : '';
+  const l = v.last;
+  $('lastMove').textContent = !l ? '' : l.take
+    ? `${isMe(v, l.pid) ? 'You' : nameOf(v, l.pid)} took ${l.card}${l.pot ? ` and ${l.pot} chip${l.pot === 1 ? '' : 's'}` : ''}.`
+    : `${isMe(v, l.pid) ? 'You' : nameOf(v, l.pid)} said No thanks! to ${l.card}.`;
+  $('mine').classList.toggle('turn', !!myTurn);
+  $('myName').textContent = me ? me.name + you(v, me) : 'You';
+  const chips = v.myChips;
+  $('myChips').textContent = chips == null ? '…' : chips;
+  $('myScore').textContent = me && chips != null ? `${score(me.cards, chips)} pts` : '';
+  $('myCards').innerHTML = me && me.cards.length ? runsHtml(me.cards) : '<span class="muted">Take a card and it lands here. Runs only count their lowest card.</span>';
+  $('passBtn').disabled = !myTurn || busy || !chips;
+  $('passBtn').textContent = myTurn && chips === 0 ? 'No chips left' : 'No thanks!';
+  $('takeBtn').disabled = !myTurn || busy;
+  if (me && myTurn){
+    const d = cardPoints([...me.cards, v.card]) - cardPoints(me.cards) - v.pot;
+    $('takeBtn').textContent = `Take it (${d > 0 ? '+' : ''}${d} pts)`;
+  } else $('takeBtn').textContent = 'Take it';
+  $('tableCode').textContent = src.kind === 'online' ? `Room ${v.code}` : 'Practice';
+}
+
+function renderResults(v){
+  show('results');
+  const rows = v.players.map(p => ({ p, pts: cardPoints(p.cards), chips: p.chips, s: score(p.cards, p.chips) })).sort((a, b) => a.s - b.s);
+  const best = rows[0].s, winners = rows.filter(r => r.s === best);
+  const names = winners.map(r => isMe(v, r.p.pid) ? 'You' : r.p.name);
+  $('winner').textContent = winners.length > 1 ? `${names.join(' and ')} tie for the win with ${best}` :
+    names[0] === 'You' ? `You win with ${best}!` : `${names[0]} wins with ${best}`;
+  $('resultRows').innerHTML = rows.map(r => `<tr class="${r.s === best ? 'win' : ''}"><td>${esc(r.p.name)}${you(v, r.p)}</td><td>${r.pts}</td><td>−${r.chips}</td><td>${r.s}</td></tr>`).join('');
+  $('resultCards').innerHTML = rows.map(r => `<p class="muted" style="margin:10px 0 4px">${esc(r.p.name)}</p><div class="runs small">${r.p.cards.length ? runsHtml(r.p.cards) : '<span class="muted">No cards</span>'}</div>`).join('');
+  const host = src.kind === 'local' || v.host === v.me;
+  $('againBtn').hidden = !host;
+  $('againHint').textContent = host ? '' : `${nameOf(v, v.host)} can start another game.`;
+}
+
+async function act(take){
+  if (busy || !src) return;
+  busy = true; render();
+  try { await src.act(take); }
+  catch(e){ toast(e.message || String(e)); }
+  busy = false; render();
+}
+$('passBtn').onclick = () => act(false);
+$('takeBtn').onclick = () => act(true);
+document.addEventListener('keydown', e => {
+  if (!view || view.phase !== 'playing' || e.target.tagName === 'INPUT') return;
+  if (e.key === 'n' || e.key === 'N') act(false);
+  if (e.key === 't' || e.key === 'T') act(true);
+});
+
+/* ---------- practice against bots ---------- */
+const BOT_NAMES = ['Ada', 'Basil', 'Clem', 'Dot', 'Ezra', 'Fern'];
+let botCount = Math.min(6, Math.max(2, +store.get('bots') || 3));
+function drawBotSeg(){
+  $('botSeg').innerHTML = [2, 3, 4, 5, 6].map(n => `<button aria-pressed="${n === botCount}" data-n="${n}">${n}</button>`).join('');
+  $('botSeg').querySelectorAll('button').forEach(b => { b.onclick = () => { botCount = +b.dataset.n; store.set('bots', botCount); drawBotSeg(); }; });
+}
+drawBotSeg();
+
+// a simple bot: take a card when it costs little after the chips on it, more readily as its chips run out;
+// sometimes lets a card it wants go round once more to collect chips
+function botTakes(cards, chips, card, pot, nPlayers){
+  if (chips === 0) return true;
+  const cost = cardPoints([...cards, card]) - cardPoints(cards) - pot;
+  const fits = cards.includes(card - 1) || cards.includes(card + 1);
+  if (fits && cost <= 0 && pot < nPlayers && Math.random() < 0.5) return false;   // milk it
+  const limit = chips <= 2 ? 12 : chips <= 4 ? 7 : chips <= 7 ? 3 : 0;
+  return cost <= limit + (Math.random() < 0.2 ? 2 : 0);
+}
+
+function localGame(nBots){
+  const name = ($('nameInput').value.trim() || 'You').slice(0, 20);
+  const players = [{ pid: 'me', name, cards: [] }, ...shuffle(BOT_NAMES.slice()).slice(0, nBots).map((n, i) => ({ pid: 'b' + i, name: n, cards: [] }))];
+  let s, deck, chips, botT = 0, round = 0;
+  const deal = () => {
+    deck = shuffle(Array.from({ length: 33 }, (_, i) => i + 3)).slice(0, 24);
+    chips = Object.fromEntries(players.map(p => [p.pid, chipsFor(players.length)]));
+    round++;
+    s = { phase: 'playing', code: '', host: 'me', me: 'me', v: 1, round, players: players.map(p => ({ ...p, cards: [] })),
+      card: deck.shift(), pot: 0, left: 23, turn: Math.floor(Math.random() * players.length), last: null };
+    emit();
+  };
+  const emit = () => { s.v++; s.myChips = chips.me; setView({ ...s, players: s.players.map(p => ({ ...p })) }); schedule(); };
+  const move = (pid, take) => {
+    const p = s.players[s.turn];
+    if (s.phase !== 'playing' || p.pid !== pid) throw new Error("It's not your turn.");
+    if (!take){
+      if (!chips[pid]) throw new Error("You're out of chips, so you have to take it.");
+      chips[pid]--; s.pot++; s.last = { pid, take: false, card: s.card, pot: s.pot }; s.turn = (s.turn + 1) % s.players.length;
+    } else {
+      chips[pid] += s.pot; p.cards = [...p.cards, s.card].sort((a, b) => a - b);
+      s.last = { pid, take: true, card: s.card, pot: s.pot }; s.pot = 0;
+      if (!deck.length){ s.phase = 'done'; s.card = null; s.left = 0; s.players.forEach(q => { q.chips = chips[q.pid]; }); }
+      else { s.card = deck.shift(); s.left = deck.length; }
+    }
+    emit();
+  };
+  const schedule = () => {
+    clearTimeout(botT);
+    if (s.phase !== 'playing') return;
+    const p = s.players[s.turn]; if (p.pid === 'me') return;
+    botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, s.players.length)), 700 + Math.random() * 600);
+  };
+  return { kind: 'local', act: async take => move('me', take), start: async () => deal(), leave(){ clearTimeout(botT); }, deal };
+}
+$('practiceBtn').onclick = () => {
+  store.set('name', $('nameInput').value.trim() || null);
+  enter(localGame(botCount)); src.deal();
+};
+
+/* ---------- online rooms ---------- */
+const SB = window.NOTHANKS_ONLINE, online = !!(SB.url && SB.anonKey && (SB.hosts || []).includes(location.hostname));
+let sbP = null;
+function supa(){
+  if (!sbP) sbP = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'; sc.async = true;
+    sc.onload = () => { try { res(window.supabase.createClient(SB.url, SB.anonKey, { auth: { persistSession: false, autoRefreshToken: false } })); } catch(e){ rej(e); } };
+    sc.onerror = () => { sbP = null; rej(new Error("Can't reach the game server. Check your connection.")); };
+    document.head.append(sc);
+  });
+  return sbP;
+}
+async function rpc(fn, args){
+  const sb = await supa(), { data, error } = await sb.rpc(fn, args);
+  if (error) throw new Error(friendly(error));
+  return data;
+}
+function friendly(error){
+  const m = error.message || '';
+  if (/Could not find the function|does not exist/i.test(m)) return 'Online rooms aren\'t set up on the server yet.';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "Can't reach the game server. Check your connection.";
+  return m;
+}
+
+function onlineGame(code, pid){
+  let sb, ch = null, pollT = 0, subscribed = false, chips = null, round = null, gone = false, state = null;
+  const pull = async () => {
+    const { data, error } = await sb.from('nothanks_rooms').select('state').eq('code', code).maybeSingle();
+    if (gone) return;
+    if (error) return;
+    if (!data){ gone = true; toast('That room has closed.'); return goHome(); }
+    take(data.state);
+  };
+  const take = async st => {
+    if (gone || !st) return;
+    if (st.round !== round && st.phase === 'playing'){
+      round = st.round; chips = null;
+      try { const me = await rpc('nothanks_me', { p_code: code, p_token: token }); chips = me ? me.chips : null; } catch(e){}
+    }
+    if (state && st.round === state.round && st.v < state.v) return;
+    state = st;
+    setView({ ...st, code, me: pid, myChips: chips });
+  };
+  const poll = () => { clearTimeout(pollT); pollT = setTimeout(async () => { await pull().catch(() => {}); if (!gone) poll(); }, subscribed ? 15000 : 2500); };
+  const onVis = () => { if (!document.hidden && !gone) pull().catch(() => {}); };
+  return {
+    kind: 'online', code,
+    async open(){
+      sb = await supa();
+      await pull();
+      ch = sb.channel('nothanks:' + code)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'nothanks_rooms', filter: 'code=eq.' + code }, p => take(p.new && p.new.state))
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'nothanks_rooms', filter: 'code=eq.' + code }, () => pull())
+        .subscribe(st => { subscribed = st === 'SUBSCRIBED'; if (subscribed) pull().catch(() => {}); poll(); });
+      document.addEventListener('visibilitychange', onVis);
+      poll();
+    },
+    async act(t){
+      const r = await rpc('nothanks_act', { p_code: code, p_token: token, p_take: t, p_v: state ? state.v : null });
+      chips = r.chips;
+      await pull();
+    },
+    async start(){ await rpc('nothanks_start', { p_code: code, p_token: token }); await pull(); },
+    async leave(hard){
+      gone = true; clearTimeout(pollT); document.removeEventListener('visibilitychange', onVis);
+      if (ch) sb.removeChannel(ch);
+      if (hard) await rpc('nothanks_leave', { p_code: code, p_token: token }).catch(() => {});
+    },
+  };
+}
+
+function inviteLink(code){ return location.origin + location.pathname + '?room=' + code; }
+async function openRoom(code, pid){
+  const g = onlineGame(code, pid);
+  enter(g);
+  store.set('room', code);
+  history.replaceState(null, '', '?room=' + code);
+  try { await g.open(); } catch(e){ toast(e.message); goHome(); }
+}
+function nameOrAsk(){
+  const n = $('nameInput').value.trim();
+  if (!n){ $('homeMsg').textContent = 'Pick a name first.'; $('nameInput').focus(); return null; }
+  store.set('name', n); $('homeMsg').textContent = ''; return n;
+}
+$('createBtn').onclick = async () => {
+  const n = nameOrAsk(); if (!n) return;
+  $('createBtn').disabled = true;
+  try { const r = await rpc('nothanks_create', { p_name: n, p_token: token }); await openRoom(r.code, r.pid); }
+  catch(e){ $('homeMsg').textContent = e.message; }
+  $('createBtn').disabled = false;
+};
+$('joinForm').onsubmit = async e => {
+  e.preventDefault();
+  const code = $('codeInput').value.trim().toUpperCase();
+  if (!/^[A-Z]{4}$/.test(code)){ $('homeMsg').textContent = 'Room codes are 4 letters.'; return; }
+  const n = nameOrAsk(); if (!n) return;
+  try { const r = await rpc('nothanks_join', { p_code: code, p_name: n, p_token: token }); await openRoom(r.code, r.pid); }
+  catch(e){ $('homeMsg').textContent = e.message; }
+};
+$('copyBtn').onclick = async () => {
+  const link = inviteLink(view.code);
+  try { if (navigator.share && matchMedia('(pointer:coarse)').matches) await navigator.share({ title: 'No Thanks!', url: link }); else { await navigator.clipboard.writeText(link); toast('Invite link copied'); } }
+  catch(e){ if (e.name !== 'AbortError') prompt('Copy this link:', link); }
+};
+$('startBtn').onclick = async () => {
+  $('startBtn').disabled = true; $('lobbyMsg').textContent = '';
+  try { await src.start(); } catch(e){ $('lobbyMsg').textContent = e.message; }
+  render();
+};
+$('againBtn').onclick = async () => {
+  $('resultsMsg').textContent = '';
+  try { await src.start(); } catch(e){ $('resultsMsg').textContent = e.message; }
+};
+$('leaveBtn').onclick = () => goHome(true);
+$('homeBtn').onclick = () => goHome(src && src.kind === 'online');
+$('quitBtn').onclick = () => {
+  if (src.kind === 'online' && !confirm('Leave the table? Your seat is kept, so you can come back from the home screen.')) return;
+  if (src.kind === 'local' && !confirm('Leave this practice game?')) return;
+  goHome(false);
+};
+
+/* ---------- home ---------- */
+function enter(s){ if (src) src.leave(false); src = s; view = null; lastCardShown = null; }
+async function goHome(leaveRoom){
+  const s = src; src = null; view = null;
+  if (s) await s.leave(leaveRoom);
+  if (leaveRoom) store.set('room', null);
+  history.replaceState(null, '', location.pathname);
+  drawHome();
+}
+function drawHome(){
+  show('home');
+  $('onlineBox').hidden = !online; $('offlineNote').hidden = online;
+  const last = store.get('room');
+  $('rejoin').hidden = !online || !last;
+  if (last){
+    $('rejoin').innerHTML = `You were in room <b>${esc(last)}</b>. <button class="link" id="rejoinBtn">Go back to it</button>`;
+    $('rejoinBtn').onclick = () => tryRejoin(last, true);
+  }
+}
+async function tryRejoin(code, loud){
+  try {
+    const me = await rpc('nothanks_me', { p_code: code, p_token: token });
+    if (me && me.pid) return openRoom(code, me.pid);
+    if (loud){ store.set('room', null); drawHome(); $('homeMsg').textContent = "You're no longer in that room."; }
+    return false;
+  } catch(e){ if (loud) $('homeMsg').textContent = e.message; return false; }
+}
+
+$('nameInput').value = store.get('name') || '';
+drawHome();
+const linkCode = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
+if (online && /^[A-Z]{4}$/.test(linkCode)){
+  $('codeInput').value = linkCode;
+  tryRejoin(linkCode, false).then(r => { if (r === false){ $('homeMsg').textContent = ''; ($('nameInput').value ? $('codeInput') : $('nameInput')).focus(); } });
+}
+})();
+</script>
+</body>
+</html>
