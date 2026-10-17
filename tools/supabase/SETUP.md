@@ -46,3 +46,10 @@ then push to `main`.
   restore the project from the dashboard to resume syncing.
 - The hint-reveal balance is stored in the player's row, which the player can write to. That's fine while
   reveals are free; before selling them, move the balance to a column only a server function can change.
+
+## No Thanks! online rooms
+`public/no_thanks/` uses the same project. It needs no sign-in setup: run
+[`nothanks_schema.sql`](nothanks_schema.sql) once in the SQL Editor and online rooms start working on
+alexwp.com (practice against bots works without it). The script also adds `nothanks_rooms` to the
+`supabase_realtime` publication so moves show up instantly; if that ever gets turned off, the game falls back to
+checking every few seconds.
