@@ -75,6 +75,7 @@ input.code{text-transform:uppercase;letter-spacing:.2em;width:7.5em}
 .plist{list-style:none;margin:10px 0;padding:0}
 .plist li{padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px}
 .plist li:last-child{border-bottom:0}
+.plist li button.x{min-height:0;padding:0 10px;border:0;background:none;color:var(--grey);font-size:20px;line-height:1}
 .tag{font-size:12px;border:1px solid var(--border);border-radius:99px;padding:1px 8px;color:var(--grey);align-self:center}
 
 /* cards and chips */
@@ -111,8 +112,8 @@ input.code{text-transform:uppercase;letter-spacing:.2em;width:7.5em}
 .potchips{display:flex;flex-wrap:wrap;gap:3px;max-width:120px;justify-content:center;min-height:22px}
 .deck{display:flex;flex-direction:column;align-items:center;gap:6px}
 .deck .card{width:48px;height:68px}
-.status{font-weight:600;color:var(--blue);text-align:center;min-height:1.4em;margin:0 0 6px}
-.last{text-align:center;color:var(--grey);min-height:1.4em;margin:0 0 10px;font-size:15px}
+.status{font-weight:600;color:var(--blue);text-align:center;min-height:1.4em;margin:0}
+.last{text-align:center;color:var(--grey);min-height:1.4em;margin:0 0 10px;font-size:15px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .actions{display:flex;gap:10px;margin-top:12px}
 .actions button{flex:1;padding:12px 10px;font-size:17px}
 .score{font-variant-numeric:tabular-nums}
@@ -133,7 +134,16 @@ table.results tr.win td{color:var(--green);font-weight:700}
 @media (max-width:600px){
   .mine{position:sticky;bottom:0;z-index:4;margin:0 -16px;border-radius:16px 16px 0 0;border-bottom:0;
     padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px rgba(0,0,0,.08)}
-  .mine .runs{max-height:30vh;overflow-y:auto}
+  .mine .runs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px}   /* one swipeable row */
+  .mine .status,.mine .last{display:inline;border:0;padding:0;font-size:15px}
+  .mine .status::after{content:' · ';color:var(--grey);font-weight:400}
+  .mine .last{display:inline}
+  .mine .head{margin-top:8px}
+  .opp{padding:6px 10px}
+  .opp .head{margin-bottom:2px}
+  .opp .runs.small{min-height:40px}
+  .opp .runs.small .muted{font-size:14px}
+  .center{padding:10px 8px;margin-bottom:10px}
   .actions button{padding:14px 10px;min-height:54px}
   #table > .row{padding-bottom:10px}
   main:has(> #table:not([hidden])){padding-bottom:0}
@@ -142,7 +152,7 @@ table.results tr.win td{color:var(--green);font-weight:700}
   .sheet .panel{border-radius:16px 16px 0 0;border-bottom:0;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));animation:rise .22s ease-out}
 }
 @media (max-width:480px){
-  .card.big{width:96px;height:138px;font-size:48px}
+  .card.big{width:86px;height:122px;font-size:44px;border-radius:12px}
   .center{gap:14px;padding:14px 8px}
   .opps{grid-template-columns:1fr 1fr}
   .opp{padding:8px}
@@ -204,6 +214,7 @@ table.results tr.win td{color:var(--green);font-weight:700}
       <p id="lobbyHint" class="muted"></p>
       <div class="row">
         <button class="primary" id="startBtn">Start game</button>
+        <button id="addBotBtn">Add a bot</button>
         <button id="leaveBtn">Leave room</button>
       </div>
       <p id="lobbyMsg" class="err"></p>
@@ -218,10 +229,10 @@ table.results tr.win td{color:var(--green);font-weight:700}
       <div class="card big" id="curCard"></div>
       <div class="pot"><div class="potchips" id="potChips"></div><span id="potLabel"></span></div>
     </div>
-    <p class="status" id="status"></p>
-    <p class="last" id="lastMove"></p>
     <div class="row"><button class="link" id="quitBtn">Leave table</button><span class="grow"></span><span class="muted" id="tableCode"></span></div>
     <div class="panel mine" id="mine">
+      <p class="status" id="status"></p>
+      <p class="last" id="lastMove"></p>
       <div class="head"><span class="name" id="myName"></span><span class="chips"><span class="chip"></span><span id="myChips"></span></span><span class="score muted" id="myScore"></span></div>
       <div class="runs" id="myCards"></div>
       <div class="actions">
@@ -387,11 +398,15 @@ function renderLobby(v){
   $('lobbyCode').textContent = v.code;
   const n = v.players.length, host = v.host === v.me;
   $('lobbyCount').textContent = `${n} player${n === 1 ? '' : 's'} at the table`;
-  $('lobbyList').innerHTML = v.players.map(p => `<li><span class="grow">${esc(p.name)}</span>${p.pid === v.host ? '<span class="tag">host</span>' : ''}${isMe(v, p.pid) ? '<span class="tag">you</span>' : ''}</li>`).join('');
+  $('lobbyList').innerHTML = v.players.map(p => `<li><span class="grow">${esc(p.name)}</span>${p.pid === v.host ? '<span class="tag">host</span>' : ''}${isMe(v, p.pid) ? '<span class="tag">you</span>' : ''}` +
+    (host && p.bot ? `<button class="x" data-pid="${esc(p.pid)}" aria-label="Remove ${esc(p.name)}">×</button>` : '') + '</li>').join('');
+  $('lobbyList').querySelectorAll('button.x').forEach(b => { b.onclick = () => lobbyCall(() => src.removeBot(b.dataset.pid)); });
+  $('addBotBtn').hidden = !host;
+  $('addBotBtn').disabled = n >= 7;
   $('startBtn').hidden = !host;
   $('startBtn').disabled = n < 2;
   $('lobbyHint').textContent = !host ? `Waiting for ${nameOf(v, v.host)} to start the game.`
-    : n < 2 ? 'Send the invite link to your friends. You need at least 2 players.'
+    : n < 2 ? 'Send the invite link to your friends, or add bots. You need at least 2 players.'
     : n === 2 ? 'Two players is unofficial, but it works. The real game is 3 to 7.' : `Everyone gets ${chipsFor(n)} chips.`;
 }
 
@@ -549,7 +564,16 @@ function friendly(error){
 }
 
 function onlineGame(code, pid){
-  let sb, ch = null, pollT = 0, subscribed = false, chips = null, round = null, gone = false, state = null;
+  let sb, ch = null, pollT = 0, botT = 0, subscribed = false, chips = null, round = null, gone = false, state = null;
+  // when it's a bot's turn, ask the server to play it after a short pause. Every browser in the room does this;
+  // the first ask moves the bot and the others are ignored, so a bot never stalls because one player left.
+  const driveBots = st => {
+    clearTimeout(botT);
+    const cur = st.phase === 'playing' && st.players[st.turn];
+    if (!cur || !cur.bot) return;
+    botT = setTimeout(() => { rpc('nothanks_bot', { p_code: code, p_v: st.v }).then(moved => { if (moved) pull().catch(() => {}); }, () => {}); },
+      800 + Math.random() * 600);
+  };
   const pull = async () => {
     const { data, error } = await sb.from('nothanks_rooms').select('state').eq('code', code).maybeSingle();
     if (gone) return;
@@ -565,6 +589,7 @@ function onlineGame(code, pid){
     }
     if (state && st.round === state.round && st.v < state.v) return;
     state = st;
+    driveBots(st);
     setView({ ...st, code, me: pid, myChips: chips });
   };
   const poll = () => { clearTimeout(pollT); pollT = setTimeout(async () => { await pull().catch(() => {}); if (!gone) poll(); }, subscribed ? 15000 : 2500); };
@@ -587,8 +612,10 @@ function onlineGame(code, pid){
       await pull();
     },
     async start(){ await rpc('nothanks_start', { p_code: code, p_token: token }); await pull(); },
+    async addBot(){ await rpc('nothanks_add_bot', { p_code: code, p_token: token }); await pull(); },
+    async removeBot(p){ await rpc('nothanks_remove_bot', { p_code: code, p_token: token, p_pid: p }); await pull(); },
     async leave(hard){
-      gone = true; clearTimeout(pollT); document.removeEventListener('visibilitychange', onVis);
+      gone = true; clearTimeout(pollT); clearTimeout(botT); document.removeEventListener('visibilitychange', onVis);
       if (ch) sb.removeChannel(ch);
       if (hard) await rpc('nothanks_leave', { p_code: code, p_token: token }).catch(() => {});
     },
@@ -628,6 +655,11 @@ $('copyBtn').onclick = async () => {
   try { if (navigator.share && matchMedia('(pointer:coarse)').matches) await navigator.share({ title: 'No Thanks!', url: link }); else { await navigator.clipboard.writeText(link); toast('Invite link copied'); } }
   catch(e){ if (e.name !== 'AbortError') ask('Invite link', `<p>Send this link to your friends:</p><p><input readonly style="width:100%" value="${esc(link)}" onfocus="this.select()"></p>`, [['Done', 'primary']]); }
 };
+async function lobbyCall(fn){
+  $('lobbyMsg').textContent = '';
+  try { await fn(); } catch(e){ $('lobbyMsg').textContent = e.message; }
+}
+$('addBotBtn').onclick = () => lobbyCall(() => src.addBot());
 $('startBtn').onclick = async () => {
   $('startBtn').disabled = true; $('lobbyMsg').textContent = '';
   try { await src.start(); } catch(e){ $('lobbyMsg').textContent = e.message; }

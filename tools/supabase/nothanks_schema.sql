@@ -1,6 +1,9 @@
 -- No Thanks!: online rooms (same Supabase project as Turns and Burns, its own tables).
 -- Run once in the Supabase SQL editor (Dashboard -> SQL Editor -> New query). Safe to run again.
 --
+-- Bots can sit in a room too. The server decides their moves (nothanks_bot), so they play by the same hidden
+-- information as everyone else; any player's browser just asks for the bot's move when it's a bot's turn.
+--
 -- No sign-in needed. Each browser makes a random secret token and keeps it in localStorage; the token is
 -- the player's seat in a room. Everyone can read a room's public state, but the deck and every player's
 -- chips live in nothanks_seats / nothanks_decks, which nobody can read: the only way in is through the
@@ -117,9 +120,11 @@ begin
   if s->>'phase' = 'playing' then raise exception 'You can''t leave in the middle of a game.'; end if;
   select coalesce(jsonb_agg(x), '[]'::jsonb) into ps from jsonb_array_elements(s->'players') x where x->>'pid' <> p;
   delete from nothanks_seats where code = c and pid = p;
-  if jsonb_array_length(ps) = 0 then delete from nothanks_rooms where code = c; return; end if;
+  if not exists (select 1 from jsonb_array_elements(ps) x where not coalesce((x->>'bot')::boolean, false)) then
+    delete from nothanks_rooms where code = c; return; end if;   -- nobody left but bots
   s := jsonb_set(s, '{players}', ps);
-  if s->>'host' = p then s := jsonb_set(s, '{host}', ps->0->'pid'); end if;
+  if s->>'host' = p then
+    s := jsonb_set(s, '{host}', (select x->'pid' from jsonb_array_elements(ps) x where not coalesce((x->>'bot')::boolean, false) limit 1)); end if;
   perform nothanks_save(c, s);
 end $$;
 
@@ -141,24 +146,20 @@ begin
   return nothanks_save(c, s);
 end $$;
 
--- the player whose turn it is says "No thanks!" (pays a chip, passes the card on) or takes the card and its chips.
--- Returns {chips} for the player who moved; the room row carries everything else.
-create or replace function public.nothanks_act(p_code text, p_token uuid, p_take boolean, p_v int default null) returns jsonb
+-- one move by the player whose turn it is (t): "No thanks!" pays a chip and passes the card on, or take the card and
+-- its chips. Returns that player's chips.
+create or replace function public.nothanks_do(c text, s jsonb, p_take boolean) returns int
 language plpgsql security definer set search_path = public as $$
-declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); p text := nothanks_pid(p_code, p_token);
-  t int := (s->>'turn')::int; n int := jsonb_array_length(s->'players'); card int := (s->>'card')::int; pot int := (s->>'pot')::int;
-  my int; d int[]; cards jsonb; ps jsonb;
+declare t int := (s->>'turn')::int; n int := jsonb_array_length(s->'players'); p text := s->'players'->t->>'pid';
+  card int := (s->>'card')::int; pot int := (s->>'pot')::int; my int; d int[]; cards jsonb; ps jsonb;
 begin
-  if s->>'phase' <> 'playing' then raise exception 'The game isn''t running.'; end if;
-  if p is null or s->'players'->t->>'pid' <> p then raise exception 'It''s not your turn.'; end if;
-  if p_v is not null and p_v <> (s->>'v')::int then raise exception 'The table changed, try again.'; end if;
   select chips into my from nothanks_seats where code = c and pid = p for update;
   if not p_take then
     if my = 0 then raise exception 'You''re out of chips, so you have to take it.'; end if;
     update nothanks_seats set chips = chips - 1 where code = c and pid = p returning chips into my;
     s := s || jsonb_build_object('pot', pot + 1, 'turn', (t + 1) % n, 'last', jsonb_build_object('pid', p, 'take', false, 'card', card, 'pot', pot + 1));
     perform nothanks_save(c, s);
-    return jsonb_build_object('chips', my);
+    return my;
   end if;
   update nothanks_seats set chips = chips + pot where code = c and pid = p returning chips into my;
   select jsonb_agg(v order by v::int) into cards from jsonb_array_elements((s->'players'->t->'cards') || to_jsonb(card)) v;
@@ -175,7 +176,74 @@ begin
     s := s || jsonb_build_object('card', d[1], 'left', array_length(d, 1) - 1);   -- same player decides again
   end if;
   perform nothanks_save(c, s);
-  return jsonb_build_object('chips', my);
+  return my;
+end $$;
+
+-- a hand's points: each card counts unless the card one below it is also in the hand
+create or replace function public.nothanks_points(cards int[]) returns int
+language sql immutable as $$
+  select coalesce(sum(v), 0)::int from unnest(cards) v where not (v - 1 = any(cards))
+$$;
+
+-- the player whose turn it is moves. p_v (optional) is the room version the player saw, so a stale tap is refused.
+-- Returns {chips} for the player who moved; the room row carries everything else.
+create or replace function public.nothanks_act(p_code text, p_token uuid, p_take boolean, p_v int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s jsonb := nothanks_lock(p_code); p text := nothanks_pid(p_code, p_token);
+begin
+  if s->>'phase' <> 'playing' then raise exception 'The game isn''t running.'; end if;
+  if p is null or s->'players'->((s->>'turn')::int)->>'pid' <> p then raise exception 'It''s not your turn.'; end if;
+  if p_v is not null and p_v <> (s->>'v')::int then raise exception 'The table changed, try again.'; end if;
+  return jsonb_build_object('chips', nothanks_do(upper(p_code), s, p_take));
+end $$;
+
+-- a bot's move. Any player's browser calls this when it sees a bot's turn at room version p_v; the first call
+-- moves the bot and the rest find the version changed and do nothing. The bot takes a card when it costs little
+-- after the chips on it, more readily as its chips run out, and sometimes lets a card it wants go round again.
+create or replace function public.nothanks_bot(p_code text, p_v int) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); me jsonb; my int; hand int[]; card int; pot int; cost int; lim int; take boolean;
+begin
+  if s->>'phase' <> 'playing' or p_v is distinct from (s->>'v')::int then return false; end if;
+  me := s->'players'->((s->>'turn')::int);
+  if not coalesce((me->>'bot')::boolean, false) then return false; end if;
+  select chips into my from nothanks_seats where code = c and pid = me->>'pid';
+  select coalesce(array_agg(v::int), '{}') into hand from jsonb_array_elements_text(me->'cards') v;
+  card := (s->>'card')::int; pot := (s->>'pot')::int;
+  cost := nothanks_points(hand || card) - nothanks_points(hand) - pot;
+  lim := case when my <= 2 then 12 when my <= 4 then 7 when my <= 7 then 3 else 0 end + case when random() < 0.2 then 2 else 0 end;
+  take := my = 0 or cost <= lim;
+  if take and my > 0 and (card - 1 = any(hand) or card + 1 = any(hand)) and cost <= 0
+     and pot < jsonb_array_length(s->'players') and random() < 0.5 then take := false; end if;   -- milk it
+  perform nothanks_do(c, s, take);
+  return true;
+end $$;
+
+-- the host adds a bot to a room that isn't mid-game
+create or replace function public.nothanks_add_bot(p_code text, p_token uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); p text := substr(md5(gen_random_uuid()::text), 1, 8); n text;
+begin
+  if s->>'host' is distinct from nothanks_pid(p_code, p_token) then raise exception 'Only the host can add bots.'; end if;
+  if s->>'phase' = 'playing' then raise exception 'Wait for this game to finish.'; end if;
+  if jsonb_array_length(s->'players') >= 7 then raise exception 'The room is full (7 players).'; end if;
+  select x into n from unnest(array['Ada', 'Basil', 'Clem', 'Dot', 'Ezra', 'Fern', 'Gus']) x
+    where not exists (select 1 from jsonb_array_elements(s->'players') y where y->>'name' = x || ' (bot)') order by random() limit 1;
+  insert into nothanks_seats (code, pid, token) values (c, p, gen_random_uuid());   -- nobody holds a bot's token
+  perform nothanks_save(c, jsonb_set(s, '{players}', (s->'players') || jsonb_build_object('pid', p, 'name', n || ' (bot)', 'bot', true, 'cards', '[]'::jsonb)));
+end $$;
+
+-- the host removes a bot from a room that isn't mid-game
+create or replace function public.nothanks_remove_bot(p_code text, p_token uuid, p_pid text) returns void
+language plpgsql security definer set search_path = public as $$
+declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); ps jsonb;
+begin
+  if s->>'host' is distinct from nothanks_pid(p_code, p_token) then raise exception 'Only the host can remove bots.'; end if;
+  if s->>'phase' = 'playing' then raise exception 'Wait for this game to finish.'; end if;
+  if not exists (select 1 from jsonb_array_elements(s->'players') x where x->>'pid' = p_pid and (x->>'bot')::boolean) then return; end if;
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into ps from jsonb_array_elements(s->'players') x where x->>'pid' <> p_pid;
+  delete from nothanks_seats where code = c and pid = p_pid;
+  perform nothanks_save(c, jsonb_set(s, '{players}', ps));
 end $$;
 
 -- this browser's seat and chips in a room (chips are secret, so they aren't in the room state): {pid, chips}
@@ -186,8 +254,10 @@ $$;
 
 -- only the game's calls are open to the browser
 revoke execute on function public.nothanks_lock(text), public.nothanks_pid(text, uuid), public.nothanks_save(text, jsonb),
-  public.nothanks_name(text) from public, anon, authenticated;
+  public.nothanks_name(text), public.nothanks_do(text, jsonb, boolean), public.nothanks_points(int[]) from public, anon, authenticated;
 revoke execute on function public.nothanks_create(text, uuid), public.nothanks_join(text, text, uuid), public.nothanks_leave(text, uuid),
-  public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid) from public;
+  public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid),
+  public.nothanks_bot(text, int), public.nothanks_add_bot(text, uuid), public.nothanks_remove_bot(text, uuid, text) from public;
 grant execute on function public.nothanks_create(text, uuid), public.nothanks_join(text, text, uuid), public.nothanks_leave(text, uuid),
-  public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid) to anon, authenticated;
+  public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid),
+  public.nothanks_bot(text, int), public.nothanks_add_bot(text, uuid), public.nothanks_remove_bot(text, uuid, text) to anon, authenticated;
