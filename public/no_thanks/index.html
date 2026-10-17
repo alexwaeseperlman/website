@@ -2,8 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>No Thanks!</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f5fafd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="No Thanks!">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>
+  // iOS Safari ignores user-scalable=no for pinches, so cancel its gesture events
+  ['gesturestart','gesturechange','gestureend'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); }, { passive:false }); });
+  document.addEventListener('touchmove', function(e){ if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
+  if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;600;700&display=swap" rel="stylesheet">
@@ -19,27 +34,33 @@
 }
 :root[data-theme="dark"]{ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; --chip:#e0524d; --chip-edge:#a8302d; --felt:#121c26; }
 *,*::before,*::after{box-sizing:inherit}
-html,body{margin:0;min-height:100%}
+html,body{margin:0;min-height:100%;overscroll-behavior:none}   /* no pull-to-refresh or rubber-band behind the app */
 body{
   background:var(--bg); color:var(--ink); font-family:"Roboto Slab",Rockwell,Georgia,serif; font-size:16px; line-height:1.4;
-  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
-  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  padding:0 env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;   /* no double-tap zoom */
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-text-size-adjust:100%;
 }
-main{max-width:760px;margin:0 auto;padding:12px 16px 32px}
-header{display:flex;align-items:center;gap:8px;padding:4px 0 12px}
+input{-webkit-user-select:text;user-select:text}
+main{max-width:760px;margin:0 auto;padding:0 16px 32px}
+header{display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 0 12px;position:sticky;top:0;z-index:5;background:var(--bg)}
+main > section:not([hidden]){animation:enter .2s ease-out}
+@keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 h1{margin:0;font-weight:400;text-transform:uppercase;color:var(--blue);font-size:22px;line-height:1.2;flex:1}
 h1 a{color:inherit;text-decoration:none}
 h2{font-weight:600;font-size:18px;margin:0 0 8px}
 p{margin:0 0 10px}
 .muted{color:var(--grey)}
 .err{color:var(--red)}
-button,input{font:inherit;font-size:15px;color:var(--ink)}
-button{background:var(--field);border:2px solid var(--outline);border-radius:8px;padding:8px 14px;cursor:pointer}
+button,input{font:inherit;font-size:16px;color:var(--ink)}   /* 16px stops iOS zooming into a focused field */
+button{background:var(--field);border:2px solid var(--outline);border-radius:8px;padding:8px 14px;cursor:pointer;min-height:44px;transition:transform .08s,filter .08s}
+button:active:not(:disabled){transform:scale(.96);filter:brightness(.93)}
+button.link{min-height:0}
 button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
 button:disabled{opacity:.35;cursor:default}
 button.primary{background:var(--blue);border-color:var(--blue);color:var(--card);font-weight:600}
 button.link{border:0;background:none;padding:4px 6px;color:var(--blue);text-decoration:underline}
-input{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:8px 10px;min-width:0}
+input{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:9px 10px;min-width:0;min-height:44px}
 input.code{text-transform:uppercase;letter-spacing:.2em;width:7.5em}
 .panel{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -101,10 +122,25 @@ table.results th:first-child,table.results td:first-child{text-align:left}
 table.results tr.win td{color:var(--green);font-weight:700}
 
 /* sheets */
-.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
-.sheet .panel{max-width:520px;width:100%;max-height:90vh;overflow:auto;margin:0}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10;animation:fade .15s}
+.sheet .panel{max-width:520px;width:100%;max-height:90vh;overflow:auto;margin:0;overscroll-behavior:contain}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{transform:translateY(100%)}}
+.sheet .btns{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .sheet ol,.sheet ul{padding-left:20px;margin:0 0 10px}
-.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:15px;z-index:20;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:15px;z-index:20;max-width:calc(100% - 32px)}
+/* phones: the hand and its two buttons sit at the bottom of the screen, in thumb reach; dialogs are bottom sheets */
+@media (max-width:600px){
+  .mine{position:sticky;bottom:0;z-index:4;margin:0 -16px;border-radius:16px 16px 0 0;border-bottom:0;
+    padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 18px rgba(0,0,0,.08)}
+  .mine .runs{max-height:30vh;overflow-y:auto}
+  .actions button{padding:14px 10px;min-height:54px}
+  #table > .row{padding-bottom:10px}
+  main:has(> #table:not([hidden])){padding-bottom:0}
+  body:has(#table:not([hidden])){padding-bottom:0}
+  .sheet{align-items:flex-end;padding:0}
+  .sheet .panel{border-radius:16px 16px 0 0;border-bottom:0;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));animation:rise .22s ease-out}
+}
 @media (max-width:480px){
   .card.big{width:96px;height:138px;font-size:48px}
   .center{gap:14px;padding:14px 8px}
@@ -184,6 +220,7 @@ table.results tr.win td{color:var(--green);font-weight:700}
     </div>
     <p class="status" id="status"></p>
     <p class="last" id="lastMove"></p>
+    <div class="row"><button class="link" id="quitBtn">Leave table</button><span class="grow"></span><span class="muted" id="tableCode"></span></div>
     <div class="panel mine" id="mine">
       <div class="head"><span class="name" id="myName"></span><span class="chips"><span class="chip"></span><span id="myChips"></span></span><span class="score muted" id="myScore"></span></div>
       <div class="runs" id="myCards"></div>
@@ -192,7 +229,6 @@ table.results tr.win td{color:var(--green);font-weight:700}
         <button id="takeBtn">Take it</button>
       </div>
     </div>
-    <div class="row"><button class="link" id="quitBtn">Leave table</button><span class="grow"></span><span class="muted" id="tableCode"></span></div>
   </section>
 
   <!-- results -->
@@ -224,6 +260,13 @@ table.results tr.win td{color:var(--green);font-weight:700}
     </ol>
     <p><b>Scoring:</b> each card counts its number as points, but a run of consecutive cards only counts its lowest card (27, 28, 29 scores 27). Each chip takes a point off. <b>Lowest score wins</b>; tied players share the win.</p>
     <div class="row"><span class="grow"></span><button class="primary" id="rulesClose">Got it</button></div>
+  </div>
+</div>
+<div class="sheet" id="askSheet" hidden>
+  <div class="panel" role="dialog" aria-labelledby="askTitle">
+    <h2 id="askTitle"></h2>
+    <div id="askBody"></div>
+    <div class="btns" id="askBtns"></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -267,7 +310,45 @@ let toastT = 0;
 function toast(t){ const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2600); }
 $('rulesBtn').onclick = () => { $('rulesSheet').hidden = false; };
 $('rulesClose').onclick = () => { $('rulesSheet').hidden = true; };
-$('rulesSheet').onclick = e => { if (e.target === $('rulesSheet')) $('rulesSheet').hidden = true; };
+for (const id of ['rulesSheet', 'askSheet']) $(id).onclick = e => { if (e.target === $(id)) $(id).hidden = true; };
+// an in-app dialog in place of confirm()/prompt(): buttons are [label, class, fn]
+function ask(title, body, buttons){
+  $('askTitle').textContent = title; $('askBody').innerHTML = body; $('askBtns').innerHTML = '';
+  for (const [label, cls, fn] of buttons){
+    const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls;
+    b.onclick = () => { $('askSheet').hidden = true; if (fn) fn(); }; $('askBtns').append(b); }
+  $('askSheet').hidden = false;
+}
+
+/* ---------- feeling like an app on phones ---------- */
+// haptics. Android: the Vibration API. iOS (18+): Safari plays a system haptic when an <input switch> is toggled
+// via its label, so keep a hidden one and click it.
+let iosTick = null;
+if (!navigator.vibrate){
+  try {
+    const inp = document.createElement('input'); inp.type = 'checkbox'; inp.setAttribute('switch', ''); inp.id = 'hapticSwitch';
+    const lab = document.createElement('label'); lab.htmlFor = 'hapticSwitch';
+    for (const el of [inp, lab]) Object.assign(el.style, { position: 'fixed', left: '-9999px', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
+    lab.setAttribute('aria-hidden', 'true'); inp.tabIndex = -1;
+    document.body.append(inp, lab);
+    iosTick = () => { try { lab.click(); } catch(e){} };
+  } catch(e){}
+}
+const buzz = p => {
+  if (navigator.vibrate){ try { navigator.vibrate(p); } catch(e){} return; }
+  if (!iosTick) return;
+  if (Array.isArray(p)){ let t = 0; p.forEach((d, i) => { if (i % 2 === 0) setTimeout(iosTick, t); t += d; }); }
+  else iosTick();
+};
+// keep the screen awake while a game is on the table
+let wake = null;
+async function keepAwake(on){
+  try {
+    if (on && !wake && navigator.wakeLock && !document.hidden){ wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    if (!on && wake){ const w = wake; wake = null; await w.release(); }
+  } catch(e){ wake = null; }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && view && view.phase === 'playing') keepAwake(true); });
 
 /* ---------- the current game: a source (online room or local bots) and the latest view ---------- */
 let src = null, view = null, lastCardShown = null, busy = false;
@@ -278,8 +359,15 @@ function setView(v){
   view = v; render();
 }
 
+let wasMyTurn = false;
 function render(){
   const v = view; if (!v || !src) return;
+  // a nudge when it becomes your turn: a buzz, and the tab title if you're elsewhere
+  const myTurn = v.phase === 'playing' && v.players[v.turn] && isMe(v, v.players[v.turn].pid);
+  if (myTurn && !wasMyTurn && !busy) buzz([18, 70, 18]);
+  wasMyTurn = myTurn;
+  document.title = myTurn ? 'Your turn · No Thanks!' : 'No Thanks!';
+  keepAwake(v.phase === 'playing');
   if (v.phase === 'lobby') return renderLobby(v);
   if (v.phase === 'done') return renderResults(v);
   renderTable(v);
@@ -362,6 +450,7 @@ function renderResults(v){
 
 async function act(take){
   if (busy || !src) return;
+  buzz(take ? 14 : 8);
   busy = true; render();
   try { await src.act(take); }
   catch(e){ toast(e.message || String(e)); }
@@ -537,7 +626,7 @@ $('joinForm').onsubmit = async e => {
 $('copyBtn').onclick = async () => {
   const link = inviteLink(view.code);
   try { if (navigator.share && matchMedia('(pointer:coarse)').matches) await navigator.share({ title: 'No Thanks!', url: link }); else { await navigator.clipboard.writeText(link); toast('Invite link copied'); } }
-  catch(e){ if (e.name !== 'AbortError') prompt('Copy this link:', link); }
+  catch(e){ if (e.name !== 'AbortError') ask('Invite link', `<p>Send this link to your friends:</p><p><input readonly style="width:100%" value="${esc(link)}" onfocus="this.select()"></p>`, [['Done', 'primary']]); }
 };
 $('startBtn').onclick = async () => {
   $('startBtn').disabled = true; $('lobbyMsg').textContent = '';
@@ -550,18 +639,29 @@ $('againBtn').onclick = async () => {
 };
 $('leaveBtn').onclick = () => goHome(true);
 $('homeBtn').onclick = () => goHome(src && src.kind === 'online');
-$('quitBtn').onclick = () => {
-  if (src.kind === 'online' && !confirm('Leave the table? Your seat is kept, so you can come back from the home screen.')) return;
-  if (src.kind === 'local' && !confirm('Leave this practice game?')) return;
-  goHome(false);
-};
+$('quitBtn').onclick = () => confirmQuit();
+function confirmQuit(){
+  if (!src) return;
+  ask(src.kind === 'online' ? 'Leave the table?' : 'Leave this practice game?',
+    src.kind === 'online' ? '<p>Your seat is kept, so you can come back from the home screen.</p>' : '<p>This game will end.</p>',
+    [['Leave', 'primary', () => goHome(false)], ['Keep playing', '']]);
+}
+// the phone's back gesture inside a game asks before leaving, instead of closing the app
+addEventListener('popstate', () => {
+  if (src && view && view.phase === 'playing'){ history.pushState({ game: 1 }, '', location.href); confirmQuit(); }
+  else if (src) goHome(false);   // back from a lobby or results returns home (your seat is kept)
+});
 
 /* ---------- home ---------- */
-function enter(s){ if (src) src.leave(false); src = s; view = null; lastCardShown = null; }
+function enter(s){
+  if (src) src.leave(false); src = s; view = null; lastCardShown = null; wasMyTurn = false;
+  if (!history.state || !history.state.game) history.pushState({ game: 1 }, '', location.href);
+}
 async function goHome(leaveRoom){
   const s = src; src = null; view = null;
   if (s) await s.leave(leaveRoom);
   if (leaveRoom) store.set('room', null);
+  keepAwake(false); document.title = 'No Thanks!';
   history.replaceState(null, '', location.pathname);
   drawHome();
 }
