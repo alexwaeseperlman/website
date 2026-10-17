@@ -121,7 +121,9 @@ button:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
 
 /* overlays */
 [hidden]{display:none!important}
-.ov{position:absolute;inset:0;background:rgba(40,26,18,.55);display:grid;place-items:center;padding:16px;z-index:10}
+.ov{position:absolute;inset:0;background:rgba(40,26,18,.55);display:flex;flex-direction:column;padding:16px;z-index:10;overflow-y:auto;overscroll-behavior:contain}
+/* auto margins centre a card but, unlike centring, let a card taller than the screen scroll instead of losing its ends */
+.ov>*{margin:auto;flex:none}
 .card{box-sizing:border-box;width:100%;max-width:400px;background:var(--panel);border:3px solid var(--ink);border-radius:24px;padding:20px 18px 18px;box-shadow:0 6px 0 rgba(0,0,0,.3);text-align:center}
 .card h3{margin:0;font-family:var(--f-display);font-weight:400;font-size:30px;letter-spacing:.3px;text-wrap:balance}
 .card p{margin:8px 0 0;color:var(--ink-soft);font-size:15px;line-height:1.4}
@@ -291,6 +293,11 @@ input,textarea{-webkit-user-select:text;user-select:text}
 @keyframes rwspin{to{transform:rotate(360deg)}}
 #ovResult .card{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;touch-action:pan-y}
 .row.used b{font-size:13px;text-align:right}
+/* on short screens the result card scrolls, but Retry / Next stay pinned to its bottom edge */
+#ovResult .r-act{position:sticky;bottom:-18px;margin:0 -18px -18px;padding:0 18px 18px;background:var(--panel);z-index:1}
+#ovResult .r-act::before{content:"";display:block;height:14px;margin-bottom:-2px;background:linear-gradient(rgba(255,248,234,0),var(--panel))}
+@media (max-height:560px){#ovResult .r-act>.btns:last-child{margin-top:6px!important}#ovResult .stars{margin:6px 0 2px}#ovResult .stars svg{width:40px;height:40px}#ovResult .stars svg:nth-child(2){width:48px;height:48px;transform:translateY(-6px)}#ovResult .big{font-size:38px}}
+@media (orientation:landscape) and (max-height:560px){#ovResult .card{max-width:600px}#ovResult .r-act{bottom:-12px;margin:0 -14px -12px;padding:0 14px 12px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}#ovResult .r-act::before{flex:0 0 100%;margin-bottom:-10px}#ovResult .r-act>.btns{flex:1;margin-top:0!important;gap:8px}#ovResult .r-act .btn{height:42px;font-size:17px}}
 
 /* ---------- home + levels (laid out like Turns) ---------- */
 #home,#howto{overflow-y:auto;overflow-x:hidden;overscroll-behavior-x:none;touch-action:pan-y;background:radial-gradient(circle at 50% 22%,#fff3d8 0,transparent 60%),var(--cream)}
@@ -301,6 +308,28 @@ input,textarea{-webkit-user-select:text;user-select:text}
 .h-logo svg{width:120px;height:120px;filter:drop-shadow(0 5px 0 var(--ink));transform-origin:50% 90.625%;animation:flick 2.4s ease-in-out infinite;will-change:transform}
 @keyframes flick{0%,100%{transform:scale(1,1) rotate(0)}30%{transform:scale(1.03,.96) rotate(-2deg)}60%{transform:scale(.97,1.05) rotate(2deg)}}
 @media (prefers-reduced-motion: reduce){.h-logo svg{animation:none}}
+/* ---- short screens (phones in landscape): tools in a column on the right, the map gets the whole height ---- */
+@media (orientation:landscape) and (max-height:560px){
+  #game{flex-direction:row}
+  .tray{width:112px;box-sizing:border-box;border-radius:22px 0 0 22px;padding:10px 10px calc(10px + env(safe-area-inset-bottom,0px)) 10px;padding-right:calc(10px + env(safe-area-inset-right,0px));box-shadow:-3px 0 0 rgba(74,46,31,.18);display:flex;flex-direction:column}
+  .tools{flex-direction:column;flex:1;min-height:0}
+  .strip{flex-direction:column;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;touch-action:pan-y;padding:2px 8px 8px;margin:-2px -8px 0;-webkit-mask-image:none!important;mask-image:none!important}
+  .strip .tool{flex:0 0 auto;padding:4px 2px}
+  .strip .tool .ic{width:38px;height:38px}
+  .tsep span{writing-mode:horizontal-tb;transform:none;padding:3px 9px}
+  .tsep{justify-content:center}
+  .tools #btnIgnite{flex:0 0 64px}
+  #app.placing .tool.sel{transform:translateX(-6px)}
+  .burn{flex-direction:column;align-items:stretch;height:100%}
+  .burn .meter{flex:1;padding:8px}
+  .meter-top{flex-direction:column;align-items:flex-start;gap:0}
+  #btnSpeed{width:100%;height:auto}
+  .h-main{padding-top:8px}
+  .h-logo svg{width:64px;height:64px}
+  .h-main .tag{margin:2px 0 12px}
+  .card{padding:14px 14px 12px}
+}
+
 .h-title{margin:10px 0 0;font-weight:400;font-size:64px}
 .h-main .tag{margin:6px 0 26px}
 .h-btns{display:flex;flex-direction:column;gap:12px;width:100%}
@@ -362,7 +391,7 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="acct" id="acct" hidden></div>
     </div>
     <div id="dailyBox"></div>
-    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build 6f14d19 · Oct 15</div></div>
+    <div class="h-foot"><button class="h-link" id="hSound"></button><div class="h-ver">Build bea1ce5 · Oct 17</div></div>
   </section>
   <section id="howto" class="screen" hidden>
     <div class="l-bar"><button class="sq" id="howBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#4a2e1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2>How to play</h2></div>
@@ -408,8 +437,8 @@ input,textarea{-webkit-user-select:text;user-select:text}
       <div class="stars" id="rStars"></div>
       <div class="big" id="rScore">0</div>
       <div class="rows" id="rRows"></div>
-      <div class="btns"><button class="btn" id="rRetry">Retry</button><button class="btn go" id="rNext">Next</button></div>
-      <div class="btns" style="margin-top:10px"><button class="btn" id="rLevels">Level select</button></div>
+      <div class="r-act"><div class="btns"><button class="btn" id="rRetry">Retry</button><button class="btn go" id="rNext">Next</button></div>
+      <div class="btns" style="margin-top:10px"><button class="btn" id="rLevels">Level select</button></div></div>
     </div></div>
   </section>
   <div class="ov" id="ovShop" hidden><div class="card shop">
@@ -6400,7 +6429,9 @@ window.addEventListener('keydown',e=>{if(!S)return;if(e.key==='z'&&(e.metaKey||e
 // shape, so the whole map height fits and nothing past the map ever shows. Phones keep the full screen.
 // (only written when it changes: relayout runs 4× a second, and every write restyles the whole game screen)
 function fitFrame(){const g=$('game');if(!S){g.style.removeProperty('--gw');return}
-  const v=Math.min(innerWidth,Math.round(innerHeight*S.W/S.H))+'px';if(g.style.getPropertyValue('--gw')!==v)g.style.setProperty('--gw',v)}
+  // phones in landscape put the tools at the side (shell.html) and use the whole width; there the map pans vertically
+  const side=matchMedia('(orientation:landscape) and (max-height:560px)').matches;
+  const v=(side?innerWidth:Math.min(innerWidth,Math.round(innerHeight*S.W/S.H)))+'px';if(g.style.getPropertyValue('--gw')!==v)g.style.setProperty('--gw',v)}
 // first zoom: phones show 420 world px across as always; bigger frames fit the whole active area
 function startZoom(z){if(VW<=520)return z;const A=S.A,cover=Math.max(VW/S.W,VH/S.H);
   return Math.max(cover,clamp(Math.min(VW/(A[2]+16),(VH-150)/(A[3]+16)),.7,2.4))}
@@ -6967,7 +6998,7 @@ showResult=function(total,bonus,stars,prev){_showResult(total,bonus,stars,prev);
     slot.innerHTML='<span class="shine"></span>';slot.appendChild(tile);L.appendChild(slot);
     setTimeout(()=>{if(!$('ovResult').hidden){sfx(r.big?'combo':'pop',r.big?{level:r.it&&r.it.rare?5:3}:{pitch:.5+k*.1});
       if(r.charcoal){const el=tile.querySelector('.rwc');let v=0;const step=()=>{v=Math.min(r.charcoal,v+Math.ceil(r.charcoal/14));el.textContent='+'+v;if(v<r.charcoal)setTimeout(step,40)};step()}}},(.9+k*.32)*1000)});
-  card.querySelector('.btns').before(box)};
+  (card.querySelector('.r-act')||card.querySelector('.btns')).before(box)};
 
 /* ================= shop ================= */
 let shopFocus=null;
