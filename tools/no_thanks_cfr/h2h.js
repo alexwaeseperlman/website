@@ -1,0 +1,16 @@
+// Head to head between two net bots: one of A among B's, and one of B among A's.
+//   node h2h.js a.json b.json [games per table size]
+'use strict';
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet');
+const load = f => {
+  const W = require(require('path').resolve(f));
+  const net = W.arch === 'set' ? new SN.SetNet() : W.arch === 'struct' ? new S.StructNet(W.out) : new MLP([G.NFEAT, 64, 64, W.out]); net.p.set(W.p);
+  const M = { set: SN, struct: S }[W.arch], feat = M ? M.features : G.features, x = new Float32Array(M ? M.F : G.NFEAT);
+  return W.out === 1 ? (g, r) => r() < 1 / (1 + Math.exp(-net.forward(feat(g, x))[0]))
+    : (g, r) => { const o = net.forward(feat(g, x)), a = Math.max(o[0], 0), b = Math.max(o[1], 0); return r() < (a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0); };
+};
+const A = load(process.argv[2]), B = load(process.argv[3]), games = +process.argv[4] || 2000, r = G.rng(77);
+const rate = (n, brainOf) => { let w = 0; for (let i = 0; i < games; i++){ const g = G.newGame(n, r); G.play(g, Array.from({ length: n }, (_, q) => brainOf(q)), r); w += G.winShare(g, 0); } return w / games; };
+const pct = v => (v * 100).toFixed(1).padStart(5) + '%';
+console.log('players  fair   1 A among B   1 B among A');
+for (const n of [2, 3, 4, 5, 6, 7]) console.log(`${n}       ${pct(1 / n)}   ${pct(rate(n, q => q ? B : A))}        ${pct(rate(n, q => q ? A : B))}`);
