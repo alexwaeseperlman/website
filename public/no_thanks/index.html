@@ -17,6 +17,14 @@
   // iOS Safari ignores user-scalable=no for pinches, so cancel its gesture events
   ['gesturestart','gesturechange','gestureend'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); }, { passive:false }); });
   document.addEventListener('touchmove', function(e){ if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
+  // ...and it still zooms on a double tap of plain text or empty space, so swallow a second quick tap there
+  // (buttons and fields keep theirs: touch-action below already stops them zooming, and fast taps must still click)
+  var lastTap = 0;
+  document.addEventListener('touchend', function(e){
+    var now = Date.now(), quick = now - lastTap < 350; lastTap = now;
+    if (quick && e.touches.length === 0 && !e.target.closest('button, a, input, select, textarea, label')) e.preventDefault();
+  }, { passive:false });
+  document.addEventListener('dblclick', function(e){ e.preventDefault(); }, { passive:false });
   if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,7 +41,7 @@
   :root:not([data-theme="light"]){ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; --chip:#e0524d; --chip-edge:#a8302d; --felt:#121c26; }
 }
 :root[data-theme="dark"]{ --bg:#0f1720; --card:#16202b; --ink:#e8edf2; --blue:#7fb0e3; --border:#26323f; --field:#0f1720; --grey:#9aa4ae; --outline:#c9d2db; --red:#ef6b66; --green:#4cc08b; --gold:#f2bb2e; --chip:#e0524d; --chip-edge:#a8302d; --felt:#121c26; }
-*,*::before,*::after{box-sizing:inherit}
+*,*::before,*::after{box-sizing:inherit;touch-action:manipulation}   /* not inherited, so on every element */
 html,body{margin:0;min-height:100%;overscroll-behavior:none}   /* no pull-to-refresh or rubber-band behind the app */
 body{
   background:var(--bg); color:var(--ink); font-family:"Roboto Slab",Rockwell,Georgia,serif; font-size:16px; line-height:1.4;
