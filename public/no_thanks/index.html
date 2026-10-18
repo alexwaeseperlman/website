@@ -496,10 +496,33 @@ function drawBotSeg(){
 }
 drawBotSeg();
 
-// a simple bot: take a card when it costs little after the chips on it, more readily as its chips run out;
-// sometimes lets a card it wants go round once more to collect chips
-function botTakes(cards, chips, card, pot, nPlayers){
+// The bots play a policy learned offline by counterfactual regret minimization (tools/no_thanks_cfr): for each
+// kind of situation (botKey), how often taking the card paid off over millions of self-play games.
+// bot-policy.txt holds one character per situation: '.' never seen in training, otherwise P(take) * 63.
+const POLICY_ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+let policy = null, policyP = null;
+const loadPolicy = () => policyP || (policyP = fetch('bot-policy.txt').then(r => r.ok ? r.text() : null).then(t => { policy = t && t.trim(); }, () => { policyP = null; }));
+// the same buckets as tools/no_thanks_cfr/game.js and nothanks_bot_key in the database
+function botKey(cards, chips, card, pot, others, left, n){
+  const cost = cardPoints([...cards, card]) - cardPoints(cards) - pot;
+  const fits = cs => cs.includes(card - 1) || cs.includes(card + 1);
+  const minOpp = Math.min(...others.map(o => o.chips));
+  const cb = cost <= -4 ? 0 : cost <= -1 ? 1 : cost <= 2 ? 2 : cost <= 5 ? 3 : cost <= 9 ? 4 : cost <= 14 ? 5 : cost <= 20 ? 6 : 7;
+  const mb = chips <= 1 ? 0 : chips === 2 ? 1 : chips <= 4 ? 2 : chips <= 7 ? 3 : chips <= 11 ? 4 : 5;
+  const pb = pot <= 1 ? 0 : pot <= 4 ? 1 : 2;
+  const ob = minOpp === 0 ? 0 : minOpp <= 3 ? 1 : 2;
+  const lb = left >= 16 ? 0 : left >= 8 ? 1 : 2;
+  const nb = n <= 3 ? 0 : n <= 5 ? 1 : 2;
+  return ((((((cb * 6 + mb) * 3 + pb) * 2 + (fits(cards) ? 1 : 0)) * 2 + (others.some(o => fits(o.cards)) ? 1 : 0)) * 3 + ob) * 3 + lb) * 3 + nb;
+}
+function botTakes(cards, chips, card, pot, others, left, n){
   if (chips === 0) return true;
+  const ch = policy && policy[botKey(cards, chips, card, pot, others, left, n)], i = ch ? POLICY_ABC.indexOf(ch) : -1;
+  return i >= 0 ? Math.random() < i / 63 : ruleOfThumb(cards, chips, card, pot, n);
+}
+// the bots' old rule of thumb, for situations the training never reached (or before the policy loads):
+// take a card when it costs little after the chips on it, more readily as chips run out; sometimes milk a card that fits
+function ruleOfThumb(cards, chips, card, pot, nPlayers){
   const cost = cardPoints([...cards, card]) - cardPoints(cards) - pot;
   const fits = cards.includes(card - 1) || cards.includes(card + 1);
   if (fits && cost <= 0 && pot < nPlayers && Math.random() < 0.5) return false;   // milk it
@@ -538,13 +561,14 @@ function localGame(nBots){
     clearTimeout(botT);
     if (s.phase !== 'playing') return;
     const p = s.players[s.turn]; if (p.pid === 'me') return;
-    botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, s.players.length)), 700 + Math.random() * 600);
+    const others = s.players.filter(q => q !== p).map(q => ({ cards: q.cards, chips: chips[q.pid] }));
+    botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, others, s.left, s.players.length)), 700 + Math.random() * 600);
   };
   return { kind: 'local', act: async take => move('me', take), start: async () => deal(), leave(){ clearTimeout(botT); }, deal };
 }
 $('practiceBtn').onclick = () => {
   store.set('name', $('nameInput').value.trim() || null);
-  enter(localGame(botCount)); src.deal();
+  loadPolicy(); enter(localGame(botCount)); src.deal();
 };
 
 /* ---------- online rooms ---------- */

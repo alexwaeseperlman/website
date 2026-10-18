@@ -199,12 +199,40 @@ begin
   return jsonb_build_object('chips', nothanks_do(upper(p_code), s, p_take));
 end $$;
 
+-- The bots' policy, learned offline by counterfactual regret minimization (tools/no_thanks_cfr): one character per
+-- kind of situation (nothanks_bot_key), '.' if training never saw it, otherwise how often to take the card, as a
+-- base64url digit out of 63. tools/supabase/nothanks_policy.sql fills it in.
+create table if not exists public.nothanks_policy (
+  id     int primary key,
+  policy text not null
+);
+alter table public.nothanks_policy enable row level security;
+revoke all on public.nothanks_policy from anon, authenticated;
+
+-- which bucket a decision falls in: the same buckets as tools/no_thanks_cfr/game.js and the page's botKey
+create or replace function public.nothanks_bot_key(hand int[], chips int, card int, pot int, fits_opp boolean, min_opp int, deck_left int, n int)
+returns int language sql immutable set search_path = public as $$
+  select ((((((
+      case when cost <= -4 then 0 when cost <= -1 then 1 when cost <= 2 then 2 when cost <= 5 then 3 when cost <= 9 then 4
+           when cost <= 14 then 5 when cost <= 20 then 6 else 7 end * 6
+    + case when chips <= 1 then 0 when chips = 2 then 1 when chips <= 4 then 2 when chips <= 7 then 3 when chips <= 11 then 4 else 5 end) * 3
+    + case when pot <= 1 then 0 when pot <= 4 then 1 else 2 end) * 2
+    + case when card - 1 = any(hand) or card + 1 = any(hand) then 1 else 0 end) * 2
+    + case when fits_opp then 1 else 0 end) * 3
+    + case when min_opp = 0 then 0 when min_opp <= 3 then 1 else 2 end) * 3
+    + case when deck_left >= 16 then 0 when deck_left >= 8 then 1 else 2 end) * 3
+    + case when n <= 3 then 0 when n <= 5 then 1 else 2 end
+  from (select nothanks_points(hand || card) - nothanks_points(hand) - pot as cost) x
+$$;
+
 -- a bot's move. Any player's browser calls this when it sees a bot's turn at room version p_v; the first call
--- moves the bot and the rest find the version changed and do nothing. The bot takes a card when it costs little
--- after the chips on it, more readily as its chips run out, and sometimes lets a card it wants go round again.
+-- moves the bot and the rest find the version changed and do nothing. The bot follows the CFR policy; in a
+-- situation the training never reached it falls back to a rule of thumb: take a card when it costs little after
+-- the chips on it, more readily as its chips run out, and sometimes let a card it wants go round again.
 create or replace function public.nothanks_bot(p_code text, p_v int) returns boolean
 language plpgsql security definer set search_path = public as $$
 declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); me jsonb; my int; hand int[]; card int; pot int; cost int; lim int; take boolean;
+  n int := jsonb_array_length(s->'players'); fits_opp boolean; min_opp int; k int; ch text;
 begin
   if s->>'phase' <> 'playing' or p_v is distinct from (s->>'v')::int then return false; end if;
   me := s->'players'->((s->>'turn')::int);
@@ -212,11 +240,20 @@ begin
   select chips into my from nothanks_seats where code = c and pid = me->>'pid';
   select coalesce(array_agg(v::int), '{}') into hand from jsonb_array_elements_text(me->'cards') v;
   card := (s->>'card')::int; pot := (s->>'pot')::int;
-  cost := nothanks_points(hand || card) - nothanks_points(hand) - pot;
-  lim := case when my <= 2 then 12 when my <= 4 then 7 when my <= 7 then 3 else 0 end + case when random() < 0.2 then 2 else 0 end;
-  take := my = 0 or cost <= lim;
-  if take and my > 0 and (card - 1 = any(hand) or card + 1 = any(hand)) and cost <= 0
-     and pot < jsonb_array_length(s->'players') and random() < 0.5 then take := false; end if;   -- milk it
+  select coalesce(bool_or(x->'cards' @> to_jsonb(card - 1) or x->'cards' @> to_jsonb(card + 1)), false),
+         coalesce(min((select chips from nothanks_seats z where z.code = c and z.pid = x->>'pid')), 0)
+    into fits_opp, min_opp from jsonb_array_elements(s->'players') x where x->>'pid' <> me->>'pid';
+  k := nothanks_bot_key(hand, my, card, pot, fits_opp, min_opp, (s->>'left')::int, n);
+  select substr(policy, k + 1, 1) into ch from nothanks_policy where id = 1;
+  if my = 0 then take := true;
+  elsif ch is not null and ch <> '.' and ch <> '' then
+    take := random() < (strpos('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', ch) - 1) / 63.0;
+  else
+    cost := nothanks_points(hand || card) - nothanks_points(hand) - pot;
+    lim := case when my <= 2 then 12 when my <= 4 then 7 when my <= 7 then 3 else 0 end + case when random() < 0.2 then 2 else 0 end;
+    take := cost <= lim;
+    if take and (card - 1 = any(hand) or card + 1 = any(hand)) and cost <= 0 and pot < n and random() < 0.5 then take := false; end if;   -- milk it
+  end if;
   perform nothanks_do(c, s, take);
   return true;
 end $$;
@@ -256,7 +293,8 @@ $$;
 
 -- only the game's calls are open to the browser
 revoke execute on function public.nothanks_lock(text), public.nothanks_pid(text, uuid), public.nothanks_save(text, jsonb),
-  public.nothanks_name(text), public.nothanks_do(text, jsonb, boolean), public.nothanks_points(int[]) from public, anon, authenticated;
+  public.nothanks_name(text), public.nothanks_do(text, jsonb, boolean), public.nothanks_points(int[]),
+  public.nothanks_bot_key(int[], int, int, int, boolean, int, int, int) from public, anon, authenticated;
 revoke execute on function public.nothanks_create(text, uuid), public.nothanks_join(text, text, uuid), public.nothanks_leave(text, uuid),
   public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid),
   public.nothanks_bot(text, int), public.nothanks_add_bot(text, uuid), public.nothanks_remove_bot(text, uuid, text) from public;
