@@ -1,6 +1,7 @@
 // Deep CFR for No Thanks!: the same self-play regret idea as train.js, but a neural net (nn.js) reads the raw table
 // (game.js features) instead of a table of hand-made buckets.
-//   node deep.js [iterations] [games per worker per iteration] [workers]   -> writes deep.json next to this file
+//   node deep.js [iterations] [games per worker per iteration] [workers] [mlp|struct]   -> writes deep-<arch>.json
+// (mlp: nn.js over game.js's flat features; struct: structnet.js, a card window and a shared opponent encoder)
 // Each iteration: every seat plays from the advantage net's current strategy (regret matching on its predicted
 // regrets). Some of one learner seat's decisions are played out both ways with the same luck, and the regrets
 // (how much better each choice did than the mix) become training examples, weighted by the iteration number.
@@ -8,15 +9,19 @@
 // recorded with the strategy used there; at the end a policy net learns that average strategy, and it's what ships.
 'use strict';
 const { Worker, isMainThread, workerData, parentPort } = require('worker_threads');
-const G = require('./game'), { MLP } = require('./nn');
-const SIZES_ADV = [G.NFEAT, 64, 64, 2], SIZES_POL = [G.NFEAT, 64, 64, 1];
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet');
+const ARCHS = {
+  mlp: { F: G.NFEAT, feat: G.features, make: (out, seed) => new MLP([G.NFEAT, 64, 64, out], seed) },
+  struct: { F: S.F, feat: S.features, make: (out, seed) => new S.StructNet(out, seed) },
+};
 
 // regret matching on predicted regrets: P(take)
 const sigmaOf = o => { const a = Math.max(o[0], 0), b = Math.max(o[1], 0); return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0; };
 
 if (isMainThread){
   const T = +process.argv[2] || 40, games = +process.argv[3] || 2500, nw = +process.argv[4] || require('os').cpus().length;
-  const CAP = 1500000, F = G.NFEAT;
+  const arch = process.argv[5] || 'struct', A = ARCHS[arch], CAP = 1500000, F = A.F;
+  const save = (name, net, out) => require('fs').writeFileSync(`${__dirname}/${name}`, JSON.stringify({ arch, out, p: Array.from(net.p, v => +v.toPrecision(5)) }));
   const buf = (k) => ({ X: new Float32Array(CAP * F), Y: new Float32Array(CAP * k), W: new Float32Array(CAP), size: 0, seen: 0, k });
   const adv = buf(2), pol = buf(1);
   let rs = 987654321; const rnd = () => { rs ^= rs << 13; rs >>>= 0; rs ^= rs >>> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; };
@@ -31,27 +36,27 @@ if (isMainThread){
     }
     return L;
   };
-  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919 } }));
+  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919, arch } }));
   const run = (wk, msg) => new Promise(res => { wk.once('message', res); wk.postMessage(msg); });
   (async () => {
-    const net = new MLP(SIZES_ADV, 11), t0 = Date.now();
+    const net = A.make(2, 11), t0 = Date.now();
     for (let t = 1; t <= T; t++){
       const outs = await Promise.all(workers.map(wk => run(wk, { p: net.p, games })));
       for (const o of outs){ add(adv, o.advX, o.advY, o.nAdv, t); add(pol, o.polX, o.polY, o.nPol, t); }
       const L = train(net, adv, 1500, 512, 'mse', 1e-3);
       console.log(`iter ${t}/${T}: ${adv.size} regret examples, loss ${L.toFixed(4)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-      require('fs').writeFileSync(__dirname + '/deep-adv.json', JSON.stringify({ sizes: SIZES_ADV, p: Array.from(net.p) }));
+      save(`deep-${arch}-adv.json`, net, 2);
     }
     workers.forEach(w => w.terminate());
-    const pnet = new MLP(SIZES_POL, 12);
+    const pnet = A.make(1, 12);
     for (let r = 0; r < 10; r++){ const L = train(pnet, pol, 2000, 512, 'bce', r < 7 ? 1e-3 : 3e-4); console.log(`policy net ${r + 1}/10: loss ${L.toFixed(4)}`); }
-    require('fs').writeFileSync(__dirname + '/deep.json', JSON.stringify({ sizes: SIZES_POL, p: Array.from(pnet.p, v => +v.toPrecision(5)) }));
+    save(`deep-${arch}.json`, pnet, 1);
     console.log(`done, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   })();
 } else {
-  const r = G.rng(workerData.seed), net = new MLP(SIZES_ADV), F = G.NFEAT, x = new Float32Array(F);
+  const A = ARCHS[workerData.arch], r = G.rng(workerData.seed), net = A.make(2), F = A.F, x = new Float32Array(F);
   const tables = [2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7];
-  const sigma = g => sigmaOf(net.forward(G.features(g, x)));
+  const sigma = g => sigmaOf(net.forward(A.feat(g, x)));
   const rollout = (g, take, seed) => {
     const rr = G.rng(seed); let over = G.step(g, take);
     while (!over) over = G.step(g, g.chips[g.turn] === 0 || rr() < sigma(g));

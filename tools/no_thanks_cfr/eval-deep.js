@@ -1,13 +1,13 @@
-// The neural-net bot (deep.json) against the table bot (policy.json) and the old rule of thumb.
+// The neural-net bot (deep-<arch>.json or deep-<arch>-adv.json) against the table bot (policy.json) and the old rule of thumb.
 //   node eval-deep.js [games per table size] [weights file]
 'use strict';
-const G = require('./game'), { MLP } = require('./nn');
-const file = process.argv[3] || __dirname + '/deep.json', W = require(file);
-const net = new MLP(W.sizes); net.p.set(W.p);
-const x = new Float32Array(G.NFEAT);
-const deep = W.sizes[W.sizes.length - 1] === 1
-  ? (g, r) => r() < 1 / (1 + Math.exp(-net.forward(G.features(g, x))[0]))
-  : (g, r) => { const o = net.forward(G.features(g, x)), a = Math.max(o[0], 0), b = Math.max(o[1], 0); return r() < (a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0); };
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet');
+const file = process.argv[3] || __dirname + '/deep-struct.json', W = require(file);
+const net = W.arch === 'struct' ? new S.StructNet(W.out) : new MLP([G.NFEAT, 64, 64, W.out]); net.p.set(W.p);
+const feat = W.arch === 'struct' ? S.features : G.features, x = new Float32Array(W.arch === 'struct' ? S.F : G.NFEAT);
+const deep = W.out === 1
+  ? (g, r) => r() < 1 / (1 + Math.exp(-net.forward(feat(g, x))[0]))
+  : (g, r) => { const o = net.forward(feat(g, x)), a = Math.max(o[0], 0), b = Math.max(o[1], 0); return r() < (a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0); };
 const table = G.policyBrain(require('./policy.json').map(p => p < 0 ? -1 : p / 100)), old = G.heuristic;
 const games = +process.argv[2] || 10000, r = G.rng(2024);
 const rate = (n, brainOf) => { let w = 0; for (let i = 0; i < games; i++){ const g = G.newGame(n, r); G.play(g, Array.from({ length: n }, (_, q) => brainOf(q)), r); w += G.winShare(g, 0); } return w / games; };
