@@ -264,7 +264,7 @@ table.results tr.win td{color:var(--green);font-weight:700}
     <p>No Thanks! by Thorsten Gimmler (Amigo), for 3 to 7 players.</p>
     <ol>
       <li>The deck is the cards 3 to 35. Nine are removed unseen, so nobody knows which numbers are missing.</li>
-      <li>Everyone starts with 11 chips (9 with six players, 7 with seven). Chips are kept secret.</li>
+      <li>Everyone starts with 11 chips (9 with six players, 7 with seven). In the box game chips are kept secret, but here everyone's count is shown.</li>
       <li>On your turn, the top card is face up. Either say <b>No thanks!</b> by putting one of your chips on it and passing it to the next player, or <b>take it</b> along with every chip on it.</li>
       <li>If you take a card, you turn over the next one and decide again. If you're out of chips, you must take it.</li>
       <li>The game ends when the last card is taken.</li>
@@ -285,13 +285,13 @@ table.results tr.win td{color:var(--green);font-weight:700}
 <script>
 /* ================= No Thanks! =================
    Two ways to play, drawn by the same table code:
-   - online rooms, run by Supabase functions (tools/supabase/nothanks_schema.sql): the deck and everyone's chips are
+   - online rooms, run by Supabase functions (tools/supabase/nothanks_schema.sql): the deck is
      kept on the server, and every move is checked there. Each browser holds a random secret token in localStorage,
      which is its seat in a room, so a reload or a lost connection rejoins the same seat.
    - practice against bots, played entirely on this device with the same rules.
    Both produce a "view": the room's public state plus this player's pid and chips. */
 window.NOTHANKS_ONLINE = window.NOTHANKS_ONLINE || {
-  // Turns' Supabase project. The publishable key is meant to be public: the deck and chips stay in tables only
+  // Turns' Supabase project. The publishable key is meant to be public: the deck stays in a table only
   // the game's functions can read.
   url: 'https://wgysofnocxigucqocxed.supabase.co', anonKey: 'sb_publishable_m9npQPFI2rwsFo40wY9FMg_rKHZxf80',
   hosts: ['alexwp.com', 'www.alexwp.com', 'localhost', '127.0.0.1'],
@@ -418,7 +418,7 @@ function renderTable(v){
   const others = v.players.map((p, i) => [p, i]).filter(([p]) => !isMe(v, p.pid));
   others.sort((a, b) => ((a[1] - i0 + 99) % v.players.length) - ((b[1] - i0 + 99) % v.players.length));
   $('opps').innerHTML = others.map(([p, i]) => `<div class="opp${i === v.turn ? ' turn' : ''}">
-      <div class="head"><span class="name">${esc(p.name)}</span><span class="chips"><span class="chip"></span>?</span><span class="score muted">${cardPoints(p.cards)} pts</span></div>
+      <div class="head"><span class="name">${esc(p.name)}</span><span class="chips"><span class="chip"></span>${p.chips ?? '?'}</span><span class="score muted">${p.chips == null ? cardPoints(p.cards) : score(p.cards, p.chips)} pts</span></div>
       <div class="runs small">${p.cards.length ? runsHtml(p.cards) : '<span class="muted">No cards</span>'}</div></div>`).join('');
   const cur = $('curCard');
   cur.style.setProperty('--h', hue(v.card)); cur.innerHTML = v.card;
@@ -511,7 +511,7 @@ function localGame(nBots){
       card: deck.shift(), pot: 0, left: 23, turn: Math.floor(Math.random() * players.length), last: null };
     emit();
   };
-  const emit = () => { s.v++; s.myChips = chips.me; setView({ ...s, players: s.players.map(p => ({ ...p })) }); schedule(); };
+  const emit = () => { s.v++; s.myChips = chips.me; setView({ ...s, players: s.players.map(p => ({ ...p, chips: chips[p.pid] })) }); schedule(); };
   const move = (pid, take) => {
     const p = s.players[s.turn];
     if (s.phase !== 'playing' || p.pid !== pid) throw new Error("It's not your turn.");

@@ -5,9 +5,9 @@
 -- information as everyone else; any player's browser just asks for the bot's move when it's a bot's turn.
 --
 -- No sign-in needed. Each browser makes a random secret token and keeps it in localStorage; the token is
--- the player's seat in a room. Everyone can read a room's public state, but the deck and every player's
--- chips live in nothanks_seats / nothanks_decks, which nobody can read: the only way in is through the
--- functions below, which check the token and the rules on every move.
+-- the player's seat in a room. Everyone can read a room's public state, including every player's chip count
+-- (copied from nothanks_seats on each move). The deck and the seat tokens live in nothanks_decks / nothanks_seats,
+-- which nobody can read: the only way in is through the functions below, which check the token and the rules.
 
 create table if not exists public.nothanks_rooms (
   code       text primary key,
@@ -140,7 +140,7 @@ begin
   insert into nothanks_decks (code, deck) values (c, d[2:]) on conflict (code) do update set deck = excluded.deck;
   -- official chips: 11 each for 3-5 players, 9 for 6, 7 for 7 (2 players isn't official; it uses 11)
   update nothanks_seats set chips = case when n <= 5 then 11 when n = 6 then 9 else 7 end where code = c;
-  select jsonb_agg(x - 'chips' || jsonb_build_object('cards', '[]'::jsonb)) into ps from jsonb_array_elements(s->'players') x;
+  select jsonb_agg(x || jsonb_build_object('cards', '[]'::jsonb, 'chips', case when n <= 5 then 11 when n = 6 then 9 else 7 end)) into ps from jsonb_array_elements(s->'players') x;
   s := s || jsonb_build_object('phase', 'playing', 'players', ps, 'card', d[1], 'pot', 0, 'left', 23,
     'turn', floor(random() * n)::int, 'last', null, 'round', coalesce((s->>'round')::int, 0) + 1);
   return nothanks_save(c, s);
@@ -157,6 +157,7 @@ begin
   if not p_take then
     if my = 0 then raise exception 'You''re out of chips, so you have to take it.'; end if;
     update nothanks_seats set chips = chips - 1 where code = c and pid = p returning chips into my;
+    s := jsonb_set(s, array['players', t::text, 'chips'], to_jsonb(my));
     s := s || jsonb_build_object('pot', pot + 1, 'turn', (t + 1) % n, 'last', jsonb_build_object('pid', p, 'take', false, 'card', card, 'pot', pot + 1));
     perform nothanks_save(c, s);
     return my;
@@ -164,10 +165,11 @@ begin
   update nothanks_seats set chips = chips + pot where code = c and pid = p returning chips into my;
   select jsonb_agg(v order by v::int) into cards from jsonb_array_elements((s->'players'->t->'cards') || to_jsonb(card)) v;
   s := jsonb_set(s, array['players', t::text, 'cards'], cards);
+  s := jsonb_set(s, array['players', t::text, 'chips'], to_jsonb(my));
   s := s || jsonb_build_object('pot', 0, 'last', jsonb_build_object('pid', p, 'take', true, 'card', card, 'pot', pot));
   select deck into d from nothanks_decks where code = c for update;
   if coalesce(array_length(d, 1), 0) = 0 then
-    -- last card taken: game over, everyone's chips are revealed for scoring
+    -- last card taken: game over (chips re-read from the seats so the final scores come from the source of truth)
     select jsonb_agg(x || jsonb_build_object('chips', (select chips from nothanks_seats z where z.code = c and z.pid = x->>'pid')) order by i)
       into ps from jsonb_array_elements(s->'players') with ordinality e(x, i);
     s := s || jsonb_build_object('phase', 'done', 'players', ps, 'card', null, 'left', 0);
@@ -246,7 +248,7 @@ begin
   perform nothanks_save(c, jsonb_set(s, '{players}', ps));
 end $$;
 
--- this browser's seat and chips in a room (chips are secret, so they aren't in the room state): {pid, chips}
+-- this browser's seat and chips in a room: {pid, chips}
 create or replace function public.nothanks_me(p_code text, p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object('pid', pid, 'chips', chips) from nothanks_seats where code = upper(p_code) and token = p_token
