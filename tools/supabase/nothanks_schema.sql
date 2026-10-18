@@ -225,14 +225,80 @@ returns int language sql immutable set search_path = public as $$
   from (select nothanks_points(hand || card) - nothanks_points(hand) - pot as cost) x
 $$;
 
+-- The neural-net bot (tools/no_thanks_cfr/structnet.js, trained with Deep CFR), used at tables of 2-6 players.
+-- Its weights ship as signed bytes with one scale per layer part (tools/supabase/nothanks_net.sql loads them) and
+-- are unpacked once into w. Same layout as the page's NET_LAYERS: 16->32, 32->32 (shared opponent encoder),
+-- 108->64, 64->64, 64->2 (trunk: regrets for take / pass).
+create table if not exists public.nothanks_net (
+  id     int primary key,
+  scales real[] not null,
+  q      bytea not null,
+  w      real[]
+);
+alter table public.nothanks_net enable row level security;
+revoke all on public.nothanks_net from anon, authenticated;
+
+-- one layer: y = W x + b (ReLU optional). w is 1-based; off / ioff are 0-based offsets like the page's
+create or replace function public.nothanks_net_dense(w real[], off int, nin int, nout int, inp real[], ioff int, relu boolean)
+returns real[] language plpgsql immutable as $$
+declare y real[] := array_fill(0::real, array[nout]); s float8; rw int;
+begin
+  for j in 0 .. nout - 1 loop
+    s := w[off + nin * nout + j + 1]; rw := off + j * nin;
+    for k in 0 .. nin - 1 loop s := s + w[rw + k + 1]::float8 * inp[ioff + k + 1]::float8; end loop;
+    y[j + 1] := case when relu and s < 0 then 0 else s end;
+  end loop;
+  return y;
+end $$;
+
+-- how often the net takes the card: the same features and forward pass as the page's netFeatures / netForward.
+-- opp_cards / opp_chips: the other players in turn order after the mover. Null if the net isn't loaded.
+create or replace function public.nothanks_net_take(hand int[], chips int, card int, pot int, lft int, n int, opp_cards jsonb, opp_chips int[])
+returns real language plpgsql stable set search_path = public as $$
+declare w real[]; x real[] := array_fill(0::real, array[141]); tin real[] := array_fill(0::real, array[108]);
+  offs int[] := '{-6,-5,-4,-3,-2,-1,1,2,3,4,5,6}'; held int[] := hand; oc int[]; v int; o int; e real[]; res real[]; a float8; b float8;
+begin
+  select net.w into w from nothanks_net net where id = 1;
+  if w is null then return null; end if;
+  for k in 0 .. n - 2 loop held := held || array(select jsonb_array_elements_text(opp_cards->k)::int); end loop;
+  for i in 1 .. 12 loop
+    v := card + offs[i];
+    if v < 3 or v > 35 then x[24 + i] := 1;
+    else
+      if v = any(hand) then x[i] := 1; end if;
+      if not v = any(held) then x[12 + i] := 1; end if;
+    end if;
+  end loop;
+  x[37] := card / 35.0; x[38] := chips / 11.0; x[39] := pot / 11.0; x[40] := lft / 23.0; x[41] := (n - 2) / 5.0;
+  x[42] := (nothanks_points(hand || card) - nothanks_points(hand) - pot) / 35.0; x[43] := nothanks_points(hand) / 100.0;
+  x[44] := (select min(c) from unnest(opp_chips) c) / 11.0;
+  x[45] := n - 1;
+  for k in 0 .. n - 2 loop
+    oc := array(select jsonb_array_elements_text(opp_cards->k)::int); o := 46 + k * 16;
+    for i in 1 .. 12 loop if card + offs[i] = any(oc) then x[o + i - 1] := 1; end if; end loop;
+    x[o + 12] := opp_chips[k + 1] / 11.0; x[o + 13] := nothanks_points(oc) / 100.0; x[o + 14] := (k + 1) / 6.0;
+    x[o + 15] := (nothanks_points(oc || card) - nothanks_points(oc) - pot) / 35.0;
+  end loop;
+  for i in 1 .. 44 loop tin[i] := x[i]; end loop;
+  for k in 0 .. n - 2 loop
+    e := nothanks_net_dense(w, 544, 32, 32, nothanks_net_dense(w, 0, 16, 32, x, 45 + k * 16, true), 0, true);
+    for h in 1 .. 32 loop tin[44 + h] := tin[44 + h] + e[h]; if k = 0 then tin[76 + h] := e[h]; end if; end loop;
+  end loop;
+  res := nothanks_net_dense(w, 12736, 64, 2, nothanks_net_dense(w, 8576, 64, 64, nothanks_net_dense(w, 1600, 108, 64, tin, 0, true), 0, true), 0, false);
+  a := greatest(res[1], 0); b := greatest(res[2], 0);   -- regret matching
+  return case when a + b > 0 then a / (a + b) when res[1] > res[2] then 1 else 0 end;
+end $$;
+
 -- a bot's move. Any player's browser calls this when it sees a bot's turn at room version p_v; the first call
--- moves the bot and the rest find the version changed and do nothing. The bot follows the CFR policy; in a
+-- moves the bot and the rest find the version changed and do nothing. At 2-6 players the bot uses the neural net;
+-- at 7 (or if the net isn't loaded) it follows the CFR policy table; in a
 -- situation the training never reached it falls back to a rule of thumb: take a card when it costs little after
 -- the chips on it, more readily as its chips run out, and sometimes let a card it wants go round again.
 create or replace function public.nothanks_bot(p_code text, p_v int) returns boolean
 language plpgsql security definer set search_path = public as $$
 declare s jsonb := nothanks_lock(p_code); c text := upper(p_code); me jsonb; my int; hand int[]; card int; pot int; cost int; lim int; take boolean;
-  n int := jsonb_array_length(s->'players'); fits_opp boolean; min_opp int; k int; ch text;
+  n int := jsonb_array_length(s->'players'); fits_opp boolean; min_opp int; k int; ch text; t int := (s->>'turn')::int; pn real;
+  opp_cards jsonb; opp_chips int[];
 begin
   if s->>'phase' <> 'playing' or p_v is distinct from (s->>'v')::int then return false; end if;
   me := s->'players'->((s->>'turn')::int);
@@ -244,8 +310,15 @@ begin
          coalesce(min((select chips from nothanks_seats z where z.code = c and z.pid = x->>'pid')), 0)
     into fits_opp, min_opp from jsonb_array_elements(s->'players') x where x->>'pid' <> me->>'pid';
   k := nothanks_bot_key(hand, my, card, pot, fits_opp, min_opp, (s->>'left')::int, n);
+  if n < 7 and my > 0 then
+    select jsonb_agg(s->'players'->((t + i) % n)->'cards' order by i),
+           array_agg((select chips from nothanks_seats z where z.code = c and z.pid = s->'players'->((t + i) % n)->>'pid') order by i)
+      into opp_cards, opp_chips from generate_series(1, n - 1) i;
+    pn := nothanks_net_take(hand, my, card, pot, (s->>'left')::int, n, opp_cards, opp_chips);
+  end if;
   select substr(policy, k + 1, 1) into ch from nothanks_policy where id = 1;
   if my = 0 then take := true;
+  elsif pn is not null then take := random() < pn;
   elsif ch is not null and ch <> '.' and ch <> '' then
     take := random() < (strpos('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', ch) - 1) / 63.0;
   else
@@ -294,7 +367,9 @@ $$;
 -- only the game's calls are open to the browser
 revoke execute on function public.nothanks_lock(text), public.nothanks_pid(text, uuid), public.nothanks_save(text, jsonb),
   public.nothanks_name(text), public.nothanks_do(text, jsonb, boolean), public.nothanks_points(int[]),
-  public.nothanks_bot_key(int[], int, int, int, boolean, int, int, int) from public, anon, authenticated;
+  public.nothanks_bot_key(int[], int, int, int, boolean, int, int, int),
+  public.nothanks_net_dense(real[], int, int, int, real[], int, boolean),
+  public.nothanks_net_take(int[], int, int, int, int, int, jsonb, int[]) from public, anon, authenticated;
 revoke execute on function public.nothanks_create(text, uuid), public.nothanks_join(text, text, uuid), public.nothanks_leave(text, uuid),
   public.nothanks_start(text, uuid), public.nothanks_act(text, uuid, boolean, int), public.nothanks_me(text, uuid),
   public.nothanks_bot(text, int), public.nothanks_add_bot(text, uuid), public.nothanks_remove_bot(text, uuid, text) from public;

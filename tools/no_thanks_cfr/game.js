@@ -49,6 +49,27 @@ function keyOf(g){
   return bucket(addPts(g, p, c) - g.pot, g.chips[p], g.pot, g.has[o + c - 1] || g.has[o + c + 1], fitsOpp, minOpp, left(g), g.n);
 }
 
+// ---- the raw table as the neural net sees it, from the point of view of the player to move ----
+// card one-hot (33) | my cards (33) | cards any opponent holds (33) | per opponent in turn order, up to 6:
+// [seated, chips/11, holds card-1, holds card+1, points/100] (30) | my chips/11, pot/11, left/23, (n-2)/5, cost/35, my points/100
+const NFEAT = 135;
+function features(g, x){
+  x.fill(0);
+  const p = g.turn, c = g.deck[g.idx], n = g.n;
+  x[c - 3] = 1;
+  for (let v = 3; v <= 35; v++){
+    if (g.has[p * 37 + v]) x[33 + v - 3] = 1;
+    for (let q = 0; q < n; q++) if (q !== p && g.has[q * 37 + v]){ x[66 + v - 3] = 1; break; }
+  }
+  for (let s = 1; s < n; s++){
+    const q = (p + s) % n, o = 99 + (s - 1) * 5;
+    x[o] = 1; x[o + 1] = g.chips[q] / 11; x[o + 2] = g.has[q * 37 + c - 1]; x[o + 3] = g.has[q * 37 + c + 1]; x[o + 4] = g.pts[q] / 100;
+  }
+  x[129] = g.chips[p] / 11; x[130] = g.pot / 11; x[131] = left(g) / 23; x[132] = (n - 2) / 5;
+  x[133] = (addPts(g, p, c) - g.pot) / 35; x[134] = g.pts[p] / 100;
+  return x;
+}
+
 function step(g, take){   // returns true when the game is over
   const p = g.turn, c = g.deck[g.idx];
   if (!take){ g.chips[p]--; g.pot++; g.turn = (p + 1) % g.n; return false; }
@@ -82,4 +103,4 @@ const policyBrain = pol => (g, r) => {
 
 function play(g, brains, r){ while (!step(g, g.chips[g.turn] === 0 || brains[g.turn](g, r))); return g; }
 
-module.exports = { rng, chipsFor, KEYS, bucket, newGame, clone, keyOf, step, winShare, heuristic, policyBrain, play, addPts, left };
+module.exports = { NFEAT, features, rng, chipsFor, KEYS, bucket, newGame, clone, keyOf, step, winShare, heuristic, policyBrain, play, addPts, left };

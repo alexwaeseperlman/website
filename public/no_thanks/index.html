@@ -515,8 +515,53 @@ function botKey(cards, chips, card, pot, others, left, n){
   const nb = n <= 3 ? 0 : n <= 5 ? 1 : 2;
   return ((((((cb * 6 + mb) * 3 + pb) * 2 + (fits(cards) ? 1 : 0)) * 2 + (others.some(o => fits(o.cards)) ? 1 : 0)) * 3 + ob) * 3 + lb) * 3 + nb;
 }
+// For 2-6 players the bots use a small neural net trained with Deep CFR (tools/no_thanks_cfr/structnet.js):
+// it reads the cards in a +-6 window around the current card, runs every opponent through one shared encoder,
+// and outputs how much it regrets taking vs passing. bot-net.json holds its weights as signed bytes (base64) with a
+// scale per layer. At 7 players, or until the net loads, they use the table above.
+let net = null, netP = null;
+const NET_LAYERS = [[16, 32], [32, 32], [108, 64], [64, 64], [64, 2]];
+const loadNet = () => netP || (netP = fetch('bot-net.json').then(r => r.ok ? r.json() : null).then(j => {
+  if (!j) return;
+  const q = Uint8Array.from(atob(j.q), ch => ch.charCodeAt(0)), p = new Float32Array(q.length), L = [];
+  let o = 0, si = 0;
+  for (const [i, n] of NET_LAYERS){
+    for (const len of [i * n, n]){ const s = j.scales[si++]; for (let k = 0; k < len; k++) p[o + k] = (q[o + k] << 24 >> 24) * s; o += len; }
+    L.push({ i, o: n, w: o - i * n - n, b: o - n });
+  }
+  net = { p, L };
+}, () => { netP = null; }));
+// others: the other players in turn order after the mover, as { cards, chips }
+function netFeatures(cards, chips, card, pot, others, left, n){
+  const x = new Float32Array(141), offs = [-6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6];
+  const held = new Set([...cards, ...others.flatMap(o => o.cards)]), cost = cs => cardPoints([...cs, card]) - cardPoints(cs) - pot;
+  offs.forEach((d, i) => { const v = card + d; if (v < 3 || v > 35){ x[24 + i] = 1; return; } if (cards.includes(v)) x[i] = 1; if (!held.has(v)) x[12 + i] = 1; });
+  x.set([card / 35, chips / 11, pot / 11, left / 23, (n - 2) / 5, cost(cards) / 35, cardPoints(cards) / 100, Math.min(...others.map(o => o.chips)) / 11], 36);
+  x[44] = n - 1;
+  others.forEach((op, k) => {
+    const o = 45 + k * 16;
+    offs.forEach((d, i) => { if (op.cards.includes(card + d)) x[o + i] = 1; });
+    x.set([op.chips / 11, cardPoints(op.cards) / 100, (k + 1) / 6, cost(op.cards) / 35], o + 12);
+  });
+  return x;
+}
+function netForward(x){
+  const { p, L } = net, dense = (l, inp, io, relu) => { const y = new Float32Array(l.o);
+    for (let j = 0; j < l.o; j++){ let s = p[l.b + j]; for (let k = 0; k < l.i; k++) s += p[l.w + j * l.i + k] * inp[io + k]; y[j] = relu && s < 0 ? 0 : s; } return y; };
+  const tin = new Float32Array(108); tin.set(x.subarray(0, 44));
+  for (let j = 0; j < x[44]; j++){
+    const e = dense(L[1], dense(L[0], x, 45 + j * 16, true), 0, true);
+    for (let h = 0; h < 32; h++){ tin[44 + h] += e[h]; if (j === 0) tin[76 + h] = e[h]; }
+  }
+  return dense(L[4], dense(L[3], dense(L[2], tin, 0, true), 0, true), 0, false);
+}
+function netTakeProb(cards, chips, card, pot, others, left, n){
+  const o = netForward(netFeatures(cards, chips, card, pot, others, left, n)), a = Math.max(o[0], 0), b = Math.max(o[1], 0);
+  return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0;   // regret matching
+}
 function botTakes(cards, chips, card, pot, others, left, n){
   if (chips === 0) return true;
+  if (net && n < 7) return Math.random() < netTakeProb(cards, chips, card, pot, others, left, n);
   const ch = policy && policy[botKey(cards, chips, card, pot, others, left, n)], i = ch ? POLICY_ABC.indexOf(ch) : -1;
   return i >= 0 ? Math.random() < i / 63 : ruleOfThumb(cards, chips, card, pot, n);
 }
@@ -561,14 +606,14 @@ function localGame(nBots){
     clearTimeout(botT);
     if (s.phase !== 'playing') return;
     const p = s.players[s.turn]; if (p.pid === 'me') return;
-    const others = s.players.filter(q => q !== p).map(q => ({ cards: q.cards, chips: chips[q.pid] }));
+    const n = s.players.length, others = Array.from({ length: n - 1 }, (_, k) => s.players[(s.turn + 1 + k) % n]).map(q => ({ cards: q.cards, chips: chips[q.pid] }));
     botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, others, s.left, s.players.length)), 700 + Math.random() * 600);
   };
   return { kind: 'local', act: async take => move('me', take), start: async () => deal(), leave(){ clearTimeout(botT); }, deal };
 }
 $('practiceBtn').onclick = () => {
   store.set('name', $('nameInput').value.trim() || null);
-  loadPolicy(); enter(localGame(botCount)); src.deal();
+  loadPolicy(); loadNet(); enter(localGame(botCount)); src.deal();
 };
 
 /* ---------- online rooms ---------- */
