@@ -9,10 +9,13 @@
 // recorded with the strategy used there; at the end a policy net learns that average strategy, and it's what ships.
 'use strict';
 const { Worker, isMainThread, workerData, parentPort } = require('worker_threads');
-const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet');
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet');
 const ARCHS = {
   mlp: { F: G.NFEAT, feat: G.features, make: (out, seed) => new MLP([G.NFEAT, 64, 64, out], seed) },
   struct: { F: S.F, feat: S.features, make: (out, seed) => new S.StructNet(out, seed) },
+  // set: setnet.js. Its examples also carry every seat's expected win share (for the aux head), and it ships the
+  // final regret net's strategy, so there's no separate average-policy net.
+  set: { F: SN.F, feat: SN.features, make: (out, seed) => new SN.SetNet(seed), aux: true },
 };
 
 // regret matching on predicted regrets: P(take)
@@ -22,8 +25,9 @@ if (isMainThread){
   const T = +process.argv[2] || 40, games = +process.argv[3] || 2500, nw = +process.argv[4] || require('os').cpus().length;
   const arch = process.argv[5] || 'struct', A = ARCHS[arch], CAP = 1500000, F = A.F;
   const save = (name, net, out) => require('fs').writeFileSync(`${__dirname}/${name}`, JSON.stringify({ arch, out, p: Array.from(net.p, v => +v.toPrecision(5)) }));
-  const buf = (k) => ({ X: new Float32Array(CAP * F), Y: new Float32Array(CAP * k), W: new Float32Array(CAP), size: 0, seen: 0, k });
-  const adv = buf(2), pol = buf(1);
+  const sh = n => new Float32Array(new SharedArrayBuffer(n * 4));
+  const buf = (k, cap = CAP) => ({ X: sh(cap * F), Y: sh(cap * k), W: sh(cap), size: 0, seen: 0, k });
+  const adv = buf(A.aux ? 9 : 2), pol = buf(1, A.aux ? 1 : CAP);
   let rs = 987654321; const rnd = () => { rs ^= rs << 13; rs >>>= 0; rs ^= rs >>> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; };
   const add = (B, X, Y, n, w) => { for (let i = 0; i < n; i++){
     const j = B.size < CAP ? B.size++ : Math.floor(rnd() * (B.seen + 1)); B.seen++;
@@ -36,18 +40,33 @@ if (isMainThread){
     }
     return L;
   };
-  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919, arch } }));
+  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919, arch, X: adv.X, Y: adv.Y, W: adv.W } }));
   const run = (wk, msg) => new Promise(res => { wk.once('message', res); wk.postMessage(msg); });
+  // the shared-encoder net is slow to train, so each batch is split across the worker threads (they read the
+  // examples straight from the shared buffer and send back gradients)
+  const trainPar = async (net, B, steps, bs, lr) => {
+    let L = 0; const g = new Float32Array(net.n);
+    for (let s = 0; s < steps; s++){
+      const idx = Int32Array.from({ length: bs }, () => Math.floor(rnd() * B.size));
+      let wsum = 0; for (const j of idx) wsum += B.W[j];
+      const parts = await Promise.all(workers.map((wk, i) => run(wk, { type: 'grad', p: net.p, idx: idx.filter((_, k) => k % nw === i), wsum })));
+      g.fill(0); let tot = 0;
+      for (const pr of parts){ for (let k = 0; k < g.length; k++) g[k] += pr.g[k]; tot += pr.total; }
+      net.apply(g, lr); L = 0.98 * L + 0.02 * tot;
+    }
+    return L;
+  };
   (async () => {
     const net = A.make(2, 11), t0 = Date.now();
     for (let t = 1; t <= T; t++){
-      const outs = await Promise.all(workers.map(wk => run(wk, { p: net.p, games })));
+      const outs = await Promise.all(workers.map(wk => run(wk, { type: 'play', p: net.p, games })));
       for (const o of outs){ add(adv, o.advX, o.advY, o.nAdv, t); add(pol, o.polX, o.polY, o.nPol, t); }
-      const L = train(net, adv, 1500, 512, 'mse', 1e-3);
+      const L = A.aux ? await trainPar(net, adv, +process.env.STEPS || 1500, 512, 1e-3) : train(net, adv, +process.env.STEPS || 1500, 512, 'mse', 1e-3);
       console.log(`iter ${t}/${T}: ${adv.size} regret examples, loss ${L.toFixed(4)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
       save(`deep-${arch}-adv.json`, net, 2);
     }
     workers.forEach(w => w.terminate());
+    if (A.aux){ console.log(`done, ${((Date.now() - t0) / 1000).toFixed(0)}s`); return; }
     const pnet = A.make(1, 12);
     for (let r = 0; r < 10; r++){ const L = train(pnet, pol, 2000, 512, 'bce', r < 7 ? 1e-3 : 3e-4); console.log(`policy net ${r + 1}/10: loss ${L.toFixed(4)}`); }
     save(`deep-${arch}.json`, pnet, 1);
@@ -62,19 +81,27 @@ if (isMainThread){
     while (!over) over = G.step(g, g.chips[g.turn] === 0 || rr() < sigma(g));
     return g;
   };
-  parentPort.on('message', ({ p, games }) => {
+  parentPort.on('message', ({ type, p, games, idx, wsum }) => {
     net.p.set(p);
+    if (type === 'grad'){
+      net.g = new Float32Array(net.n);
+      const total = net.accum(workerData.X, workerData.Y, workerData.W, idx, wsum);
+      parentPort.postMessage({ g: net.g, total }, [net.g.buffer]);
+      return;
+    }
     const advX = [], advY = [], polX = [], polY = [];
     for (let i = 0; i < games; i++){
       const n = tables[Math.floor(r() * tables.length)], g = G.newGame(n, r), me = Math.floor(r() * n);
       for (;;){
         if (g.chips[g.turn] === 0){ if (G.step(g, true)) break; continue; }
         const s = sigma(g);
-        if (r() < 0.1){ polX.push(Float32Array.from(x)); polY.push(s); }
+        if (!A.aux && r() < 0.1){ polX.push(Float32Array.from(x)); polY.push(s); }
         if (g.turn === me && r() < 0.25){
           const feats = Float32Array.from(x), sd = (r() * 4294967296) >>> 0;
-          const vt = G.winShare(rollout(G.clone(g), true, sd), me), vp = G.winShare(rollout(G.clone(g), false, sd), me), v = s * vt + (1 - s) * vp;
+          const gt = rollout(G.clone(g), true, sd), gp = rollout(G.clone(g), false, sd);
+          const vt = G.winShare(gt, me), vp = G.winShare(gp, me), v = s * vt + (1 - s) * vp;
           advX.push(feats); advY.push(vt - v, vp - v);
+          if (A.aux) for (let k = 0; k < 7; k++){ const q = (me + k) % g.n; advY.push(k < g.n ? s * G.winShare(gt, q) + (1 - s) * G.winShare(gp, q) : 0); }
         }
         if (G.step(g, r() < s)) break;
       }
