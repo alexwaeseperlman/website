@@ -1,6 +1,8 @@
 // Deep CFR for No Thanks!: the same self-play regret idea as train.js, but a neural net (nn.js) reads the raw table
 // (game.js features) instead of a table of hand-made buckets.
-//   node deep.js [iterations] [games per worker per iteration] [workers] [mlp|struct]   -> writes deep-<arch>.json
+//   node deep.js [iterations] [games per worker per iteration] [workers] [mlp|struct|set]   -> writes deep-<arch>.json
+// It saves its progress in deep-<arch>-ckpt/ after every iteration and picks up from there if run again with the same
+// arguments (delete that folder to start over).
 // (mlp: nn.js over game.js's flat features; struct: structnet.js, a card window and a shared opponent encoder)
 // Each iteration: every seat plays from the advantage net's current strategy (regret matching on its predicted
 // regrets). Some of one learner seat's decisions are played out both ways with the same luck, and the regrets
@@ -28,10 +30,27 @@ if (isMainThread){
   const sh = n => new Float32Array(new SharedArrayBuffer(n * 4));
   const buf = (k, cap = CAP) => ({ X: sh(cap * F), Y: sh(cap * k), W: sh(cap), size: 0, seen: 0, k });
   const adv = buf(A.aux ? 9 : 2), pol = buf(1, A.aux ? 1 : CAP);
+  // the checkpoint: each buffer mirrored row by row (features, targets, weight) in a file, plus meta.json with the
+  // iteration, buffer sizes, random state and the net (with its optimizer state)
+  const fs = require('fs'), CK = `${__dirname}/deep-${arch}-ckpt`; fs.mkdirSync(CK, { recursive: true });
+  const f32 = a => Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString('base64');
+  const unf32 = s => { const b = Buffer.from(s, 'base64'); return new Float32Array(b.buffer, b.byteOffset, b.length / 4).slice(); };
+  for (const [B, name] of [[adv, 'adv'], [pol, 'pol']]){
+    B.file = `${CK}/${name}.bin`; B.rowLen = F + B.k + 1; B.dirty = new Set();
+    B.fd = fs.openSync(B.file, fs.existsSync(B.file) ? 'r+' : 'w+');
+  }
+  const flush = B => { const row = new Float32Array(B.rowLen), rb = Buffer.from(row.buffer);
+    for (const j of B.dirty){ row.set(B.X.subarray(j * F, (j + 1) * F)); row.set(B.Y.subarray(j * B.k, (j + 1) * B.k), F); row[F + B.k] = B.W[j];
+      fs.writeSync(B.fd, rb, 0, rb.length, j * rb.length); }
+    fs.fsyncSync(B.fd); B.dirty.clear(); };
+  const load = B => { const CH = 10000, row = B.rowLen, buf = Buffer.alloc(CH * row * 4);
+    for (let j0 = 0; j0 < B.size; j0 += CH){ const n = Math.min(CH, B.size - j0);
+      fs.readSync(B.fd, buf, 0, n * row * 4, j0 * row * 4); const v = new Float32Array(buf.buffer, buf.byteOffset, n * row);
+      for (let i = 0; i < n; i++){ const j = j0 + i, r0 = i * row; B.X.set(v.subarray(r0, r0 + F), j * F); B.Y.set(v.subarray(r0 + F, r0 + F + B.k), j * B.k); B.W[j] = v[r0 + F + B.k]; } } };
   let rs = 987654321; const rnd = () => { rs ^= rs << 13; rs >>>= 0; rs ^= rs >>> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; };
   const add = (B, X, Y, n, w) => { for (let i = 0; i < n; i++){
     const j = B.size < CAP ? B.size++ : Math.floor(rnd() * (B.seen + 1)); B.seen++;
-    if (j < CAP){ B.X.set(X.subarray(i * F, (i + 1) * F), j * F); B.Y.set(Y.subarray(i * B.k, (i + 1) * B.k), j * B.k); B.W[j] = w; } } };
+    if (j < CAP){ B.X.set(X.subarray(i * F, (i + 1) * F), j * F); B.Y.set(Y.subarray(i * B.k, (i + 1) * B.k), j * B.k); B.W[j] = w; B.dirty.add(j); } } };
   const train = (net, B, steps, bs, loss, lr) => {
     const X = new Float32Array(bs * F), Y = new Float32Array(bs * B.k), W = new Float32Array(bs); let L = 0;
     for (let s = 0; s < steps; s++){
@@ -40,7 +59,14 @@ if (isMainThread){
     }
     return L;
   };
-  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919, arch, X: adv.X, Y: adv.Y, W: adv.W } }));
+  const net = A.make(2, 11); let start = 1;
+  if (fs.existsSync(`${CK}/meta.json`)){
+    const m = JSON.parse(fs.readFileSync(`${CK}/meta.json`, 'utf8'));
+    start = m.t + 1; rs = m.rs; Object.assign(adv, m.adv); Object.assign(pol, m.pol); net.p.set(unf32(m.p));
+    if (m.m){ net.g = new Float32Array(net.n); net.m = unf32(m.m); net.v = unf32(m.v); net.t = m.at; }
+    load(adv); load(pol); console.log(`resuming after iteration ${m.t} (${adv.size} regret examples)`);
+  }
+  const workers = Array.from({ length: nw }, (_, w) => new Worker(__filename, { workerData: { seed: 4242 + w * 7919 + (start - 1) * 104729, arch, X: adv.X, Y: adv.Y, W: adv.W } }));
   const run = (wk, msg) => new Promise(res => { wk.once('message', res); wk.postMessage(msg); });
   // the shared-encoder net is slow to train, so each batch is split across the worker threads (they read the
   // examples straight from the shared buffer and send back gradients)
@@ -57,13 +83,17 @@ if (isMainThread){
     return L;
   };
   (async () => {
-    const net = A.make(2, 11), t0 = Date.now();
-    for (let t = 1; t <= T; t++){
+    const t0 = Date.now();
+    for (let t = start; t <= T; t++){
       const outs = await Promise.all(workers.map(wk => run(wk, { type: 'play', p: net.p, games })));
       for (const o of outs){ add(adv, o.advX, o.advY, o.nAdv, t); add(pol, o.polX, o.polY, o.nPol, t); }
       const L = A.aux ? await trainPar(net, adv, +process.env.STEPS || 1500, 512, 1e-3) : train(net, adv, +process.env.STEPS || 1500, 512, 'mse', 1e-3);
       console.log(`iter ${t}/${T}: ${adv.size} regret examples, loss ${L.toFixed(4)}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
       save(`deep-${arch}-adv.json`, net, 2);
+      flush(adv); flush(pol);
+      const meta = { t, rs, adv: { size: adv.size, seen: adv.seen }, pol: { size: pol.size, seen: pol.seen }, p: f32(net.p) };
+      if (net.m) Object.assign(meta, { m: f32(net.m), v: f32(net.v), at: net.t });
+      fs.writeFileSync(`${CK}/meta.tmp`, JSON.stringify(meta)); fs.renameSync(`${CK}/meta.tmp`, `${CK}/meta.json`);
     }
     workers.forEach(w => w.terminate());
     if (A.aux){ console.log(`done, ${((Date.now() - t0) / 1000).toFixed(0)}s`); return; }
