@@ -3,3 +3,4 @@ check-net.sql
 deep-*.json
 deep-*-ckpt/
 deep-*.log
+deep
