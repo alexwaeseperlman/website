@@ -60,7 +60,7 @@ policy by self-play with Monte Carlo CFR, `node eval.js` checks it against the o
 page and the database bucket the same way, and `node export.js` writes this file and `public/no_thanks/bot-policy.txt`.
 
 Then run [`nothanks_net.sql`](nothanks_net.sql), which loads the neural-net bot used at tables of 2-6 players
-(without it, bots use the policy above). It's trained by `node deep.js <iters> <games> <workers> struct` (Deep CFR),
+(without it, bots use the policy above). It's trained by `node deep.js <iters> <games> <workers> pnet` (Deep CFR),
 compared with `node eval-deep.js` / `node h2h.js`, quantized with `node quant.js`, and `node export-net.js` writes this
 file and `public/no_thanks/bot-net.json`; `node check-net.js` checks the page against the trainer and writes
 `check-net.sql`, which should return no rows in the database.

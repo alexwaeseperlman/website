@@ -1,6 +1,6 @@
 // Deep CFR for No Thanks!: the same self-play regret idea as train.js, but a neural net (nn.js) reads the raw table
 // (game.js features) instead of a table of hand-made buckets.
-//   node deep.js [iterations] [games per worker per iteration] [workers] [mlp|struct|set]   -> writes deep-<arch>.json
+//   node deep.js [iterations] [games per worker per iteration] [workers] [mlp|struct|set|pnet]   -> writes deep-<arch>.json
 // It saves its progress in deep-<arch>-ckpt/ after every iteration and picks up from there if run again with the same
 // arguments (delete that folder to start over).
 // (mlp: nn.js over game.js's flat features; struct: structnet.js, a card window and a shared opponent encoder)
@@ -11,10 +11,12 @@
 // recorded with the strategy used there; at the end a policy net learns that average strategy, and it's what ships.
 'use strict';
 const { Worker, isMainThread, workerData, parentPort } = require('worker_threads');
-const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet');
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet'), PN = require('./pnet');
 const ARCHS = {
   mlp: { F: G.NFEAT, feat: G.features, make: (out, seed) => new MLP([G.NFEAT, 64, 64, out], seed) },
   struct: { F: S.F, feat: S.features, make: (out, seed) => new S.StructNet(out, seed) },
+  // pnet: pnet.js, every player through one shared encoder, opponents pooled by sum and max
+  pnet: { F: PN.F, feat: PN.features, make: (out, seed) => new PN.PNet(out, seed) },
   // set: setnet.js. Its examples also carry every seat's expected win share (for the aux head), and it ships the
   // final regret net's strategy, so there's no separate average-policy net.
   set: { F: SN.F, feat: SN.features, make: (out, seed) => new SN.SetNet(seed), aux: true },

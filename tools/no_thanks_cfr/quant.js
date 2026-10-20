@@ -1,8 +1,8 @@
 // Squeezes a net's weights to one signed byte each (one scale per layer's weights and one per its biases), so the
 // same bytes can ship to the page and the database. node quant.js in.json out.json  -> also prints base64 size
 'use strict';
-const W = require(require('path').resolve(process.argv[2])), S = require('./structnet');
-const net = new S.StructNet(W.out); net.p.set(W.p);
+const W = require(require('path').resolve(process.argv[2]));
+const net = W.arch === 'pnet' ? new (require('./pnet').PNet)(W.out) : new (require('./structnet').StructNet)(W.out); net.p.set(W.p);
 const bytes = new Int8Array(net.n), scales = [];
 for (const L of net.L) for (const [o, len] of [[L.w, L.i * L.o], [L.b, L.o]]){
   let m = 0; for (let k = 0; k < len; k++) m = Math.max(m, Math.abs(net.p[o + k]));
