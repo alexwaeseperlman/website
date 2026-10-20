@@ -17,6 +17,7 @@ const ARCHS = {
   struct: { F: S.F, feat: S.features, make: (out, seed) => new S.StructNet(out, seed) },
   // pnet: pnet.js, every player through one shared encoder, opponents pooled by sum and max
   pnet: { F: PN.F, feat: PN.features, make: (out, seed) => new PN.PNet(out, seed) },
+  pnetw: { F: PN.F, feat: PN.features, make: (out, seed) => new PN.PNet(out, seed, 64, 128) },   // the same, twice as wide
   // set: setnet.js. Its examples also carry every seat's expected win share (for the aux head), and it ships the
   // final regret net's strategy, so there's no separate average-policy net.
   set: { F: SN.F, feat: SN.features, make: (out, seed) => new SN.SetNet(seed), aux: true },
