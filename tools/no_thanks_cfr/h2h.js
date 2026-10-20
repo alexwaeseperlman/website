@@ -1,11 +1,11 @@
 // Head to head between two net bots: one of A among B's, and one of B among A's.
 //   node h2h.js a.json b.json [games per table size]
 'use strict';
-const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet');
+const G = require('./game'), { MLP } = require('./nn'), S = require('./structnet'), SN = require('./setnet'), PN = require('./pnet');
 const load = f => {
   const W = require(require('path').resolve(f));
-  const net = W.arch === 'set' ? new SN.SetNet() : W.arch === 'struct' ? new S.StructNet(W.out) : new MLP([G.NFEAT, 64, 64, W.out]); net.p.set(W.p);
-  const M = { set: SN, struct: S }[W.arch], feat = M ? M.features : G.features, x = new Float32Array(M ? M.F : G.NFEAT);
+  const net = W.arch === 'set' ? new SN.SetNet() : W.arch === 'pnet' ? new PN.PNet(W.out) : W.arch === 'struct' ? new S.StructNet(W.out) : new MLP([G.NFEAT, 64, 64, W.out]); net.p.set(W.p);
+  const M = { set: SN, struct: S, pnet: PN }[W.arch], feat = M ? M.features : G.features, x = new Float32Array(M ? M.F : G.NFEAT);
   return W.out === 1 ? (g, r) => r() < 1 / (1 + Math.exp(-net.forward(feat(g, x))[0]))
     : (g, r) => { const o = net.forward(feat(g, x)), a = Math.max(o[0], 0), b = Math.max(o[1], 0); return r() < (a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0); };
 };
