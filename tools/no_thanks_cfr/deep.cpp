@@ -4,7 +4,7 @@
 // It reads and writes the same checkpoint as deep.js (deep-<arch>-ckpt/), so a run can move between the two.
 // At the end it also trains the average-strategy net (deep-<name>.json, P(take)) from the recorded strategies;
 // running it again with the same iteration count after a finished run retrains just that. TAG=x names the run
-// <arch>-x (its checkpoint and output files).
+// <arch>-x (its checkpoint and output files). POOL (see loadPool) seats older bots at some of the learner's games.
 //   ./deep test <weights.json> <seed> <games>   prints game steps, features and net outputs (compare with check-cpp.js)
 #include <cmath>
 #include <cstdint>
@@ -178,19 +178,70 @@ static uint32_t rs = 987654321;
 static double rnd(){ rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs / 4294967296.0; }
 
 struct Out { vector<float> X, Y, PX, PY; };
+// ---- the opponent pool (POOL=a.json,b.json,table,rule; POOLP = chance a seat other than the learner's is from it) ----
+// game.js's bucket, keyOf and heuristic, for the table bot (policy.json) and the old rule of thumb
+static int bucket(int cost, int chips, int pot, bool fitsMine, bool fitsOpp, int minOpp, int left, int n){
+  int cb = cost <= -4 ? 0 : cost <= -1 ? 1 : cost <= 2 ? 2 : cost <= 5 ? 3 : cost <= 9 ? 4 : cost <= 14 ? 5 : cost <= 20 ? 6 : 7;
+  int mb = chips <= 1 ? 0 : chips == 2 ? 1 : chips <= 4 ? 2 : chips <= 7 ? 3 : chips <= 11 ? 4 : 5;
+  int pb = pot <= 1 ? 0 : pot <= 4 ? 1 : 2, ob = minOpp == 0 ? 0 : minOpp <= 3 ? 1 : 2, lb = left >= 16 ? 0 : left >= 8 ? 1 : 2, nb = n <= 3 ? 0 : n <= 5 ? 1 : 2;
+  return ((((((cb * 6 + mb) * 3 + pb) * 2 + fitsMine) * 2 + fitsOpp) * 3 + ob) * 3 + lb) * 3 + nb;
+}
+static int keyOf(const Game& g){
+  int p = g.turn, c = g.deck[g.idx], o = p * 37; bool fitsOpp = false; int minOpp = 99;
+  for (int q = 0; q < g.n; q++) if (q != p){ if (g.has[q * 37 + c - 1] || g.has[q * 37 + c + 1]) fitsOpp = true; minOpp = min(minOpp, g.chips[q]); }
+  return bucket(addPts(g, p, c) - g.pot, g.chips[p], g.pot, g.has[o + c - 1] || g.has[o + c + 1], fitsOpp, minOpp, leftOf(g), g.n);
+}
+static bool heuristic(const Game& g, Rng& r){
+  int p = g.turn, c = g.deck[g.idx], chips = g.chips[p], o = p * 37;
+  int cost = addPts(g, p, c) - g.pot; bool fits = g.has[o + c - 1] || g.has[o + c + 1];
+  if (fits && cost <= 0 && g.pot < g.n && r() < 0.5) return false;
+  int limit = chips <= 2 ? 12 : chips <= 4 ? 7 : chips <= 7 ? 3 : 0;
+  return cost <= limit + (r() < 0.2 ? 2 : 0);
+}
+struct Opp { int kind; const PNet* net; };   // kind 0: the net being trained, 1: a saved net, 2: the table bot, 3: the rule of thumb
+static vector<Opp> pool; static vector<float> table; static double poolP = 0.5;
+static void loadPool(const char* spec){
+  string s = spec; size_t a = 0;
+  while (a <= s.size()){
+    size_t b = s.find(',', a); if (b == string::npos) b = s.size(); string it = s.substr(a, b - a); a = b + 1;
+    if (it.empty()) continue;
+    if (it == "rule"){ pool.push_back({ 3, nullptr }); continue; }
+    if (it == "table"){ string j = readFile("policy.json"); const char* q = j.c_str() + 1; char* e;
+      for (;;){ double v = strtod(q, &e); table.push_back(v < 0 ? -1 : (float)(v / 100)); q = e; if (*q != ',') break; q++; }
+      pool.push_back({ 2, nullptr }); continue; }
+    string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
+    bool wide = jsonVal(j, "arch") == "pnetw"; PNet* net = new PNet(out, 1, wide ? 64 : 32, wide ? 128 : 64);
+    if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
+    net->p = w; pool.push_back({ 1, net });
+  }
+  fprintf(stderr, "opponent pool: %zu\n", pool.size());
+}
+
 static void play(const PNet& net, Rng& r, int games, Out& out){
   static const int tables[12] = { 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7 };
-  Cache c = net.cache(); vector<float> x(F), feats(F);
+  Cache c = net.cache(), oc = net.cache(); vector<float> x(F), feats(F), ox(F);
+  vector<Cache> pc; for (auto& o : pool) pc.push_back(o.net ? o.net->cache() : Cache());
+  int seat[7];   // which pool member sits in each seat (-1: the net being trained)
   auto sigma = [&](const Game& g){ features(g, x.data()); return sigmaOf(net.forward(x.data(), c)); };
+  auto other = [&](const Game& g, Rng& rr){   // a pool member's move
+    int k = seat[g.turn]; const Opp& o = pool[k];
+    if (o.kind == 3) return heuristic(g, rr);
+    if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? rr() < pt : heuristic(g, rr); }
+    features(g, ox.data()); const float* y = o.net->forward(ox.data(), pc[k]);
+    return rr() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+  };
   auto rollout = [&](Game g, bool take, uint32_t seed){
     Rng rr(seed); bool over = step(g, take);
-    while (!over) over = step(g, g.chips[g.turn] == 0 || rr() < sigma(g));
+    while (!over) over = step(g, g.chips[g.turn] == 0 || (seat[g.turn] >= 0 ? other(g, rr) : rr() < sigma(g)));
     return g;
   };
   for (int i = 0; i < games; i++){
     int n = tables[(int)floor(r() * 12)]; Game g; newGame(g, n, r); int me = (int)floor(r() * n);
+    for (int q = 0; q < 7; q++) seat[q] = -1;
+    if (!pool.empty()) for (int q = 0; q < n; q++) if (q != me && r() < poolP) seat[q] = (int)floor(r() * pool.size());
     for (;;){
       if (g.chips[g.turn] == 0){ if (step(g, true)) break; continue; }
+      if (seat[g.turn] >= 0){ if (step(g, other(g, r))) break; continue; }
       double s = sigma(g);
       if (r() < 0.1){ out.PX.insert(out.PX.end(), x.begin(), x.end()); out.PY.push_back((float)s); }
       if (g.turn == me && r() < 0.25){
@@ -267,7 +318,7 @@ static int test(const char* wfile, uint32_t seed, int games){
     for (;;){
       features(g, x.data()); const float* o = net.forward(x.data(), c);
       double fs = 0; for (int k = 0; k < F; k++) fs += x[k] * (k % 7 + 1);
-      printf("%d %d %d %d %.6f %.6f %.6f\n", g.turn, g.deck[g.idx], g.pot, g.chips[g.turn], fs, o[0], o[1]);
+      printf("%d %d %d %d %.6f %.6f %.6f %d\n", g.turn, g.deck[g.idx], g.pot, g.chips[g.turn], fs, o[0], o[1], keyOf(g));
       if (step(g, g.chips[g.turn] == 0 || r() < 0.4)) break;
     }
     for (int q = 0; q < n; q++) printf("end %d %d %.4f\n", g.pts[q], g.chips[q], winShare(g, q));
@@ -285,6 +336,8 @@ int main(int argc, char** argv){
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
   string arch = argc > 4 ? argv[4] : "pnet";
+  if (getenv("POOL")) loadPool(getenv("POOL"));
+  if (getenv("POOLP")) poolP = atof(getenv("POOLP"));
   int H = arch == "pnetw" ? 64 : 32, TT = arch == "pnetw" ? 128 : 64;
   PNet net(2, 11, H, TT); int start = 1;
   Buf adv{ 2, F + 3 }; adv.X.resize(CAP * F); adv.Y.resize(CAP * 2); adv.W.resize(CAP); adv.dirty.assign(CAP, 0);
