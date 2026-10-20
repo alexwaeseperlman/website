@@ -1,8 +1,8 @@
 // Checks the page's neural-net bot (netFeatures / netForward in public/no_thanks/index.html, reading bot-net.json)
-// against structnet.js on random game states, and writes check-net.sql: the same states for the database's
+// against pnet.js on random game states, and writes check-net.sql: the same states for the database's
 // nothanks_net_take (run it: it should return 0 rows).
 'use strict';
-const fs = require('fs'), path = require('path'), G = require('./game'), S = require('./structnet');
+const fs = require('fs'), path = require('path'), G = require('./game'), S = require('./pnet');
 const pub = path.join(__dirname, '../../public/no_thanks'), html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
 const grab = name => { const s = html.indexOf(`function ${name}(`); return html.slice(s, html.indexOf('\n}\n', s) + 3); };
 const cardPoints = html.match(/^const cardPoints = .*$/m)[0], layers = html.match(/^const NET_LAYERS = .*$/m)[0];
@@ -13,8 +13,8 @@ const page = new Function('j', `${cardPoints}\n${layers}\nlet net;\n${grab('netF
   for (const [i, n] of NET_LAYERS){ for (const len of [i * n, n]){ const s = j.scales[si++]; for (let k = 0; k < len; k++) p[o + k] = (q[o + k] << 24 >> 24) * s; o += len; } L.push({ i, o: n, w: o - i * n - n, b: o - n }); }
   net = { p, L };
   return { netFeatures, netForward, netTakeProb };`)(JSON.parse(fs.readFileSync(path.join(pub, 'bot-net.json'), 'utf8')));
-// reference: structnet with the same dequantized weights
-const j = JSON.parse(fs.readFileSync(path.join(pub, 'bot-net.json'), 'utf8')), ref = new S.StructNet(2), q = Buffer.from(j.q, 'base64');
+// reference: pnet with the same dequantized weights
+const j = JSON.parse(fs.readFileSync(path.join(pub, 'bot-net.json'), 'utf8')), ref = new S.PNet(2), q = Buffer.from(j.q, 'base64');
 let si = 0; for (const L of ref.L) for (const [o, len] of [[L.w, L.i * L.o], [L.b, L.o]]){ const s = j.scales[si++]; for (let k = 0; k < len; k++) ref.p[o + k] = q.readInt8(o + k) * s; }
 const r = G.rng(11), x = new Float32Array(S.F), rows = []; let worst = 0, featBad = 0, count = 0;
 for (let i = 0; i < 2000; i++){
@@ -30,7 +30,7 @@ for (let i = 0; i < 2000; i++){
   worst = Math.max(worst, Math.abs(po[0] - ro[0]), Math.abs(po[1] - ro[1])); count++;
   if (rows.length < 120) rows.push({ args, p: page.netTakeProb(...args) });
 }
-console.log(`page vs structnet: ${featBad} feature mismatches, worst output difference ${worst.toExponential(2)}, ${count} states`);
+console.log(`page vs pnet: ${featBad} feature mismatches, worst output difference ${worst.toExponential(2)}, ${count} states`);
 const arr = a => `'{${a.join(',')}}'::int[]`;
 fs.writeFileSync(path.join(__dirname, 'check-net.sql'), `select * from (values ${rows.map(({ args: [cards, chips, card, pot, others, left, n], p }) =>
   `(${p.toFixed(6)}::real,${arr(cards)},${chips},${card},${pot},${left},${n},'${JSON.stringify(others.map(o => o.cards))}'::jsonb,${arr(others.map(o => o.chips))})`).join(',\n')}) v(p, hand, chips, card, pot, lft, n, opp_cards, opp_chips)
