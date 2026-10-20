@@ -2,7 +2,9 @@
 //   g++ -O3 -march=native -ffast-math -std=c++17 -pthread deep.cpp -o deep      (on an M1: clang++ -mcpu=native ...)
 //   ./deep [iterations] [games per worker per iteration] [workers] [pnet|pnetw]   -> writes deep-<arch>-adv.json
 // It reads and writes the same checkpoint as deep.js (deep-<arch>-ckpt/), so a run can move between the two.
-// It skips deep.js's average-policy net: the regret net's strategy is what ships.
+// At the end it also trains the average-strategy net (deep-<name>.json, P(take)) from the recorded strategies;
+// running it again with the same iteration count after a finished run retrains just that. TAG=x names the run
+// <arch>-x (its checkpoint and output files).
 //   ./deep test <weights.json> <seed> <games>   prints game steps, features and net outputs (compare with check-cpp.js)
 #include <cmath>
 #include <cstdint>
@@ -175,7 +177,7 @@ static const long CAP = 1500000;
 static uint32_t rs = 987654321;
 static double rnd(){ rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs / 4294967296.0; }
 
-struct Out { vector<float> X, Y; };
+struct Out { vector<float> X, Y, PX, PY; };
 static void play(const PNet& net, Rng& r, int games, Out& out){
   static const int tables[12] = { 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7 };
   Cache c = net.cache(); vector<float> x(F), feats(F);
@@ -190,7 +192,7 @@ static void play(const PNet& net, Rng& r, int games, Out& out){
     for (;;){
       if (g.chips[g.turn] == 0){ if (step(g, true)) break; continue; }
       double s = sigma(g);
-      r();   // deep.js draws here to sample the policy net's examples
+      if (r() < 0.1){ out.PX.insert(out.PX.end(), x.begin(), x.end()); out.PY.push_back((float)s); }
       if (g.turn == me && r() < 0.25){
         feats = x; uint32_t sd = (uint32_t)(r() * 4294967296.0);
         Game gt = rollout(g, true, sd), gp = rollout(g, false, sd);
@@ -202,11 +204,11 @@ static void play(const PNet& net, Rng& r, int games, Out& out){
   }
 }
 
-static void add(Buf& B, const Out& o, float w){
-  long cnt = (long)(o.X.size() / F);
+static void add(Buf& B, const vector<float>& X, const vector<float>& Y, float w){
+  long cnt = (long)(X.size() / F);
   for (long i = 0; i < cnt; i++){
     long j = B.size < CAP ? B.size++ : (long)floor(rnd() * (B.seen + 1)); B.seen++;
-    if (j < CAP){ memcpy(&B.X[j * F], &o.X[i * F], F * 4); memcpy(&B.Y[j * B.k], &o.Y[i * B.k], B.k * 4); B.W[j] = w; B.dirty[j] = 1; }
+    if (j < CAP){ memcpy(&B.X[j * F], &X[i * F], F * 4); memcpy(&B.Y[j * B.k], &Y[i * B.k], B.k * 4); B.W[j] = w; B.dirty[j] = 1; }
   }
 }
 static void flush(Buf& B){
@@ -225,8 +227,8 @@ static void load(Buf& B){
   }
 }
 
-// one Adam step on a batch of bs examples (mse on the regrets), the gradient split across the threads
-static double trainStep(PNet& net, const Buf& B, int bs, double lr, int nt, vector<Grads>& G, vector<Cache>& C){
+// one Adam step on a batch of bs examples (mse on the regrets, or cross-entropy on P(take)), split across the threads
+static double trainStep(PNet& net, const Buf& B, int bs, double lr, int nt, vector<Grads>& G, vector<Cache>& C, bool bce = false){
   vector<long> idx(bs); double wsum = 0;
   for (int b = 0; b < bs; b++){ idx[b] = (long)floor(rnd() * B.size); wsum += B.W[idx[b]]; }
   vector<double> tot(nt, 0); vector<thread> th;
@@ -234,7 +236,11 @@ static double trainStep(PNet& net, const Buf& B, int bs, double lr, int nt, vect
     Grads& d = G[t]; fill(d.g.begin(), d.g.end(), 0.f); float dout[2];
     for (int b = t; b < bs; b += nt){
       long j = idx[b]; const float* x = &B.X[j * F]; const float* o = net.forward(x, C[t]); double w = B.W[j] / wsum;
-      for (int k = 0; k < 2; k++){ double e = o[k] - B.Y[j * 2 + k]; dout[k] = (float)(2 * w * e); tot[t] += w * e * e; }
+      for (int k = 0; k < B.k; k++){
+        double y = B.Y[j * B.k + k];
+        if (bce){ double q = 1 / (1 + exp(-o[k])); dout[k] = (float)(w * (q - y)); tot[t] += w * -(y * log(q + 1e-7) + (1 - y) * log(1 - q + 1e-7)); }
+        else { double e = o[k] - y; dout[k] = (float)(2 * w * e); tot[t] += w * e * e; }
+      }
       net.backward(x, C[t], dout, d);
     }
   });
@@ -247,7 +253,7 @@ static double trainStep(PNet& net, const Buf& B, int bs, double lr, int nt, vect
 
 static void saveJson(const string& file, const string& arch, const PNet& net){
   FILE* f = fopen((file + ".tmp").c_str(), "w");
-  fprintf(f, "{\"arch\":\"%s\",\"out\":2,\"p\":[", arch.c_str());
+  fprintf(f, "{\"arch\":\"%s\",\"out\":%d,\"p\":[", arch.c_str(), net.out);
   for (int k = 0; k < net.n; k++) fprintf(f, k ? ",%.5g" : "%.5g", net.p[k]);
   fprintf(f, "]}"); fclose(f); rename((file + ".tmp").c_str(), file.c_str());
 }
@@ -282,19 +288,20 @@ int main(int argc, char** argv){
   int H = arch == "pnetw" ? 64 : 32, TT = arch == "pnetw" ? 128 : 64;
   PNet net(2, 11, H, TT); int start = 1;
   Buf adv{ 2, F + 3 }; adv.X.resize(CAP * F); adv.Y.resize(CAP * 2); adv.W.resize(CAP); adv.dirty.assign(CAP, 0);
-  string CK = "deep-" + arch + "-ckpt"; mkdir(CK.c_str(), 0755);
-  string af = CK + "/adv.bin"; adv.fd = fopen(af.c_str(), "r+b"); if (!adv.fd) adv.fd = fopen(af.c_str(), "w+b");
-  string polMeta = "{\"size\":0,\"seen\":0}";
+  Buf pol{ 1, F + 2 }; pol.X.resize(CAP * F); pol.Y.resize(CAP); pol.W.resize(CAP); pol.dirty.assign(CAP, 0);
+  string name = arch + (getenv("TAG") ? string("-") + getenv("TAG") : ""), CK = "deep-" + name + "-ckpt"; mkdir(CK.c_str(), 0755);
+  for (auto [B, f] : { pair<Buf*, string>{ &adv, "adv" }, { &pol, "pol" } }){
+    string fn = CK + "/" + f + ".bin"; B->fd = fopen(fn.c_str(), "r+b"); if (!B->fd) B->fd = fopen(fn.c_str(), "w+b"); }
   string meta = readFile(CK + "/meta.json");
   if (!meta.empty()){
     start = atoi(jsonVal(meta, "t").c_str()) + 1; rs = (uint32_t)strtoul(jsonVal(meta, "rs").c_str(), nullptr, 10);
     size_t a = meta.find("\"adv\":"), pp = meta.find("\"pol\":");
     adv.size = atol(jsonVal(meta, "size", a).c_str()); adv.seen = atol(jsonVal(meta, "seen", a).c_str());
-    polMeta = meta.substr(pp + 6, meta.find('}', pp) - pp - 5);
+    pol.size = atol(jsonVal(meta, "size", pp).c_str()); pol.seen = atol(jsonVal(meta, "seen", pp).c_str());
     net.p = unb64(jsonVal(meta, "p"));
     if (meta.find("\"m\":") != string::npos){ net.m = unb64(jsonVal(meta, "m")); net.v = unb64(jsonVal(meta, "v")); net.at = atoi(jsonVal(meta, "at").c_str()); }
     if ((int)net.p.size() != net.n){ fprintf(stderr, "checkpoint has %zu weights, want %d\n", net.p.size(), net.n); return 1; }
-    load(adv); printf("resuming after iteration %d (%ld regret examples)\n", start - 1, adv.size); fflush(stdout);
+    load(adv); load(pol); printf("resuming after iteration %d (%ld regret examples)\n", start - 1, adv.size); fflush(stdout);
   }
   vector<Rng> rngs; for (int w = 0; w < nw; w++) rngs.emplace_back(4242 + w * 7919 + (start - 1) * 104729);
   vector<Grads> G; vector<Cache> C; for (int t = 0; t < nw; t++){ G.push_back(net.grads()); C.push_back(net.cache()); }
@@ -305,15 +312,24 @@ int main(int argc, char** argv){
     for (int w = 0; w < nw; w++) th.emplace_back([&, w]{ play(net, rngs[w], games, outs[w]); });
     for (auto& x : th) x.join();
     tp = secs() - tp;
-    for (auto& o : outs) add(adv, o, (float)t);
+    for (auto& o : outs){ add(adv, o.X, o.Y, (float)t); add(pol, o.PX, o.PY, (float)t); }
     double L = 0; for (int s = 0; s < steps; s++) L = 0.98 * L + 0.02 * trainStep(net, adv, 512, 1e-3, nw, G, C);
     printf("iter %d/%d: %ld regret examples, loss %.4f, %.0fs (play %.0fs)\n", t, T, adv.size, L, secs(), tp); fflush(stdout);
-    saveJson("deep-" + arch + "-adv.json", arch, net);
-    flush(adv);
+    saveJson("deep-" + name + "-adv.json", arch, net);
+    flush(adv); flush(pol);
     FILE* f = fopen((CK + "/meta.tmp").c_str(), "w");
-    fprintf(f, "{\"t\":%d,\"rs\":%u,\"adv\":{\"size\":%ld,\"seen\":%ld},\"pol\":%s,\"p\":\"%s\",\"m\":\"%s\",\"v\":\"%s\",\"at\":%d}",
-      t, rs, adv.size, adv.seen, polMeta.c_str(), b64(net.p.data(), net.n).c_str(), b64(net.m.data(), net.n).c_str(), b64(net.v.data(), net.n).c_str(), net.at);
+    fprintf(f, "{\"t\":%d,\"rs\":%u,\"adv\":{\"size\":%ld,\"seen\":%ld},\"pol\":{\"size\":%ld,\"seen\":%ld},\"p\":\"%s\",\"m\":\"%s\",\"v\":\"%s\",\"at\":%d}",
+      t, rs, adv.size, adv.seen, pol.size, pol.seen, b64(net.p.data(), net.n).c_str(), b64(net.m.data(), net.n).c_str(), b64(net.v.data(), net.n).c_str(), net.at);
     fclose(f); rename((CK + "/meta.tmp").c_str(), (CK + "/meta.json").c_str());
   }
+  // the average strategy: P(take) over every recorded decision, weighted by iteration
+  PNet avg(1, 12, H, TT); vector<Grads> PG; vector<Cache> PC; for (int t = 0; t < nw; t++){ PG.push_back(avg.grads()); PC.push_back(avg.cache()); }
+  int ps = getenv("PSTEPS") ? atoi(getenv("PSTEPS")) : 20000; double L = 0;
+  printf("average-strategy net on %ld decisions\n", pol.size); fflush(stdout);
+  for (int s = 0; s < ps; s++){
+    L = 0.98 * L + 0.02 * trainStep(avg, pol, 512, s < ps * 0.7 ? 1e-3 : 3e-4, nw, PG, PC, true);
+    if ((s + 1) % (ps / 10) == 0){ printf("  step %d/%d: loss %.4f\n", s + 1, ps, L); fflush(stdout); }
+  }
+  saveJson("deep-" + name + ".json", arch, avg);
   printf("done, %.0fs\n", secs());
 }
