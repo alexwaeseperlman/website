@@ -1,0 +1,1577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>reels</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one phone-shaped column holding the reels feed (full-bleed snap scroll) or the posts feed, with chrome floating over it; wider screens center the column on a dark field. */
+:root{
+  --void:#08070b;
+  --screen:#000000;
+  --surface:#121016;
+  --raise:rgba(255,255,255,.055);
+  --ink:#f4f2f8;
+  --ink-dim:rgba(244,242,248,.66);
+  --ink-faint:rgba(244,242,248,.38);
+  --glass:rgba(18,16,24,.55);
+  --line:rgba(244,242,248,.14);
+  --l4:#ff5fa8;
+  --l3:#3fd0b8;
+  --l2:#b9b7c0;
+  --l1:#ffffff;
+  --good:#3fd0b8;
+  --warn:#ffb547;
+  --f-display:"Bricolage Grotesque", ui-rounded, system-ui, sans-serif;
+  --f-body:"Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.stage{height:100%;display:flex;justify-content:center}
+.app{position:relative;height:100%;width:100%;max-width:calc(100dvh * .58);background:var(--screen);overflow:hidden;isolation:isolate}
+@media (min-width:700px){.app{box-shadow:0 0 0 1px var(--line),0 40px 120px rgba(0,0,0,.7)}}
+
+/* feed */
+.feed{height:100%;overflow-y:scroll;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
+.feed::-webkit-scrollbar{display:none}
+.slide{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;background:var(--screen)}
+.slide canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.slide::after{content:"";position:absolute;inset:auto 0 0;height:38%;background:linear-gradient(transparent,rgba(0,0,0,.45) 45%,rgba(0,0,0,.8));pointer-events:none}
+
+.cap{position:absolute;z-index:1;left:max(16px,env(safe-area-inset-left,0px));right:88px;bottom:calc(26px + env(safe-area-inset-bottom,0px));display:grid;gap:6px;text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.cap h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:1.15rem;letter-spacing:-.01em;text-wrap:balance}
+.cap .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:.8rem;color:var(--ink-dim)}
+.seed{font-variant-numeric:tabular-nums;letter-spacing:.04em;opacity:.8}
+
+.top{position:absolute;z-index:3;inset:0 0 auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding-block:12px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:linear-gradient(rgba(0,0,0,.45),transparent);pointer-events:none}
+.top>*{pointer-events:auto}
+.mark{justify-self:start;font-family:var(--f-display);font-weight:700;font-size:1.4rem;letter-spacing:-.03em}
+.mark span{opacity:.45}
+
+.rail{position:absolute;z-index:3;right:max(12px,env(safe-area-inset-right,0px));bottom:96px;display:flex;flex-direction:column;gap:16px}
+.rail button{display:grid;justify-items:center;gap:5px;border:0;background:none;padding:0;font-size:.7rem;font-weight:600;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.rail .ic{width:48px;height:48px;border-radius:50%;background:var(--glass);display:grid;place-items:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:transform .15s}
+.rail button:active .ic{transform:scale(.9)}
+
+.progress{position:absolute;z-index:3;inset:auto 0 0;height:2px;background:rgba(255,255,255,.14);pointer-events:none}
+.progress i{display:block;height:100%;width:100%;background:rgba(255,255,255,.85);transform-origin:left;transform:scaleX(0)}
+
+
+.toast{position:absolute;z-index:30;top:70px;left:50%;transform:translate(-50%,-8px);max-width:calc(100% - 32px);padding:9px 16px;border-radius:999px;background:rgba(10,9,14,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font-weight:500;font-size:.86rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.pauseglyph{position:absolute;z-index:2;top:50%;left:50%;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;background:rgba(0,0,0,.4);display:grid;place-items:center;opacity:0;transform:scale(.8);transition:opacity .25s,transform .25s;pointer-events:none}
+.pauseglyph svg{width:36px;height:36px;fill:currentColor;stroke:none}
+.pauseglyph.show{opacity:1;transform:scale(1)}
+
+.hint{position:absolute;z-index:2;left:50%;bottom:130px;transform:translateX(-50%);display:grid;justify-items:center;gap:2px;font-size:.78rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-shadow:0 1px 8px rgba(0,0,0,.6);pointer-events:none;transition:opacity .4s}
+.hint svg{animation:nudge 1.6s ease-in-out infinite}
+.hint.gone{opacity:0}
+@keyframes nudge{0%,100%{transform:translateY(6px);opacity:.4}50%{transform:translateY(-4px);opacity:1}}
+
+.fswitch{justify-self:center;display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.fswitch button{border:0;background:none;padding:6px 12px;border-radius:999px;font-weight:600;font-size:.84rem;color:var(--ink-dim)}
+.fswitch button[aria-pressed="true"]{background:var(--ink);color:var(--screen)}
+.postsmount{position:absolute;inset:60px 0 0;z-index:2;background:var(--screen);overflow:hidden}
+.posts .rail,.posts .progress,.posts .hint{display:none}
+.posts .top{background:var(--screen);padding-block:12px 10px;border-bottom:1px solid var(--line)}
+
+.iconbtn{width:36px;height:36px;border-radius:50%;border:0;background:var(--glass);display:grid;place-items:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.iconbtn svg{width:18px;height:18px}
+
+.keys{position:fixed;left:24px;bottom:24px;display:none;gap:6px;font-size:.82rem;color:var(--ink-dim);line-height:1.5}
+.keys kbd{font:600 .75rem var(--f-body);padding:2px 6px;border-radius:5px;border:1px solid var(--line);color:var(--ink)}
+@media (min-width:1000px) and (hover:hover){.keys{display:grid}}
+
+@media (prefers-reduced-motion:reduce){.hint svg{animation:none}.toast{transition:none}}
+
+/* sheets */
+.label{font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:10px}
+.help{font-size:.84rem;color:var(--ink-dim);margin:10px 2px 0;line-height:1.45}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;border-radius:14px;background:var(--raise)}
+.seg button{border:0;background:none;padding:10px 6px;border-radius:10px;font-weight:600;font-size:.9rem;color:var(--ink-dim);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.row{display:flex;flex-wrap:wrap;gap:10px}
+.btn{padding:11px 18px;border-radius:999px;border:1px solid var(--line);background:none;font-weight:600;font-size:.92rem}
+.btn.solid{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.scrim{position:absolute;z-index:20;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:absolute;z-index:21;inset:auto 0 0;display:grid;gap:20px;background:var(--surface);border-radius:22px 22px 0 0;padding-block:10px calc(22px + env(safe-area-inset-bottom,0px));padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px));transform:translateY(105%);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.sheet.open{transform:none}
+.grab{justify-self:center;width:40px;height:5px;border-radius:3px;background:var(--line)}
+.linkbox{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--raise);color:var(--ink);font:500 .85rem var(--f-body);-webkit-user-select:text;user-select:text}
+.top .gear{justify-self:end}
+#shareName{text-transform:none;letter-spacing:0;color:var(--ink-dim)}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}}
+
+</style>
+
+<div class="stage">
+  <div class="app" id="app">
+    <div class="feed" id="feed" aria-label="Reels"></div>
+    <div class="postsmount" id="postsMount" hidden></div>
+
+    <div class="top">
+      <div class="mark" id="mark">reels<span>.</span></div>
+      <div class="fswitch" id="fswitch" hidden>
+        <button id="fs-reels" data-feed="reels" aria-pressed="true">Reels</button>
+        <button id="fs-posts" data-feed="posts" aria-pressed="false">Posts</button>
+      </div>
+      <button class="iconbtn gear" id="openSettings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+    </div>
+
+    <div class="rail">
+      <button id="shareBtn" aria-label="Share this reel">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg></span>Share
+      </button>
+    </div>
+
+    <div class="pauseglyph" id="glyph"></div>
+    <div class="hint" id="hint"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>Swipe up</div>
+    <div class="progress"><i id="bar"></i></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="grab"></div>
+      <div>
+        <div class="label">Winds down over</div>
+        <div class="seg" id="windSeg">
+          <button id="wind-10" data-wind="10">10 min</button>
+          <button id="wind-20" data-wind="20">20 min</button>
+          <button id="wind-40" data-wind="40">40 min</button>
+        </div>
+        <p class="help">The feed starts vivid each day and slowly turns into plain shapes as you scroll.</p>
+      </div>
+      <div class="row">
+        <button class="btn solid" id="done">Done</button>
+        <button class="btn" id="fresh">Start fresh</button>
+      </div>
+    </div>
+    <div class="sheet" id="shareSheet" role="dialog" aria-modal="true" aria-label="Share reel">
+      <div class="grab"></div>
+      <div>
+        <div class="label">Share <span id="shareName"></span></div>
+        <input class="linkbox" id="shareUrl" readonly aria-label="Link to this reel">
+        <p class="help">Copy the link. Anyone who opens it sees this exact reel.</p>
+      </div>
+      <div class="row"><button class="btn solid" id="shareDone">Done</button></div>
+    </div>
+  </div>
+</div>
+<div class="keys" aria-hidden="true">
+  <div><kbd>↑</kbd> <kbd>↓</kbd> or scroll to move between reels</div>
+  <div><kbd>Space</kbd> pause · <kbd>P</kbd> reels or posts</div>
+</div>
+
+<script>
+(() => {
+const TAU = Math.PI * 2;
+/* ---------- helpers ---------- */
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const pick = (r, a) => a[Math.floor(r() * a.length)];
+function poly(c, x, y, rad, n, rot) { c.beginPath(); for (let i = 0; i < n; i++) { const a = rot + i * TAU / n - Math.PI / 2; const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad; i ? c.lineTo(px, py) : c.moveTo(px, py); } c.closePath(); }
+function shapePath(c, type, x, y, rad, rot) { if (type === 0) { c.beginPath(); c.arc(x, y, rad, 0, TAU); } else poly(c, x, y, rad, type === 1 ? 3 : type === 2 ? 4 : 6, rot); }
+function hsl2rgb(h, s, l) { const a = s * Math.min(l, 1 - l); const f = n => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return [f(0) * 255, f(8) * 255, f(4) * 255]; }
+const LUT = new Uint8ClampedArray(360 * 3);
+for (let h = 0; h < 360; h++) { const [r, g, b] = hsl2rgb(h / 360, 1, .55); LUT[h * 3] = r; LUT[h * 3 + 1] = g; LUT[h * 3 + 2] = b; }
+const bw = (r, p = .7) => r() < p ? ['#000', '#fff'] : ['#fff', '#000'];
+const PALETTES = [
+  ['#1d3557', '#e76f51', '#f4a261', '#2a9d8f', '#e9c46a'],
+  ['#22223b', '#c9ada7', '#9a8c98', '#f2e9e4', '#4a4e69'],
+  ['#0b3954', '#bfd7ea', '#ff6663', '#e0ff4f', '#087e8b'],
+  ['#2b2d42', '#8d99ae', '#ef233c', '#edf2f4', '#ffb703'],
+  ['#16302b', '#694873', '#8b728e', '#85b79d', '#c0e5c8'],
+  ['#3d348b', '#7678ed', '#f7b801', '#f18701', '#f35b04'],
+  ['#f6efe6', '#264653', '#e76f51', '#2a9d8f', '#e9c46a'],
+];
+
+/* ---------- reel generators, grouped by level ---------- */
+const GENS = {
+4: [
+  { name: 'Kaleidoscope',
+    make(r) { return { segs: 6 + 2 * Math.floor(r() * 4), hue: r() * 360, shapes: Array.from({ length: 16 }, () => ({ d: r(), s: .2 + r() * .9, ph: r() * TAU, sz: .03 + r() * .09, h: r() * 140, type: Math.floor(r() * 4), sp: .3 + r() * .8 })) }; },
+    draw(c, w, h, t, s) {
+      const cx = w / 2, cy = h / 2, R = Math.hypot(w, h) / 2, a = TAU / s.segs, m = Math.min(w, h);
+      c.fillStyle = `hsl(${s.hue + t * 25},70%,7%)`; c.fillRect(0, 0, w, h);
+      c.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < s.segs; k++) {
+        c.save(); c.translate(cx, cy);
+        if (k % 2) { c.rotate((k + 1) * a + t * .2); c.scale(1, -1); } else c.rotate(k * a + t * .2);
+        c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, R, 0, a + .002); c.closePath(); c.clip();
+        for (const p of s.shapes) {
+          const d = (.06 + p.d * .9 + .15 * Math.sin(t * p.sp + p.ph)) * R * .9;
+          const th = a * (.5 + .5 * Math.sin(t * p.s + p.ph * 2));
+          const z = p.sz * m * (1 + .4 * Math.sin(t * 2 * p.sp + p.ph));
+          c.fillStyle = `hsla(${s.hue + p.h + t * 40},95%,58%,.55)`;
+          shapePath(c, p.type, Math.cos(th) * d, Math.sin(th) * d, z, t * p.sp * 2); c.fill();
+        }
+        c.restore();
+      }
+    } },
+  { name: 'Tunnel',
+    make(r) { return { sides: 3 + Math.floor(r() * 5), hue: r() * 360, twist: .08 + r() * .2, dir: r() < .5 ? -1 : 1 }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
+      const R = Math.hypot(w, h) * .8, N = 34, base = t * 2.2, fr = base % 1, fl = Math.floor(base);
+      const cx = w / 2 + Math.sin(t * .7) * w * .06, cy = h / 2 + Math.cos(t * .5) * h * .05;
+      c.lineJoin = 'round';
+      for (let i = 0; i < N; i++) {
+        const z = (i + fr) / N, id = i - fl, rr = z * z * z * R;
+        c.lineWidth = 1 + z * z * 26;
+        c.strokeStyle = `hsl(${s.hue + id * 14 + t * 30},100%,60%)`;
+        poly(c, cx, cy, rr, s.sides, s.dir * (id * s.twist + t * .6)); c.stroke();
+      }
+    } },
+  { name: 'Bloom',
+    make(r) { return { n: 900, hue: r() * 360, drift: .0006 + r() * .0016 }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = '#05030a'; c.fillRect(0, 0, w, h);
+      const cx = w / 2, cy = h / 2, R = Math.hypot(w, h) / 2, k = R / Math.sqrt(s.n), ga = 2.39996323 + Math.sin(t * .15) * s.drift;
+      for (let i = 0; i < s.n; i++) {
+        const a = i * ga + t * .4, rr = k * Math.sqrt(i);
+        const sz = (1.5 + rr / R * 7) * (.7 + .3 * Math.sin(t * 3 - i * .02));
+        c.fillStyle = `hsl(${s.hue + i * .4 - t * 60},95%,60%)`;
+        c.beginPath(); c.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, sz, 0, TAU); c.fill();
+      }
+    } },
+  { name: 'Plasma',
+    make(r) { const cv = document.createElement('canvas'); cv.width = 54; cv.height = 96; return { cv, cx: cv.getContext('2d'), img: null, hue: r() * 360, f: .8 + r() * .6 }; },
+    draw(c, w, h, t, s) {
+      const W = s.cv.width, H = s.cv.height;
+      if (!s.img) s.img = s.cx.createImageData(W, H);
+      const d = s.img.data, ox = W / 2 + Math.sin(t * .6) * 14, oy = H / 2 + Math.cos(t * .4) * 20;
+      let p = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = Math.sin(x * .16 * s.f + t * 1.3) + Math.sin(y * .11 * s.f - t * 1.7) + Math.sin((x + y) * .09 + t) + Math.sin(Math.hypot(x - ox, y - oy) * .2 * s.f - t * 2.2);
+        const hh = ((((v * 45 + s.hue + t * 40) % 360) + 360) % 360 | 0) * 3;
+        d[p++] = LUT[hh]; d[p++] = LUT[hh + 1]; d[p++] = LUT[hh + 2]; d[p++] = 255;
+      }
+      s.cx.putImageData(s.img, 0, 0);
+      c.imageSmoothingEnabled = true; c.drawImage(s.cv, 0, 0, w, h);
+    } },
+  { name: 'Interference',
+    make(r) { return { hue: r() * 360, gap: 14 + r() * 10 }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
+      c.globalCompositeOperation = 'lighter'; c.lineWidth = s.gap * .45;
+      const R = Math.hypot(w, h);
+      const sets = [[Math.sin(t * .8) * w * .25, Math.cos(t * .6) * h * .2, s.hue], [Math.cos(t * .7) * w * .25, Math.sin(t * .9) * h * .2, s.hue + 150]];
+      for (const [ox, oy, hue] of sets) {
+        const x0 = w / 2 + ox, y0 = h / 2 + oy;
+        c.strokeStyle = `hsl(${hue + t * 30},100%,55%)`; c.beginPath();
+        for (let rr = (t * 30) % s.gap + 1; rr < R; rr += s.gap) { c.moveTo(x0 + rr, y0); c.arc(x0, y0, rr, 0, TAU); }
+        c.stroke();
+      }
+    } },
+],
+3: [
+  { name: 'Drift',
+    make(r) { const pal = pick(r, PALETTES); return { pal, items: Array.from({ length: 8 }, () => ({ x: r(), y: r(), r: .08 + r() * .16, c: pal[1 + Math.floor(r() * 4)], sx: .05 + r() * .12, sy: .04 + r() * .1, ph: r() * TAU, type: Math.floor(r() * 3) })) }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = s.pal[0]; c.fillRect(0, 0, w, h); const m = Math.min(w, h); c.globalAlpha = .9;
+      for (const p of s.items) { c.fillStyle = p.c; shapePath(c, p.type, (p.x + .25 * Math.sin(t * p.sx + p.ph)) * w, (p.y + .2 * Math.cos(t * p.sy + p.ph)) * h, p.r * m, t * p.sx); c.fill(); }
+    } },
+  { name: 'Tiles',
+    make(r) { return { pal: pick(r, PALETTES), cols: 4 + Math.floor(r() * 3) }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = s.pal[0]; c.fillRect(0, 0, w, h);
+      const sz = w / s.cols, rows = Math.ceil(h / sz) + 1;
+      for (let i = 0; i < s.cols; i++) for (let j = 0; j < rows; j++) {
+        const ph = t * .6 - (i + j) * .35, k = (.55 + .25 * Math.sin(ph)) * sz;
+        c.save(); c.translate((i + .5) * sz, (j + .5) * sz); c.rotate(Math.sin(ph) * Math.PI / 4);
+        c.fillStyle = s.pal[1 + (i + j) % 4]; c.fillRect(-k / 2, -k / 2, k, k); c.restore();
+      }
+    } },
+  { name: 'Tide',
+    make(r) { return { pal: pick(r, PALETTES), ph: r() * TAU }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = s.pal[0]; c.fillRect(0, 0, w, h);
+      for (let k = 0; k < 5; k++) {
+        const base = h * (.28 + k * .15); c.beginPath(); c.moveTo(0, h);
+        for (let x = 0; x <= w + 8; x += 8) c.lineTo(x, base + Math.sin(x / w * TAU * (.8 + k * .3) + t * (.35 + k * .08) + k + s.ph) * h * .04);
+        c.lineTo(w, h); c.closePath(); c.fillStyle = s.pal[1 + k % 4]; c.fill();
+      }
+    } },
+  { name: 'Orbit',
+    make(r) { const pal = pick(r, PALETTES); const n = 3 + Math.floor(r() * 3); return { pal, bodies: Array.from({ length: n }, (_, i) => ({ rr: .12 + i * .09, sp: (.1 + r() * .22) * (r() < .5 ? -1 : 1), ph: r() * TAU, sz: .025 + r() * .045, c: pal[1 + i % 4], type: Math.floor(r() * 3) })) }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = s.pal[0]; c.fillRect(0, 0, w, h); const m = Math.min(w, h) * 1.1, cx = w / 2, cy = h / 2;
+      c.globalAlpha = .3; c.strokeStyle = s.pal[4]; c.lineWidth = 1.5;
+      for (const b of s.bodies) { c.beginPath(); c.arc(cx, cy, b.rr * m, 0, TAU); c.stroke(); }
+      c.globalAlpha = 1;
+      for (const b of s.bodies) { const a = b.ph + t * b.sp; c.fillStyle = b.c; shapePath(c, b.type, cx + Math.cos(a) * b.rr * m, cy + Math.sin(a) * b.rr * m, b.sz * m, a); c.fill(); }
+    } },
+  { name: 'Rise',
+    make(r) { const pal = pick(r, PALETTES); return { pal, items: Array.from({ length: 16 }, () => ({ x: r(), y: r() * 1.3, sz: .02 + r() * .06, sp: .02 + r() * .05, ph: r() * TAU, c: pal[1 + Math.floor(r() * 4)], type: Math.floor(r() * 3) })) }; },
+    draw(c, w, h, t, s) {
+      c.fillStyle = s.pal[0]; c.fillRect(0, 0, w, h); const m = Math.min(w, h);
+      for (const p of s.items) { const y = (1.15 - (p.y + t * p.sp) % 1.3) * h, x = (p.x + .04 * Math.sin(t * .5 + p.ph)) * w; c.fillStyle = p.c; shapePath(c, p.type, x, y, p.sz * m, t * .2 + p.ph); c.fill(); }
+    } },
+],
+2: [
+  { name: 'Moiré',
+    make(r) { return { col: bw(r), gap: 10 + r() * 7, base: r() * Math.PI }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h);
+      c.strokeStyle = fg; c.lineWidth = s.gap * .42; const D = Math.hypot(w, h);
+      for (const ang of [0, .06 + .05 * Math.sin(t * .15)]) {
+        c.save(); c.translate(w / 2, h / 2); c.rotate(ang + s.base); c.beginPath();
+        const off = ang ? (t * 3) % s.gap : 0;
+        for (let x = -D / 2 - s.gap + off; x < D / 2; x += s.gap) { c.moveTo(x, -D / 2); c.lineTo(x, D / 2); }
+        c.stroke(); c.restore();
+      }
+    } },
+  { name: 'Ripple',
+    make(r) { return { col: bw(r), gap: 24 + r() * 10, ox: .3 + r() * .4, oy: .3 + r() * .4 }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      const cx = w * s.ox, cy = h * s.oy; c.beginPath();
+      for (let y = s.gap / 2; y < h; y += s.gap) for (let x = s.gap / 2; x < w; x += s.gap) {
+        const rad = s.gap * .42 * (.2 + .8 * (.5 + .5 * Math.sin(Math.hypot(x - cx, y - cy) * .03 - t * 1.1)));
+        c.moveTo(x + rad, y); c.arc(x, y, rad, 0, TAU);
+      }
+      c.fill();
+    } },
+  { name: 'Pulse',
+    make(r) { return { col: bw(r), gap: 28 + r() * 14, ox: .5, oy: .35 + r() * .3 }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h);
+      c.strokeStyle = fg; c.lineWidth = s.gap * .3; const cx = w * s.ox, cy = h * s.oy, R = Math.hypot(w, h);
+      c.beginPath(); for (let rr = (t * 12) % s.gap + 1; rr < R; rr += s.gap) { c.moveTo(cx + rr, cy); c.arc(cx, cy, rr, 0, TAU); } c.stroke();
+    } },
+  { name: 'Checker',
+    make(r) { return { col: bw(r), size: 44 + r() * 24 }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      const z = s.size, cols = Math.ceil(w / z) + 1, rows = Math.ceil(h / z) + 2; c.beginPath();
+      for (let i = 0; i < cols; i++) { const off = Math.sin(t * .35 + i * .45) * z * .5; for (let j = -1; j < rows; j++) if (((i + j) & 1) === 0) c.rect(i * z, j * z + off, z, z); }
+      c.fill();
+    } },
+  { name: 'Stripes',
+    make(r) { return { col: bw(r), gap: 30 + r() * 30, ang: pick(r, [Math.PI / 4, -Math.PI / 4, 0, Math.PI / 2]) }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      const D = Math.hypot(w, h), g = s.gap, bw2 = g * (.5 + .15 * Math.sin(t * .3));
+      c.save(); c.translate(w / 2, h / 2); c.rotate(s.ang);
+      for (let x = -D / 2 - g + (t * 8) % g; x < D / 2; x += g) c.fillRect(x, -D / 2, bw2, D);
+      c.restore();
+    } },
+],
+1: [
+  { name: 'Breath',
+    make(r) { return { col: bw(r, .65) }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col, m = Math.min(w, h), k = .5 - .5 * Math.cos(t * TAU / 10);
+      c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      c.beginPath(); c.arc(w / 2, h / 2, m * (.14 + .12 * k), 0, TAU); c.fill();
+    } },
+  { name: 'Square',
+    make(r) { return { col: bw(r, .65), r0: r() * TAU, outline: r() < .5 }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col, m = Math.min(w, h);
+      c.fillStyle = bg; c.fillRect(0, 0, w, h);
+      poly(c, w / 2, h / 2, m * .3, 4, s.r0 + t * .08);
+      if (s.outline) { c.strokeStyle = fg; c.lineWidth = 3; c.stroke(); } else { c.fillStyle = fg; c.fill(); }
+    } },
+  { name: 'Triangle',
+    make(r) { return { col: bw(r, .65), x0: r() }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col, m = Math.min(w, h);
+      c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      poly(c, ((s.x0 + t * .012) % 1.4 - .2) * w, h * (.5 + .06 * Math.sin(t * .1)), m * .13, 3, t * .05); c.fill();
+    } },
+  { name: 'Pair',
+    make(r) { return { col: bw(r, .65) }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col, m = Math.min(w, h), k = Math.sin(t * .15);
+      c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      c.beginPath(); c.arc(w / 2, h * (.38 + .04 * k), m * .09, 0, TAU); c.fill();
+      poly(c, w / 2, h * (.62 - .04 * k), m * .12, 4, Math.PI / 4); c.fill();
+    } },
+  { name: 'Horizon',
+    make(r) { return { col: bw(r, .65), p: r() * TAU }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col; c.fillStyle = bg; c.fillRect(0, 0, w, h);
+      c.fillStyle = fg; c.fillRect(0, h * (.5 + .12 * Math.sin(t * .12 + s.p)) - 1, w, 2);
+    } },
+  { name: 'Moon',
+    make(r) { return { col: bw(r, .8), p: r() * TAU }; },
+    draw(c, w, h, t, s) {
+      const [bg, fg] = s.col, m = Math.min(w, h), a = s.p + t * .1;
+      c.fillStyle = bg; c.fillRect(0, 0, w, h); c.fillStyle = fg;
+      c.beginPath(); c.arc(w / 2 + Math.cos(a) * m * .28, h / 2 + Math.sin(a) * m * .28, m * .035, 0, TAU); c.fill();
+    } },
+],
+};
+
+
+/* ---------- procedural reel engine ----------
+   Every reel is a recipe built from one seed: a palette, 1-3 pattern layers,
+   a symmetry, a blend mode and motion speeds. Each level limits the ingredients. */
+function pathPoly(c, x, y, rad, n, rot) { for (let i = 0; i < n; i++) { const a = rot + i * TAU / n - Math.PI / 2; const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad; i ? c.lineTo(px, py) : c.moveTo(px, py); } c.closePath(); }
+function ink(c, col) { c.fillStyle = col; c.strokeStyle = col; }
+function shape(c, kind, x, y, s, rot, sides, stroke) {
+  if (!(s > .3)) return;
+  c.beginPath();
+  switch (kind) {
+    case 'circle': c.arc(x, y, s, 0, TAU); break;
+    case 'ring': c.arc(x, y, s, 0, TAU); if (!stroke) { c.moveTo(x + s * .55, y); c.arc(x, y, s * .55, 0, TAU, true); } break;
+    case 'poly': pathPoly(c, x, y, s, sides, rot); break;
+    case 'star': { const n = sides + 2; for (let i = 0; i < n * 2; i++) { const a = rot + i * Math.PI / n, q = i & 1 ? s * .45 : s; i ? c.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q) : c.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q); } c.closePath(); break; }
+    case 'petal': c.ellipse(x, y, s, s * .38, rot, 0, TAU); break;
+    case 'bar': { const co = Math.cos(rot), si = Math.sin(rot), hx = s, hy = s * .2; c.moveTo(x + co * hx - si * hy, y + si * hx + co * hy); c.lineTo(x - co * hx - si * hy, y - si * hx + co * hy); c.lineTo(x - co * hx + si * hy, y - si * hx - co * hy); c.lineTo(x + co * hx + si * hy, y + si * hx - co * hy); c.closePath(); break; }
+    case 'cross': { for (const r2 of [rot, rot + Math.PI / 2]) { const co = Math.cos(r2), si = Math.sin(r2), hx = s, hy = s * .18; c.moveTo(x + co * hx - si * hy, y + si * hx + co * hy); c.lineTo(x - co * hx - si * hy, y - si * hx + co * hy); c.lineTo(x - co * hx + si * hy, y - si * hx - co * hy); c.lineTo(x + co * hx + si * hy, y + si * hx - co * hy); c.closePath(); } break; }
+  }
+  stroke ? c.stroke() : c.fill();
+}
+const wrap5 = i => ((i % 5) + 5) % 5;
+
+const SCHEMES = [[0, 25, 50], [0, 180], [0, 120, 240], [0, 150, 210], [0, 30, 180, 210], [0, 90, 180, 270], [0, 15, 30, 45]];
+const clamp01 = x => Math.min(1, Math.max(0, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const levelOf = s => 1 + Math.round(clamp01(s) * 3);
+/* Shared color curve: saturation fades out below s≈0.25, and lightness heads to white as s→0. */
+function stimColor(h, s, i = 0, dark = true) {
+  const sat = 95 * smooth(.22, .8, s), lit = dark ? lerp(100, 58, smooth(.15, .7, s)) : lerp(0, 45, smooth(.15, .7, s));
+  return `hsl(${(((h % 360) + 360) % 360).toFixed(1)},${sat.toFixed(0)}%,${(lit + (i & 1 ? (dark ? -1 : 1) * lerp(35, 8, s) * smooth(.05, .35, s) : 0)).toFixed(0)}%)`;
+}
+/* Palettes are cosine gradients (a + b·cos 2π(c·x + d)): every sample along one sits in harmony with the rest.
+   Chroma fades out below s≈0.25 and the ink heads to pure white (or black on paper) as s→0. */
+const COSINES = [
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [0, .33, .67]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [0, .1, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [.3, .2, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, .5], [.8, .9, .3]],
+  [[.5, .5, .5], [.5, .5, .5], [1, .7, .4], [0, .15, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [2, 1, 0], [.5, .2, .25]],
+  [[.8, .5, .4], [.2, .4, .2], [2, 1, 1], [0, .25, .25]],
+  [[.55, .4, .6], [.45, .4, .4], [1, 1, 1], [.6, .75, .9]],
+  [[.6, .55, .5], [.4, .35, .3], [1, 1, 1], [.05, .2, .35]],
+];
+const hex2 = v => Math.round(clamp01(v) * 255);
+function makePal(r, s) {
+  const dark = r() < lerp(.68, 1, smooth(.5, .92, s)), [A, B, Cf, D] = pick(r, COSINES), d0 = r(), C = smooth(.22, .8, s), ink = 1 - smooth(.15, .7, s);
+  const step = lerp(.07, .19, r()) * (.4 + .6 * smooth(.3, .9, s)), cyc = (r() < .5 ? -1 : 1) * s * s * (.04 + r() * .12);
+  const grey = smooth(.05, .35, s) * lerp(.38, .1, s);  // odd indices step toward grey in the mono range
+  const rgb = x => [0, 1, 2].map(k => A[k] + B[k] * Math.cos(TAU * (Cf[k] * x + D[k] + d0)));
+  const css = (v, a = 1) => a < 1 ? `rgba(${hex2(v[0])},${hex2(v[1])},${hex2(v[2])},${a.toFixed(3)})` : `rgb(${hex2(v[0])},${hex2(v[1])},${hex2(v[2])})`;
+  const tone = (x, i) => {
+    let v = rgb(x); const Y = .3 * v[0] + .59 * v[1] + .11 * v[2];
+    v = v.map(u => Y + (u - Y) * C);
+    // keep colors readable against the ground: lift on dark, deepen on paper
+    const Y2 = .3 * v[0] + .59 * v[1] + .11 * v[2], need = dark ? Math.max(0, .36 - Y2) * 1.6 : Math.max(0, Y2 - .55) * 1.6;
+    v = v.map(u => lerp(u, dark ? 1 : 0, need));
+    const paper = dark ? 1 - (i & 1 ? grey : 0) : (i & 1 ? grey : 0);
+    return v.map(u => lerp(u, paper, ink));
+  };
+  const col = (i, t = 0) => css(tone(i * step + t * cyc, i));
+  const colA = (i, t, a) => css(tone(i * step + t * cyc, i), a);
+  // ground: near black or warm paper, faintly tinted by the palette once there's colour
+  const g = rgb(d0 * .7 + .5).map(u => dark ? u * lerp(0, .09, C) : lerp(1, .82 + u * .14, C));
+  const bgRGB = g, bg = css(g), bgEdge = css(g.map(u => dark ? u * .35 : u * lerp(1, .86, C)));
+  const flat = s < .3;  // near-monochrome: alternate fills between ink and paper
+  return { bg, bgRGB, bgEdge, dark, fg: col(0), col, colA, alt: (i, t) => (flat && i & 1 ? bg : col(i, t)) };
+}
+
+/* Each layer draws around the origin. U is half the screen diagonal; hw/hh are half width and height. */
+const LAYERS = {
+  radial(r, C) {
+    const arms = 3 + Math.floor(r() * lerp(5, 12, C.s)), per = 1 + Math.floor(r() * 5 * C.dens), sh = pick(r, C.shapes), sides = 3 + Math.floor(r() * 5),
+      size = .03 + r() * .09, twist = (r() - .5) * 1.4, rs = (r() - .5) * .8, pulse = .1 + r() * .35, stroke = r() < C.stroke, ci = Math.floor(r() * 5);
+    return { noun: 'Bloom', draw(c, t, U, pal) {
+      c.lineWidth = U * .006;
+      for (let k = 0; k < per; k++) {
+        const d = (k + 1) / (per + 1) * .95 * U * (1 + pulse * .4 * Math.sin(t * 1.1 + k)); ink(c, pal.col(ci + k, t));
+        for (let a = 0; a < arms; a++) { const ang = a * TAU / arms + k * twist + t * rs; shape(c, sh, Math.cos(ang) * d, Math.sin(ang) * d, size * U * (1 + pulse * Math.sin(t * 1.7 + a + k)), ang + t * .4, sides, stroke); }
+      }
+    } };
+  },
+  grid(r, C) {
+    const cols = 3 + Math.floor(r() * (C.kal ? 4 : 8)), hex = r() < .4, sh = pick(r, C.shapes), sides = 3 + Math.floor(r() * 4), dir = r() * TAU, fq = .25 + r() * .7,
+      rotAmp = r() * Math.PI / 2, base = .2 + r() * .25, amp = .08 + r() * .2, stroke = r() < C.stroke;
+    return { noun: 'Lattice', draw(c, t, U, pal) {
+      const cell = 2 * U / cols, dx = Math.cos(dir) * fq, dy = Math.sin(dir) * fq; c.lineWidth = cell * .06;
+      for (let j = 0; j <= cols; j++) for (let i = 0; i <= cols; i++) {
+        const ph = i * dx + j * dy - t;
+        ink(c, pal.col(i + j, t));
+        shape(c, sh, -U + i * cell + (hex && j & 1 ? cell / 2 : 0), -U + j * cell, cell * (base + amp * Math.sin(ph)), Math.sin(ph) * rotAmp, sides, stroke);
+      }
+    } };
+  },
+  rings(r, C) {
+    const n = 4 + Math.floor(r() * 18 * C.dens + 2), sides = r() < .5 ? 0 : 3 + Math.floor(r() * 6), lw = .15 + r() * .45, sp = (r() < .5 ? -1 : 1) * (.15 + r() * .5), tw = (r() - .5) * .4, ci = Math.floor(r() * 5);
+    return { noun: 'Rings', draw(c, t, U, pal) {
+      const gap = U * 1.05 / n, x = t * sp, off = ((x % 1) + 1) % 1, fl = Math.floor(x); c.lineWidth = gap * lw;
+      for (let i = 0; i <= n; i++) {
+        const rr = (i + off) * gap; if (rr < 1) continue;
+        ink(c, pal.col(ci + i - fl, t)); c.beginPath();
+        if (sides) pathPoly(c, 0, 0, rr, sides, (i - fl) * tw + t * .2); else c.arc(0, 0, rr, 0, TAU);
+        c.stroke();
+      }
+    } };
+  },
+  particles(r, C) {
+    const n = Math.round(6 + r() * 40 * C.dens), sh = pick(r, C.shapes), sides = 3 + Math.floor(r() * 4), stroke = r() < C.stroke;
+    const ps = Array.from({ length: n }, () => ({ ax: .2 + r() * .8, ay: .2 + r() * .8, fx: .1 + r() * .5, fy: .1 + r() * .5, px: r() * TAU, py: r() * TAU, s: .02 + r() * .07, ci: Math.floor(r() * 5) }));
+    return { noun: 'Swarm', draw(c, t, U, pal, hw, hh) {
+      c.lineWidth = U * .006;
+      for (const p of ps) { ink(c, pal.col(p.ci, t)); shape(c, sh, hw * p.ax * Math.sin(t * p.fx + p.px), hh * p.ay * Math.sin(t * p.fy + p.py), U * p.s, t * p.fx * 2, sides, stroke); }
+    } };
+  },
+  spiral(r, C) {
+    const n = Math.round(C.kal ? 120 + r() * 160 : 250 + r() * 600 * C.dens), drift = .0005 + r() * .002, sz = .7 + r() * 1.2, rs = (r() - .5) * .8, ci = Math.floor(r() * 5), sh = r() < .7 ? 'circle' : pick(r, C.shapes);
+    return { noun: 'Spiral', draw(c, t, U, pal) {
+      const k = U / Math.sqrt(n), ga = 2.39996323 + Math.sin(t * .15) * drift;
+      for (let i = 0; i < n; i++) {
+        const a = i * ga + t * rs, rr = k * Math.sqrt(i);
+        if ((i & 31) === 0) ink(c, pal.col(ci + (i >> 5), t));
+        shape(c, sh, Math.cos(a) * rr, Math.sin(a) * rr, sz * (1.5 + rr / U * 7) * (.75 + .25 * Math.sin(t * 2 - i * .02)), a, 5, false);
+      }
+    } };
+  },
+  waves(r, C) {
+    const k = 3 + Math.floor(r() * 8 * C.dens + 1), ang = pick(r, [0, Math.PI / 2, r() * Math.PI]), fq = .8 + r() * 3, amp = .04 + r() * .14, fill = r() < .55, ps = r() * 1.5, lwf = .1 + r() * .3, ci = Math.floor(r() * 5);
+    return { noun: 'Tide', draw(c, t, U, pal) {
+      c.save(); c.rotate(ang); const band = 2 * U / k; c.lineWidth = band * lwf;
+      for (let i = 0; i < k; i++) {
+        const y0 = -U + (i + .5) * band; c.beginPath();
+        for (let s = 0; s <= 60; s++) { const x = -U + s * U / 30, y = y0 + Math.sin(x / U * fq * Math.PI + t + i * ps) * amp * U; s ? c.lineTo(x, y) : c.moveTo(x, y); }
+        if (fill) { ink(c, pal.alt(ci + i, t)); c.lineTo(U, U * 1.2); c.lineTo(-U, U * 1.2); c.closePath(); c.fill(); } else { ink(c, pal.col(ci + i, t)); c.stroke(); }
+      }
+      c.restore();
+    } };
+  },
+  liss(r, C) {
+    const a = 1 + Math.floor(r() * 5); let b = 1 + Math.floor(r() * 5); if (b === a) b++;
+    const copies = 1 + Math.floor(r() * 4 * C.dens + .5), lw = .004 + r() * .018, dr = .1 + r() * .4, ci = Math.floor(r() * 5);
+    return { noun: 'Thread', draw(c, t, U, pal, hw, hh) {
+      c.lineWidth = U * lw; c.lineJoin = 'round';
+      for (let j = 0; j < copies; j++) {
+        ink(c, pal.col(ci + j, t)); c.beginPath();
+        for (let i = 0; i <= 240; i++) { const s = i / 240 * TAU, x = Math.sin(a * s + t * dr + j * .35) * hw * .85, y = Math.sin(b * s + j * .2) * hh * .8; i ? c.lineTo(x, y) : c.moveTo(x, y); }
+        c.stroke();
+      }
+    } };
+  },
+  stripes(r, C) {
+    const n = 6 + Math.floor(r() * 20), ang = r() * Math.PI, bend = r() * 3, wob = r() * .3, sp = .2 + r() * .5;
+    return { noun: 'Stripes', draw(c, t, U, pal) {
+      const g = 2 * U / n, x0 = t * sp, fr = x0 % 1, fl = Math.floor(x0);
+      c.save(); c.rotate(ang + Math.sin(t * .2) * wob);
+      for (let i = -1; i <= n; i++) { ink(c, pal.col(i - fl, t)); c.fillRect(-U + (i + fr) * g, -U, g * (.5 + .3 * Math.sin(t + (i - fl) * bend * .3)), 2 * U); }
+      c.restore();
+    } };
+  },
+  stack(r, C) {
+    const n = 8 + Math.floor(r() * 22), sides = r() < .2 ? 0 : 3 + Math.floor(r() * 5), tw = (r() - .5) * .5, sp = .4 + r() * 1.6, pw = 1.5 + r() * 1.5, lwf = .2 + r() * .8, fill = r() < .3;
+    return { noun: 'Tunnel', opaque: fill, draw(c, t, U, pal) {
+      const base = t * sp, fr = base % 1, fl = Math.floor(base); c.lineJoin = 'round';
+      for (let q = 0; q < n; q++) {
+        const i = fill ? n - 1 - q : q, z = (i + fr) / n, id = i - fl, rr = Math.pow(z, pw) * U * 1.15;
+        ink(c, fill ? pal.alt(id, t) : pal.col(id, t)); c.lineWidth = 1 + z * z * U * .05 * lwf; c.beginPath();
+        if (sides) pathPoly(c, 0, 0, rr, sides, id * tw + t * .3); else c.arc(0, 0, rr, 0, TAU);
+        fill ? c.fill() : c.stroke();
+      }
+    } };
+  },
+  rose(r, C) {
+    const k = 2 + Math.floor(r() * 6), d = pick(r, [1, 1, 2, 3]), copies = 1 + Math.floor(r() * 3), rs = (r() - .5) * .6, fill = r() < .6, ci = Math.floor(r() * 5);
+    return { noun: 'Rose', draw(c, t, U, pal, hw, hh) {
+      const R = Math.min(hw, hh) * .9; c.lineWidth = U * .008;
+      for (let j = 0; j < copies; j++) {
+        const sc = R * (1 - j * .28) * (.85 + .15 * Math.sin(t * .7 + j)), rot = t * rs * (j % 2 ? -1 : 1) + j;
+        ink(c, pal.alt(ci + j, t)); c.beginPath();
+        const N = 180 * d;
+        for (let i = 0; i <= N; i++) { const th = i / 180 * TAU, q = Math.cos(k / d * th) * sc; i ? c.lineTo(Math.cos(th + rot) * q, Math.sin(th + rot) * q) : c.moveTo(Math.cos(th + rot) * q, Math.sin(th + rot) * q); }
+        fill ? c.fill() : c.stroke();
+      }
+    } };
+  },
+  halftone(r, C) {
+    // op-art dot screen whose dot sizes follow two slow travelling waves
+    const cols = Math.round(lerp(9, 22, r()) * lerp(.7, 1, C.s)), k1 = 2 + r() * 5, k2 = 1 + r() * 4, a2 = r() * TAU, ox = (r() - .5) * .6, oy = (r() - .5) * .6, sq = r() < .25, ci = Math.floor(r() * 5);
+    return { noun: 'Halftone', draw(c, t, U, pal) {
+      const cell = 2 * U / cols, d2x = Math.cos(a2), d2y = Math.sin(a2); ink(c, pal.col(ci, t)); c.beginPath();
+      for (let j = 0; j <= cols; j++) for (let i = 0; i <= cols; i++) {
+        const x = -U + (i + .5) * cell, y = -U + (j + .5) * cell, u = x / U, v = y / U;
+        const f = .5 + .25 * Math.sin(Math.hypot(u - ox, v - oy) * k1 * 3 - t * 1.2) + .25 * Math.sin((u * d2x + v * d2y) * k2 * 3 + t * .7);
+        const rad = cell * .5 * f * .95; if (rad < .4) continue;
+        if (sq) { c.rect(x - rad, y - rad, rad * 2, rad * 2); } else { c.moveTo(x + rad, y); c.arc(x, y, rad, 0, TAU); }
+      }
+      c.fill();
+    } };
+  },
+  weave(r, C) {
+    // Truchet tiles: quarter arcs that join into endless meandering paths, drifting slowly
+    const cols = 4 + Math.floor(r() * 6), salt = Math.floor(r() * 1e6), dir = r() * TAU, lw = .1 + r() * .22, ci = Math.floor(r() * 5), two = C.s > .35 && r() < .6;
+    const flip = (i, j) => { let h = Math.imul(i * 374761393 + j * 668265263 + salt, 1274126177); h ^= h >>> 13; return (Math.imul(h, 1103515245) >>> 16) & 1; };
+    return { noun: 'Weave', draw(c, t, U, pal) {
+      const cell = 2 * U / cols, ox = Math.cos(dir) * t * .25, oy = Math.sin(dir) * t * .25, fx = Math.floor(ox), fy = Math.floor(oy), rx = (ox - fx) * cell, ry = (oy - fy) * cell;
+      c.lineWidth = cell * lw * (1 + .25 * Math.sin(t * .6)); c.lineCap = 'round';
+      for (let pass = 0; pass < (two ? 2 : 1); pass++) {
+        ink(c, pal.col(ci + pass * 2, t)); c.beginPath();
+        for (let j = -1; j <= cols; j++) for (let i = -1; i <= cols; i++) {
+          const f = flip(i - fx, j - fy); if (two && f !== pass) continue;
+          const x = -U + i * cell + rx, y = -U + j * cell + ry, h2 = cell / 2;
+          if (f) { c.moveTo(x + h2, y); c.arc(x, y, h2, 0, Math.PI / 2); c.moveTo(x + cell, y + h2); c.arc(x + cell, y + cell, h2, -Math.PI / 2, -Math.PI, true); }
+          else { c.moveTo(x + cell, y + h2); c.arc(x + cell, y, h2, Math.PI / 2, Math.PI); c.moveTo(x, y + h2); c.arc(x, y + cell, h2, -Math.PI / 2, 0); }
+        }
+        c.stroke();
+      }
+    } };
+  },
+  haze(r, C) {
+    // a few large soft glows that drift and overlap like lamps behind frosted glass
+    const n = 3 + Math.floor(r() * 4), bs = Array.from({ length: n }, (_, i) => ({ ax: .3 + r() * .6, ay: .3 + r() * .6, fx: .08 + r() * .2, fy: .08 + r() * .2, px: r() * TAU, py: r() * TAU, rad: .35 + r() * .45, ci: i }));
+    return { noun: 'Haze', opaque: true, draw(c, t, U, pal, hw, hh) {
+      for (const b of bs) {
+        const x = hw * b.ax * Math.sin(t * b.fx + b.px), y = hh * b.ay * Math.sin(t * b.fy + b.py), R = U * b.rad * (1 + .12 * Math.sin(t * .5 + b.px));
+        const g = c.createRadialGradient(x, y, 0, x, y, R);
+        g.addColorStop(0, pal.colA(b.ci, t, .85)); g.addColorStop(.45, pal.colA(b.ci, t, .35)); g.addColorStop(1, pal.colA(b.ci, t, 0));
+        c.fillStyle = g; c.fillRect(x - R, y - R, 2 * R, 2 * R);
+      }
+    } };
+  },
+  rays(r, C) {
+    // sunburst wedges, alternating ink and ground, slowly turning
+    const n = 2 * (4 + Math.floor(r() * lerp(4, 14, C.s))), sp = (r() < .5 ? -1 : 1) * (.05 + r() * .2), wob = r() * .5, ci = Math.floor(r() * 5), cx = (r() - .5) * .4, cy = (r() - .5) * .5;
+    return { noun: 'Sunburst', opaque: true, draw(c, t, U, pal, hw, hh) {
+      const a = TAU / n, x0 = cx * hw, y0 = cy * hh, R = U * 2.2;
+      for (let i = 0; i < n; i += 2) {
+        const a0 = i * a + t * sp + Math.sin(t * .4 + i) * wob * a * .3;
+        ink(c, pal.col(ci + i / 2, t)); c.beginPath(); c.moveTo(x0, y0); c.arc(x0, y0, R, a0, a0 + a); c.closePath(); c.fill();
+      }
+    } };
+  },
+  few(r, C) {
+    const kind = pick(r, ['shapes', 'shapes', 'line', 'orbit', 'breath', 'pair', 'arc', 'sun']), stroke = r() < .35;
+    const items = Array.from({ length: kind === 'shapes' ? 1 + Math.floor(r() * 3) : 1 }, () => ({ sh: pick(r, C.shapes), sides: 3 + Math.floor(r() * 2), x: (r() - .5) * .8, y: (r() - .5), s: .1 + r() * .14, ph: r() * TAU, mx: (r() - .5) * .3, my: (r() - .5) * .3, rot: (r() - .5) * .6 }));
+    const nouns = { shapes: items.length > 1 ? 'Shapes' : 'Shape', line: 'Line', orbit: 'Orbit', breath: 'Breath', pair: 'Pair', arc: 'Arc', sun: 'Horizon' };
+    return { noun: nouns[kind], draw(c, t, U, pal, hw, hh) {
+      const m = Math.min(hw, hh), it = items[0]; ink(c, pal.fg); c.lineWidth = Math.max(2, m * .014); c.lineCap = 'round';
+      if (kind === 'line') { const y = hh * .45 * Math.sin(t * .8 + it.ph), lw = Math.max(2, m * .012); c.fillRect(-hw * 1.5, y - lw / 2, hw * 3, lw); return; }
+      if (kind === 'orbit') {
+        const a = it.ph + t * 1.2, R = m * .62; c.globalAlpha *= .22; c.lineWidth = Math.max(1, m * .005); c.beginPath(); c.arc(0, 0, R, 0, TAU); c.stroke(); c.globalAlpha /= .22;
+        shape(c, 'circle', Math.cos(a) * R, Math.sin(a) * R, m * .085, 0, 0, false); return;
+      }
+      if (kind === 'breath') { const k = .5 - .5 * Math.cos(t * TAU / (10 * C.speed)); shape(c, it.sh, 0, 0, m * (.28 + .22 * k), it.ph, it.sides, stroke); return; }
+      if (kind === 'pair') {
+        // two circles that slowly overlap and part
+        const d = m * (.18 + .14 * Math.sin(t * .5 + it.ph)), R = m * .3; c.save(); c.rotate(it.ph);
+        for (const sx of [-1, 1]) { c.beginPath(); c.arc(sx * d, 0, R, 0, TAU); c.stroke(); }
+        c.restore(); return;
+      }
+      if (kind === 'arc') {
+        // a ring drawing itself in and out
+        const k = .5 - .5 * Math.cos(t * .5 + it.ph), a0 = t * .3 + it.ph; c.lineWidth = Math.max(3, m * .03);
+        c.beginPath(); c.arc(0, 0, m * .45, a0, a0 + TAU * (.04 + .9 * k)); c.stroke(); return;
+      }
+      if (kind === 'sun') {
+        // a disc rising and setting behind a horizon line
+        const yh = hh * .2, R = m * .32, y = yh + R * .3 - R * .9 * (.5 + .5 * Math.sin(t * .35 + it.ph));
+        c.save(); c.beginPath(); c.rect(-hw * 2, -hh * 2, hw * 4, hh * 2 + yh); c.clip(); c.beginPath(); c.arc(0, y, R, 0, TAU); c.fill(); c.restore();
+        c.fillRect(-hw * 1.5, yh, hw * 3, Math.max(2, m * .012)); return;
+      }
+      for (const q of items) shape(c, q.sh, (q.x + q.mx * Math.sin(t + q.ph)) * hw * 1.6, (q.y + q.my * Math.cos(t * .8 + q.ph)) * hh * 1.2, q.s * m * 1.6, q.ph + t * q.rot, q.sides, stroke);
+    } };
+  },
+};
+
+/* How busy each layer type is, on the same 0..1 scale as stimulation. Recipes favour types near their s. */
+const BUSY = { few: 0, liss: .28, weave: .32, waves: .35, halftone: .38, stripes: .42, rings: .45, haze: .5, particles: .52, grid: .55, rose: .58, rays: .65, radial: .7, stack: .8, spiral: .85 };
+const ADJ = {
+  4: ['Prism', 'Neon', 'Fever', 'Electric', 'Molten', 'Spectral', 'Fractured', 'Chroma', 'Solar', 'Voltage'],
+  3: ['Soft', 'Drifting', 'Warm', 'Tidal', 'Pastel', 'Quiet', 'Wandering', 'Mellow', 'Easy', 'Low'],
+  2: ['Grey', 'Ink', 'Paper', 'Woven', 'Etched', 'Graphite', 'Chalk', 'Plain'],
+  1: ['Still', 'Slow', 'Lone', 'Hushed', 'Single', 'Resting', 'Empty'],
+};
+const ADJ_ALL = Object.values(ADJ).flat().filter(w => !['Still', 'Plain', 'Grey', 'Neon', 'Electric', 'Fever', 'Voltage'].includes(w));
+function pickType(r, s, used) {
+  const opts = Object.entries(BUSY).filter(([k]) => !used.has(k)).map(([k, b]) => [k, Math.exp(-((b - s) ** 2) / .045) * (k === 'few' ? lerp(6, 1, smooth(0, .3, s)) : k === 'haze' ? smooth(.3, .5, s) : 1)]);
+  const total = opts.reduce((a, o) => a + o[1], 0); let x = r() * total;
+  for (const [k, w] of opts) if ((x -= w) <= 0) return k;
+  return opts[opts.length - 1][0];
+}
+
+/* generator(seed, s): s is stimulation in [0,1]. Every ingredient is a smooth function of s. */
+function buildRecipe(r, s) {
+  s = clamp01(s);
+  const speed = lerp(.1, 1, Math.pow(s, 1.5));
+  const pk = .6 * smooth(.55, 1, s), pm = .35 * smooth(.2, .6, s) * (1 - .5 * smooth(.8, 1, s)), x = r();
+  const sym = x < pk ? 'kaleido' : x < pk + pm ? (r() < .5 ? 'mirror2' : 'mirror4') : 'none';
+  const shapes = ['circle', 'poly', ...(s > .15 ? ['ring'] : []), ...(s > .3 ? ['bar', 'cross'] : []), ...(s > .5 ? ['star', 'petal'] : [])];
+  const C = { s, speed, kal: sym === 'kaleido', dens: lerp(.15, 1, s) * (sym === 'kaleido' ? .55 : 1), stroke: lerp(.35, .3, s), shapes, lv: levelOf(s) };
+  const pal = makePal(r, s);
+  const used = new Set(), layers = [];
+  let nL = Math.min(3, 1 + Math.floor(smooth(.25, 1, s) * 2 + r() * .6));
+  for (let i = 0; i < nL; i++) {
+    const ty = pickType(r, s, used); used.add(ty);
+    const L = LAYERS[ty](r, C); L.sp = ty === 'few' ? 1 : .6 + r() * .8; L.alpha = i === 0 ? 1 : lerp(.9, .6 + r() * .4, s);
+    layers.push(L);
+    if (ty === 'few') break;
+  }
+  const segs = C.kal ? 4 + 2 * Math.floor(r() * lerp(1, 5, s)) : 0;
+  let plasma = null; if (r() < .2 * smooth(.8, 1, s)) { const g = GENS[4][3]; plasma = { g, st: g.make(r) }; }
+  const trails = r() < .45 * s * s ? lerp(.3, .08, r()) : 0;
+  const y = r(); let comp = y < .6 * s * s ? 'lighter' : y < .6 * s * s + 1.2 * s * (1 - s) * .25 ? 'difference' : 'source-over';
+  if (comp === 'lighter' && !pal.dark) comp = 'multiply';  // additive light washes out on paper; ink multiplies instead
+  const glow = pal.dark && !trails ? smooth(.5, 1, s) * (comp === 'lighter' ? .22 : .5) : 0;  // additive layers already glow; don't blow them out
+  const noun = C.kal && r() < .5 ? 'Kaleidoscope' : layers[0].noun;
+  // adjectives come from one shared pool so a reel's name never hints at how stimulating it is
+  return { name: `${pick(r, ADJ_ALL)} ${noun}`, s, pal, layers, sym, segs, plasma, trails, comp, spin: (r() - .5) * .3 * speed, speed, glow, grain: lerp(.022, .035, s), _fresh: true };
+}
+
+function drawRecipe(c, w, h, t, s) {
+  const T = t * s.speed, U = Math.hypot(w, h) / 2, hw = w / 2, hh = h / 2;
+  const m0 = c.getTransform(), q = Math.min(1.25, Math.hypot(m0.a, m0.b)) || 1;  // offscreen pixel scale, taken before any rotation
+  if (s.plasma) s.plasma.g.draw(c, w, h, T, s.plasma.st);
+  else {
+    // ground: a soft vignette that is flat at the calm end (both stops meet) and deepens with colour
+    const g = c.createRadialGradient(w / 2, h * .45, 0, w / 2, h / 2, U); g.addColorStop(0, s.pal.bg); g.addColorStop(1, s.pal.bgEdge);
+    c.globalAlpha = s.trails && !s._fresh ? s.trails : 1; c.fillStyle = g; c.fillRect(0, 0, w, h); c.globalAlpha = 1;
+  }
+  s._fresh = false;
+  c.save(); c.translate(hw, hh); c.rotate(T * s.spin);
+  const paint = () => {
+    for (let i = 0; i < s.layers.length; i++) {
+      const L = s.layers[i];
+      // solid fills (tunnels of discs, sunbursts, haze) always paint normally: stacked additively they sum to white
+      c.globalCompositeOperation = L.opaque ? 'source-over' : i ? s.comp : s.comp === 'lighter' ? 'lighter' : 'source-over';
+      c.globalAlpha = L.alpha * (s.comp === 'lighter' && i ? .75 : 1); L.draw(c, T * L.sp, U, s.pal, hw, hh);
+    }
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+  };
+  if (s.sym === 'kaleido') {
+    // Paint one wedge into a small offscreen canvas, then stamp it around the circle.
+    const a = TAU / s.segs, side = Math.ceil(2 * U * q);
+    if (!s._off || s._off.width !== side) { s._off = document.createElement('canvas'); s._off.width = s._off.height = side; s._oc = s._off.getContext('2d'); }
+    const o = s._oc;
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, side, side);
+    o.setTransform(q, 0, 0, q, U * q, U * q);
+    o.save(); o.beginPath(); o.moveTo(0, 0); o.arc(0, 0, U * 1.05, -.01, a + .01); o.closePath(); o.clip();
+    const keep = c; c = o; paint(); c = keep; o.restore();
+    for (let k = 0; k < s.segs; k++) {
+      c.save();
+      if (k % 2) { c.rotate((k + 1) * a); c.scale(1, -1); } else c.rotate(k * a);
+      c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, U * 1.05, 0, a + .003); c.closePath(); c.clip();
+      c.drawImage(s._off, -U, -U, 2 * U, 2 * U); c.restore();
+    }
+  } else if (s.sym === 'mirror2' || s.sym === 'mirror4') {
+    const four = s.sym === 'mirror4', side = Math.ceil(2 * U * q);
+    if (!s._off || s._off.width !== side) { s._off = document.createElement('canvas'); s._off.width = s._off.height = side; s._oc = s._off.getContext('2d'); }
+    const o = s._oc;
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, side, side);
+    o.setTransform(q, 0, 0, q, U * q, U * q);
+    o.save(); o.beginPath(); o.rect(-U, -U, U + 1, four ? U + 1 : 2 * U); o.clip();
+    const keep = c; c = o; paint(); c = keep; o.restore();
+    for (const [sx, sy] of four ? [[1, 1], [-1, 1], [1, -1], [-1, -1]] : [[1, 1], [-1, 1]]) {
+      c.save(); c.scale(sx, sy); c.beginPath(); c.rect(-U, -U, U + .5, four ? U + .5 : 2 * U); c.clip();
+      c.drawImage(s._off, -U, -U, 2 * U, 2 * U); c.restore();
+    }
+  } else paint();
+  c.restore();
+  if (s.glow) bloom(c, s.glow);
+  if (s.grain) grain(c, s.grain, s.s > .5 ? Math.floor(t * 12) : 0);
+}
+
+/* Bloom: shrink the frame twice (the browser's smoothing does the blurring) and add it back on top, so bright
+   shapes glow like light rather than sit flat like paint. Only on dark grounds, and only as s rises. */
+const BL = {};
+function bloom(c, k) {
+  const cv = c.canvas, W = cv.width, H = cv.height; if (!W || !H) return;
+  if (!BL.a) { BL.a = document.createElement('canvas'); BL.b = document.createElement('canvas'); BL.ac = BL.a.getContext('2d'); BL.bc = BL.b.getContext('2d'); }
+  const w1 = Math.max(1, W >> 3), h1 = Math.max(1, H >> 3), w2 = Math.max(1, W >> 5), h2 = Math.max(1, H >> 5);
+  if (BL.a.width !== w1 || BL.a.height !== h1) { BL.a.width = w1; BL.a.height = h1; }
+  if (BL.b.width !== w2 || BL.b.height !== h2) { BL.b.width = w2; BL.b.height = h2; }
+  BL.ac.drawImage(cv, 0, 0, w1, h1); BL.bc.drawImage(BL.a, 0, 0, w2, h2);
+  c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'screen'; c.imageSmoothingEnabled = true;
+  c.globalAlpha = .35 * k; c.drawImage(BL.a, 0, 0, W, H); c.globalAlpha = .55 * k; c.drawImage(BL.b, 0, 0, W, H);
+  c.restore();
+}
+/* Grain: a faint fixed noise over everything, so flat fills read as printed rather than digital. It only shimmers at high s. */
+let GR = null; const GRP = new WeakMap();
+function grain(c, a, shift) {
+  if (!GR) {
+    const g = document.createElement('canvas'); g.width = g.height = 128; const gc = g.getContext('2d'), im = gc.createImageData(128, 128), R = rng(7);
+    for (let i = 0; i < im.data.length; i += 4) { const v = R() < .5 ? 0 : 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = R() * 255; }
+    gc.putImageData(im, 0, 0); GR = g;
+  }
+  const W = c.canvas.width, H = c.canvas.height, p = GRP.get(c) || GRP.set(c, c.createPattern(GR, 'repeat')).get(c), ox = (shift * 37) % 128, oy = (shift * 53) % 128;
+  c.save(); c.setTransform(1, 0, 0, 1, -ox, -oy); c.globalAlpha = a; c.fillStyle = p; c.fillRect(ox, oy, W, H); c.restore();
+}
+const PROC = { name: 'Generated', make: null, draw: drawRecipe };
+
+/* ---------- shared bits for the posts module ---------- */
+const LEVELS = {
+  4: { name: 'Vivid', color: 'var(--l4)' },
+  3: { name: 'Color', color: 'var(--l3)' },
+  2: { name: 'Mono', color: 'var(--l2)' },
+  1: { name: 'Still', color: 'var(--l1)' },
+};
+window.Wane = { LEVELS, rng, levelOf, stimColor };
+const $ = id => document.getElementById(id);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SPEED = reduce ? .6 : 1;
+// Inside the claude.ai frame, share the artifact link; hosted on its own page, share that page.
+const HOME = window.top !== window ? 'https://claude.ai/artifact/KgJZz6bmj9x7EyxeA1ENNE' : location.origin + location.pathname;
+
+/* ---------- the clock ----------
+   Stimulation is a function of time spent in the feed today: it starts fully vivid and eases down
+   to nothing over S.wind minutes, then stays calm. Nothing on screen says where it is. */
+let S = { wind: 20 };
+try { Object.assign(S, JSON.parse(localStorage.getItem('wane.settings') || '{}')); } catch (e) {}
+if (![10, 20, 40].includes(S.wind)) S.wind = 20;
+const save = () => { try { localStorage.setItem('wane.settings', JSON.stringify({ wind: S.wind })); } catch (e) {} };
+
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+let C = { day: '', secs: 0 };
+try { Object.assign(C, JSON.parse(localStorage.getItem('wane.clock') || '{}')); } catch (e) {}
+if (C.day !== dayKey(new Date()) || !(C.secs >= 0)) C = { day: dayKey(new Date()), secs: 0 };
+const saveC = () => { try { localStorage.setItem('wane.clock', JSON.stringify(C)); } catch (e) {} };
+
+function stimNow() {
+  const u = Math.min(1, C.secs / 60 / S.wind);
+  return clamp01(Math.pow(1 - u, 1.3));
+}
+
+/* ---------- shared links: #r-<seed hex>-<stimulation 0..999> (reel) or #p-... (post) regenerates the same item ---------- */
+const itemHash = (k, it) => `${k}-${(it.seed >>> 0).toString(16)}-${Math.round(it.s * 999)}`;
+function parseHash() {
+  const m = /^#([rp])-([0-9a-f]{1,8})-(\d{1,3})$/.exec(location.hash || '');
+  return m ? { kind: m[1] === 'p' ? 'post' : 'reel', seed: parseInt(m[2], 16) | 0, s: Math.min(999, +m[3]) / 999 } : null;
+}
+
+/* ---------- reels ---------- */
+const feed = $('feed');
+let slides = [], active = -1, paused = false, scrollingUntil = 0, saveAt = 0, feedKind = 'reels';
+const seedTag = n => '#' + (n >>> 0).toString(16).padStart(8, '0').slice(-6);
+
+function makeSlide(fixed) {
+  const el = document.createElement('section');
+  el.className = 'slide';
+  feed.appendChild(el);
+  // Unless it came from a shared link, the recipe is built in attach(), at the stimulation of the moment it comes up.
+  const sl = { el, seed: fixed ? fixed.seed : (Math.random() * 2 ** 31) | 0, s: fixed ? fixed.s : null, canvas: null, ctx: null, t: 0, state: null };
+  slides.push(sl);
+  return sl;
+}
+function fill(n = 5) { for (let i = 0; i < n; i++) makeSlide(); }
+
+function dims() { const r = feed.getBoundingClientRect(); return { w: r.width, h: r.height, dpr: Math.min(window.devicePixelRatio || 1, 2) }; }
+function sizeSlide(sl) {
+  const d = dims(); sl.w = d.w; sl.h = d.h; sl.dpr = Math.min(d.dpr, sl.s > .75 ? 1.5 : 2);
+  sl.canvas.width = Math.round(d.w * sl.dpr); sl.canvas.height = Math.round(d.h * sl.dpr);
+  if (sl.state) sl.state._fresh = true;
+}
+function attach(sl) {
+  if (sl.canvas) return;
+  if (!sl.state) {
+    const r = rng(sl.seed);
+    if (sl.s == null) sl.s = Math.round(stimNow() * 999) / 999;
+    sl.state = buildRecipe(r, sl.s); sl.t = 3 + r() * 12;
+    sl.el.setAttribute('aria-label', sl.state.name);
+    sl.el.innerHTML = `<div class="cap"><h2>${sl.state.name}</h2><div class="meta"><span class="seed">${seedTag(sl.seed)}</span></div></div>`;
+  }
+  sl.canvas = document.createElement('canvas'); sl.el.prepend(sl.canvas); sl.ctx = sl.canvas.getContext('2d');
+  sizeSlide(sl); render(sl);
+}
+function detach(sl) { if (!sl.canvas) return; sl.canvas.width = sl.canvas.height = 0; sl.canvas.remove(); sl.canvas = sl.ctx = null; }
+function render(sl) {
+  const c = sl.ctx; c.setTransform(sl.dpr, 0, 0, sl.dpr, 0, 0);
+  c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+  drawRecipe(c, sl.w, sl.h, sl.t, sl.state);
+  c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+}
+// canvases exist only for the active reel and its two neighbours
+const neighbours = () => slides.forEach((sl, j) => Math.abs(j - active) <= 1 ? attach(sl) : detach(sl));
+
+function setActive(i) {
+  if (i === active || !slides[i]) return;
+  active = i; neighbours();
+  if (i >= slides.length - 3) fill();
+  if (i > 0) $('hint').classList.add('gone');
+}
+function goTo(i) { feed.scrollTo({ top: i * feed.clientHeight, behavior: reduce ? 'auto' : 'smooth' }); }
+// Drop the reels below the current one so the next ones pick up the current stimulation.
+function regenerateAhead() {
+  for (let i = slides.length - 1; i > active; i--) { detach(slides[i]); slides[i].el.remove(); slides.pop(); }
+  fill(); neighbours();
+}
+
+let raf = 0;
+feed.addEventListener('scroll', () => {
+  scrollingUntil = performance.now() + 250;
+  if (raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; setActive(Math.round(feed.scrollTop / feed.clientHeight)); });
+}, { passive: true });
+
+const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>';
+function setPaused(p) {
+  paused = p;
+  const g = $('glyph'); g.innerHTML = p ? '<svg viewBox="0 0 24 24"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg>' : PLAY;
+  g.classList.add('show'); clearTimeout(g._t); g._t = setTimeout(() => g.classList.remove('show'), 600);
+}
+feed.addEventListener('click', () => setPaused(!paused));
+
+/* ---------- share ---------- */
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+function closeShare() { $('shareSheet').classList.remove('open'); $('scrim').classList.remove('open'); }
+async function shareLink(url, name) {
+  try { if (navigator.share) { await navigator.share({ title: name, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); return; } catch (e) {}
+  // Last resort: show the link so it can be copied by hand.
+  $('shareName').textContent = name; $('shareUrl').value = url;
+  $('shareSheet').classList.add('open'); $('scrim').classList.add('open');
+  setTimeout(() => { $('shareUrl').focus(); $('shareUrl').select(); }, 50);
+}
+$('shareBtn').onclick = () => { const sl = slides[active]; if (sl && sl.state) shareLink(`${HOME}#${itemHash('r', sl)}`, sl.state.name); };
+const sharePost = p => shareLink(`${HOME}#${itemHash('p', p)}`, 'a post');
+$('shareDone').onclick = closeShare;
+
+/* ---------- posts (module inlined by build.py) ---------- */
+function setFeedKind(kind) {
+  if (!window.WaneTextFeed || kind === feedKind) return;
+  feedKind = kind;
+  for (const b of $('fswitch').children) b.setAttribute('aria-pressed', String(b.dataset.feed === kind));
+  const m = $('postsMount');
+  $('app').classList.toggle('posts', kind === 'posts');
+  $('mark').firstChild.nodeValue = kind; document.title = kind;
+  if (kind === 'posts') {
+    m.hidden = false;
+    try { window.WaneTextFeed.mount(m, { stim: stimNow(), stimAt: stimNow, decay: 0, floor: 0, onShare: sharePost, first: firstPost }); firstPost = undefined; } catch (e) { console.error(e); }
+  } else {
+    try { window.WaneTextFeed.unmount(); } catch (e) {}
+    m.hidden = true; m.innerHTML = '';
+  }
+}
+$('fswitch').onclick = e => { const b = e.target.closest('button'); if (b) setFeedKind(b.dataset.feed); };
+
+/* ---------- settings sheet ---------- */
+function paintSheet() { for (const b of $('windSeg').children) b.setAttribute('aria-pressed', String(+b.dataset.wind === S.wind)); }
+function openSheet() { paintSheet(); $('sheet').classList.add('open'); $('scrim').classList.add('open'); }
+function closeSheet() { $('sheet').classList.remove('open'); $('scrim').classList.remove('open'); }
+$('openSettings').onclick = openSheet;
+$('scrim').onclick = () => { closeSheet(); closeShare(); };
+$('done').onclick = closeSheet;
+$('windSeg').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.wind = +b.dataset.wind; save(); paintSheet(); regenerateAhead();
+};
+$('fresh').onclick = () => {
+  C.secs = 0; saveC(); regenerateAhead();
+  if (feedKind === 'posts' && window.WaneTextFeed) window.WaneTextFeed.setStim(stimNow());
+  closeSheet(); toast('Starting fresh');
+};
+
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input')) return;
+  if ($('sheet').classList.contains('open') || $('shareSheet').classList.contains('open')) { if (e.key === 'Escape') { closeSheet(); closeShare(); } return; }
+  if (e.key === 'p') return setFeedKind(feedKind === 'posts' ? 'reels' : 'posts');
+  if (feedKind !== 'reels') return;
+  if (['ArrowDown', 'PageDown', 'j'].includes(e.key)) { e.preventDefault(); goTo(active + 1); }
+  else if (['ArrowUp', 'PageUp', 'k'].includes(e.key)) { e.preventDefault(); goTo(Math.max(0, active - 1)); }
+  else if (e.key === ' ') { e.preventDefault(); setPaused(!paused); }
+});
+
+/* ---------- frame loop ---------- */
+let last = performance.now();
+function frame(now) {
+  // rAF timestamps can trail performance.now(), so never let time run backwards
+  const dt = Math.max(0, Math.min(.05, (now - last) / 1000)); last = now;
+  if (!document.hidden) {
+    C.secs += dt;
+    if (now > saveAt) { saveAt = now + 5000; const k = dayKey(new Date()); if (k !== C.day) C = { day: k, secs: 0 }; saveC(); }
+  }
+  if (feedKind === 'reels' && !document.hidden) {
+    const a = slides[active];
+    if (a && a.ctx) {
+      if (!paused) a.t += dt * SPEED;
+      render(a);
+      const loop = lerp(24, 8, a.s);
+      $('bar').style.transform = `scaleX(${(a.t % loop) / loop})`;
+    }
+    if (now < scrollingUntil) for (const j of [active - 1, active + 1]) { const n = slides[j]; if (n && n.ctx) { n.t += dt * SPEED; render(n); } }
+  }
+  requestAnimationFrame(frame);
+}
+
+new ResizeObserver(() => {
+  slides.forEach(sl => { if (sl.canvas) { sizeSlide(sl); render(sl); } });
+  if (active >= 0) feed.scrollTop = active * feed.clientHeight;
+}).observe(feed);
+document.addEventListener('visibilitychange', () => { last = performance.now(); saveC(); });
+window.addEventListener('pagehide', saveC);
+
+/* ---------- boot: straight into the feed, opening on a shared reel if the link has one ---------- */
+const shared = parseHash();
+let firstPost = shared && shared.kind === 'post' ? { seed: shared.seed, s: shared.s } : undefined;
+if (shared && shared.kind === 'reel') makeSlide(shared);
+fill(); setActive(0);
+requestAnimationFrame(frame);
+const offerPosts = () => { if (window.WaneTextFeed && window.WaneTextFeed.mount) { $('fswitch').hidden = false; if (firstPost) setFeedKind('posts'); } };
+window.addEventListener('load', offerPosts); setTimeout(offerPosts, 0);
+
+})();
+</script>
+
+<style>
+/* Wane text feed styles; every class is prefixed tf- */
+.tf{--tf-bg:#000;--tf-ink:#f4f2f8;--tf-dim:rgba(244,242,248,.6);--tf-line:rgba(244,242,248,.12);--tf-bar:rgba(244,242,248,.22);--tf-hi:#ff5fa8;
+  position:relative;height:100%;display:flex;flex-direction:column;background:var(--tf-bg);color:var(--tf-ink);font-family:var(--f-body,"Figtree",system-ui,sans-serif)}
+.tf-top{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--tf-line);background:rgba(0,0,0,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);z-index:2}
+.tf-mark{font-family:var(--f-display,"Bricolage Grotesque",system-ui,sans-serif);font-weight:700;font-size:1.3rem;letter-spacing:-.03em}
+.tf-mark span{opacity:.45}
+.tf-pill{display:flex;align-items:center;gap:9px;padding:6px 11px;border-radius:999px;background:rgba(255,255,255,.08);font-weight:600;font-size:.82rem}
+.tf-meter{display:flex;align-items:flex-end;gap:3px;height:13px}
+.tf-meter b{position:relative;width:4px;border-radius:2px;background:var(--tf-line);overflow:hidden}
+.tf-meter i{position:absolute;inset:0;background:var(--tf-lc);transform-origin:bottom;transform:scaleY(0);transition:transform .4s}
+.tf-meter b:nth-child(1){height:4px}.tf-meter b:nth-child(2){height:7px}.tf-meter b:nth-child(3){height:10px}.tf-meter b:nth-child(4){height:13px}
+.tf-list{flex:1;min-height:0;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tf-list::-webkit-scrollbar{display:none}
+.tf-post{display:grid;grid-template-columns:40px 1fr;gap:0 12px;padding-block:var(--tf-pad,14px) calc(var(--tf-pad,14px) - 2px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--tf-line);position:relative}
+.tf-post.tf-cont{border-bottom:0;padding-bottom:4px}
+.tf-post.tf-cont .tf-av::after{content:"";position:absolute;left:50%;top:44px;bottom:-14px;width:2px;margin-left:-1px;background:var(--tf-line)}
+.tf-av{position:relative;width:40px;height:40px}
+.tf-av canvas{width:40px;height:40px;display:block;border-radius:50%}
+.tf-body{min-width:0;display:grid;gap:9px}
+.tf-head{display:flex;align-items:center;gap:6px;height:16px}
+.tf-head i{display:block;height:10px;border-radius:5px;background:var(--tf-bar)}
+.tf-head i.tf-n{background:var(--tf-name)}
+.tf-head i.tf-d{width:3px;height:3px;border-radius:50%}
+.tf-text{display:grid;gap:7px}
+.tf-ln{display:flex;gap:2%;height:10px}
+.tf-ln i{display:block;height:100%;border-radius:5px;background:var(--tf-bar)}
+.tf-ln i.tf-h{background:var(--tf-hi)}
+.tf-media{display:grid;gap:2px;border-radius:14px;overflow:hidden;border:1px solid var(--tf-line);margin-top:3px}
+.tf-media.tf-g2{grid-template-columns:1fr 1fr}
+.tf-media.tf-g4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.tf-media canvas{width:100%;height:100%;display:block;background:#111}
+.tf-quote{border:1px solid var(--tf-line);border-radius:14px;padding:10px 12px;display:grid;gap:8px;margin-top:3px}
+.tf-quote .tf-head canvas{width:18px;height:18px;border-radius:50%}
+.tf-acts{display:flex;justify-content:space-between;align-items:center;max-width:300px;margin-top:2px}
+.tf-acts:has(> :only-child){justify-content:flex-end}
+.tf-acts i{opacity:var(--tf-acts,1)}
+.tf-share{display:grid;place-items:center;width:32px;height:32px;margin:-8px;padding:0;border:0;border-radius:50%;background:none;color:var(--tf-dim);cursor:pointer;opacity:calc(.55 + .45 * var(--tf-acts,1))}
+.tf-share svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tf-share:active{transform:scale(.9)}
+.tf-share:focus-visible{outline:2px solid var(--tf-ink);outline-offset:1px}
+.tf-acts i{display:block;width:16px;height:16px;border-radius:5px;border:1.5px solid var(--tf-line)}
+.tf-acts i:nth-child(odd){border-radius:50%}
+.tf-end{display:grid;gap:16px;padding:56px max(28px,env(safe-area-inset-left,0px)) 80px}
+.tf-end .tf-dot{width:14px;height:14px;border-radius:50%;background:var(--tf-ink);animation:tf-breathe 10s ease-in-out infinite}
+.tf-end h2{margin:0;font-family:var(--f-display,"Bricolage Grotesque",system-ui,sans-serif);font-size:clamp(1.7rem,7.5vw,2.2rem);line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+.tf-end p{margin:0;color:var(--tf-dim);line-height:1.5;max-width:30ch}
+.tf-end .tf-row{display:flex;flex-wrap:wrap;gap:10px}
+.tf-end button{font:inherit;color:inherit;cursor:pointer;padding:12px 18px;border-radius:999px;border:1px solid var(--tf-line);background:none;font-weight:600}
+.tf-end button.tf-solid{background:var(--tf-ink);color:#000;border-color:var(--tf-ink)}
+.tf-sentinel{height:1px}
+@keyframes tf-breathe{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(2.2);opacity:1}}
+@keyframes tf-shimmer{to{background-position:-200% 0}}
+.tf-gone{box-sizing:border-box}
+.tf-sh .tf-ln i:not(.tf-h){background:linear-gradient(90deg,var(--tf-bar),var(--tf-bar2),var(--tf-bar));background-size:200% 100%;animation:tf-shimmer 3s linear infinite}
+@media (prefers-reduced-motion:reduce){.tf-sh .tf-ln i{animation:none}.tf-end .tf-dot{animation:none}}
+
+</style>
+<script>
+/* Wane text feed: a Twitter-style timeline where every word is a placeholder bar and every avatar and picture is generated.
+   Every post is a pure function of (seed, stimulation). Stimulation s is continuous in [0,1]: 1 is the most vivid, 0 the calmest,
+   and the old levels are just points on it (4 = 1, 3 = .67, 2 = .33, 1 = 0). Nothing is bucketed: saturation, contrast, motion,
+   how many shapes, how often pictures appear and how busy the text looks all slide smoothly with s.
+   Styles live in textfeed.css (all classes prefixed tf-). Touches nothing at document level: no keydown, no window scroll.
+   API: WaneTextFeed.mount(el, opts), unmount(), setStim(s), setLevel(n), setDecay(d), end(reason), restart(s), stim, level, post(seed, s).
+   opts: stim (starting s, default 1), decay (s lost per post, default 1/24), floor (s never goes below it, default 0),
+         stimAt (optional () => s; when given, each new post takes s = stimAt() and decay is ignored),
+         chrome (own top bar, default false), onStim(s), onLevel(level), onSeen(post), onEnd(reason), onRestart(),
+         onShare({seed, s}) (shows a share button on every post; the host builds and shares the link),
+         first ({seed, s}: open with this exact post on top, e.g. from a shared link).
+   The feed never ends: s settles at floor and posts keep coming. */
+(() => {
+const TAU = Math.PI * 2;
+const LV = {
+  4: { name: 'Vivid', color: '#ff5fa8' },
+  3: { name: 'Color', color: '#3fd0b8' },
+  2: { name: 'Mono',  color: '#b9b7c0' },
+  1: { name: 'Still', color: '#ffffff' },
+};
+const levelOf = s => 1 + Math.round(Math.max(0, Math.min(1, s)) * 3);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- helpers ---------- */
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const between = (r, a, b) => a + r() * (b - a);
+function poly(c, x, y, rad, n, rot) { c.beginPath(); for (let i = 0; i < n; i++) { const a = rot + i * TAU / n - Math.PI / 2; const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad; i ? c.lineTo(px, py) : c.moveTo(px, py); } c.closePath(); }
+function shapePath(c, type, x, y, rad, rot) { if (type === 0) { c.beginPath(); c.arc(x, y, rad, 0, TAU); } else poly(c, x, y, rad, type === 1 ? 3 : type === 2 ? 4 : 6, rot); }
+
+/* ---------- the stimulation curves, shared by every generator ---------- */
+// chroma: how colorful. Gone below s≈.3, so the lower third reads as black and white.
+const chroma = s => smooth(.3, .9, s);
+// motion: how fast things move. Never quite zero, so the calm end still breathes.
+const motion = s => lerp(.06, 1, s * s);
+// count: how many elements, from one at s=0 to n at s=1.
+const count = (s, n) => Math.max(1, Math.round(lerp(1, n, Math.pow(s, 1.3))));
+// A look derived once per seed: base hue, hue spread, and whether the calm end is ink-on-paper or paper-on-ink.
+function look(r, s) { return { h: r() * 360, spread: lerp(40, 160, r()) * chroma(s), light: r() < .35, s }; }
+// Picture colours come from cosine gradients (a + b·cos 2π(c·x + d)), so every colour in a picture sits in harmony.
+// The gradient and its offset are read off the look's hue, so no extra randomness is drawn.
+const COSINES = [
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [0, .33, .67]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [0, .1, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, 1], [.3, .2, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [1, 1, .5], [.8, .9, .3]],
+  [[.5, .5, .5], [.5, .5, .5], [1, .7, .4], [0, .15, .2]],
+  [[.5, .5, .5], [.5, .5, .5], [2, 1, 0], [.5, .2, .25]],
+  [[.8, .5, .4], [.2, .4, .2], [2, 1, 1], [0, .25, .25]],
+  [[.55, .4, .6], [.45, .4, .4], [1, 1, 1], [.6, .75, .9]],
+  [[.6, .55, .5], [.4, .35, .3], [1, 1, 1], [.05, .2, .35]],
+];
+function tone(L, x) {
+  const P = COSINES[Math.floor(L.h / 360 * COSINES.length) % COSINES.length], d0 = (L.h / 360 * 7) % 1, C = chroma(L.s);
+  let v = [0, 1, 2].map(k => P[0][k] + P[1][k] * Math.cos(TAU * (P[2][k] * x + P[3][k] + d0)));
+  const Y = .3 * v[0] + .59 * v[1] + .11 * v[2]; v = v.map(u => Y + (u - Y) * C);
+  // keep colours readable against the ground: lift on dark, deepen on paper
+  const Y2 = .3 * v[0] + .59 * v[1] + .11 * v[2], need = L.light ? Math.max(0, Y2 - .5) * 1.4 : Math.max(0, .45 - Y2) * 1.4;
+  const ink = 1 - smooth(.15, .85, L.s);
+  return v.map(u => lerp(lerp(u, L.light ? 0 : 1, need), L.light ? .03 : .96, ink));
+}
+const rgba = (v, a = 1) => `rgba(${v.map(u => Math.round(clamp(u) * 255)).join(',')},${a})`;
+// Colors pull toward pure black and white as s falls, and toward a harmonious mid-tone gradient as it rises.
+function bg(L, t = 0) { const C = chroma(L.s); return `hsl(${L.h + t * 20 * L.s},${45 * C}%,${lerp(L.light ? 96 : 3, 8, smooth(.15, .85, L.s))}%)`; }
+function fg(L, k, t = 0, a = 1) { return rgba(tone(L, k * lerp(.25, .6, L.spread / 160) + t * .03 * L.s), a); }
+
+/* ---------- pictures: family picked by seed, everything else by s ---------- */
+// Each make(r, s, look) -> state; draw(c, w, h, t, state). At s=0 each family collapses to one plain shape or line.
+const PICS = [
+  { name: 'mandala',
+    make(r, s, L) { const n = count(s, 14); return { L, segs: 2 * Math.round(lerp(.5, 5, s)), shapes: Array.from({ length: n }, () => ({ d: r(), sp: .3 + r() * .8, ph: r() * TAU, sz: lerp(.16, .05 + r() * .1, s), k: r(), type: Math.floor(r() * 4) })) }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s, cx = w / 2, cy = h / 2, R = Math.hypot(w, h) / 2, m = Math.min(w, h);
+      c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.segs < 2) { c.fillStyle = fg(L, 0, t); const p = st.shapes[0]; shapePath(c, p.type, cx, cy, p.sz * m, t * .1); c.fill(); return; }
+      const a = TAU / st.segs;
+      for (let k = 0; k < st.segs; k++) {
+        c.save(); c.translate(cx, cy);
+        if (k % 2) { c.rotate((k + 1) * a + t * .2); c.scale(1, -1); } else c.rotate(k * a + t * .2);
+        c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, R, 0, a + .002); c.closePath(); c.clip();
+        for (const p of st.shapes) {
+          const d = (.08 + p.d * .85 + .15 * Math.sin(t * p.sp + p.ph)) * R * .9, th = a * (.5 + .45 * Math.sin(t * p.sp * .7 + p.ph * 2));
+          c.fillStyle = fg(L, p.k, t, lerp(1, .6, s));
+          shapePath(c, p.type, Math.cos(th) * d, Math.sin(th) * d, p.sz * m * (1 + .35 * s * Math.sin(t * 2 * p.sp + p.ph)), t * p.sp); c.fill();
+        }
+        c.restore();
+      }
+    } },
+  { name: 'rings',
+    make(r, s, L) { return { L, sides: [0, 3, 4, 5, 6][Math.floor(r() * 5)], n: count(s, 24), twist: (.05 + r() * .2) * s }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      const R = Math.hypot(w, h) * .75, N = st.n, base = t * 1.5, fr = N > 1 ? base % 1 : .6, fl = Math.floor(base);
+      c.lineJoin = 'round';
+      for (let i = 0; i < N; i++) {
+        const z = N > 1 ? (i + fr) / N : .55, id = i - fl;
+        c.lineWidth = lerp(2, 1 + z * z * 18, s); c.strokeStyle = fg(L, (((id % 7) + 7) % 7) / 7, t);
+        const rr = lerp(z * R * .45, z * z * z * R, s);
+        if (st.sides) poly(c, w / 2, h / 2, rr, st.sides, id * st.twist + t * .3); else { c.beginPath(); c.arc(w / 2, h / 2, rr, 0, TAU); }
+        c.stroke();
+      }
+    } },
+  { name: 'scatter',
+    make(r, s, L) { return { L, items: Array.from({ length: count(s, 16) }, () => ({ x: r(), y: r(), sz: lerp(.16, .05 + r() * .12, s), sp: .05 + r() * .12, ph: r() * TAU, k: r(), type: Math.floor(r() * 3) })) }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s, m = Math.min(w, h), one = st.items.length === 1; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      for (const p of st.items) {
+        c.fillStyle = fg(L, p.k, t, lerp(1, .9, s));
+        shapePath(c, p.type, ((one ? .5 : p.x) + .2 * s * Math.sin(t * p.sp * 3 + p.ph)) * w, ((one ? .5 : p.y) + .15 * s * Math.cos(t * p.sp * 2 + p.ph)) * h + Math.sin(t * .3 + p.ph) * m * .02, p.sz * m, t * p.sp + p.ph); c.fill();
+      }
+    } },
+  { name: 'waves',
+    make(r, s, L) { return { L, n: count(s, 6), ph: r() * TAU, f: .6 + r() * .8 }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.n === 1) { c.fillStyle = fg(L, 0, t); c.fillRect(0, h * (.5 + .08 * Math.sin(t * .3 + st.ph)) - 1, w, 2); return; }
+      for (let k = 0; k < st.n; k++) {
+        const base = h * (.25 + k * .6 / st.n); c.beginPath(); c.moveTo(0, h);
+        for (let x = 0; x <= w + 8; x += 8) c.lineTo(x, base + Math.sin(x / w * TAU * st.f * (1 + k * .3) + t * (.4 + k * .1) + k + st.ph) * h * .07 * s);
+        c.lineTo(w, h); c.closePath(); c.fillStyle = fg(L, k / st.n, t); c.fill();
+      }
+    } },
+  { name: 'grid',
+    make(r, s, L) { return { L, cols: Math.max(1, Math.round(lerp(1, 9, s))), round: r() < .5, ph: r() * TAU }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      const one = st.cols === 1, sz = one ? Math.min(w, h) : w / st.cols, rows = one ? 1 : Math.ceil(h / sz) + 1, ox = one ? (w - sz) / 2 : 0, oy = one ? (h - sz) / 2 : 0;
+      for (let i = 0; i < st.cols; i++) for (let j = 0; j < rows; j++) {
+        const ph = t * .8 - (i + j) * .35 + st.ph, k = (one ? .4 : .55 + .3 * s * Math.sin(ph)) * sz;
+        c.fillStyle = fg(L, ((i + j) % 4) / 4, t);
+        c.save(); c.translate(ox + (i + .5) * sz, oy + (j + .5) * sz); c.rotate(Math.sin(ph) * Math.PI / 4 * s);
+        if (st.round) { c.beginPath(); c.arc(0, 0, k / 2, 0, TAU); c.fill(); } else c.fillRect(-k / 2, -k / 2, k, k);
+        c.restore();
+      }
+    } },
+  { name: 'bloom',
+    make(r, s, L) { return { L, n: Math.round(lerp(1, 380, Math.pow(s, 2))) }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.n === 1) { c.fillStyle = fg(L, 0, t); c.beginPath(); c.arc(w / 2, h / 2, Math.min(w, h) * (.12 + .02 * Math.sin(t * .6)), 0, TAU); c.fill(); return; }
+      const R = Math.hypot(w, h) / 2 * lerp(.25, 1, s), k = R / Math.sqrt(st.n), ga = 2.39996323;
+      for (let i = 0; i < st.n; i++) {
+        const a = i * ga + t * .4, rr = k * Math.sqrt(i);
+        c.fillStyle = fg(L, i / st.n, t); c.beginPath();
+        c.arc(w / 2 + Math.cos(a) * rr, h / 2 + Math.sin(a) * rr, (1.2 + rr / R * 6) * (.7 + .3 * Math.sin(t * 3 - i * .03)), 0, TAU); c.fill();
+      }
+    } },
+  { name: 'landscape',
+    // layered ridges fading into haze under a sun or moon, like a travel photo; at s=0 a single horizon line
+    make(r, s, L) { return { L, n: count(s, 5), ph: r() * TAU, rough: .5 + r(), sun: r() < .75, sx: .2 + r() * .6, sy: .18 + r() * .2 }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s, m = Math.min(w, h); c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.n === 1) { c.fillStyle = fg(L, 0, t); if (st.sun) { c.beginPath(); c.arc(w * st.sx, h * .5, m * .08, Math.PI, TAU); c.fill(); } c.fillRect(0, h * .5 - 1, w, 2); return; }
+      const sky = c.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, fg(L, .9, t, .0)); sky.addColorStop(1, fg(L, .9, t, .55 * s)); c.fillStyle = sky; c.fillRect(0, 0, w, h);
+      if (st.sun) { c.fillStyle = fg(L, .15, t, .95); c.beginPath(); c.arc(w * st.sx + Math.sin(t * .1) * w * .03, h * (st.sy + .03 * Math.sin(t * .2)), m * .12, 0, TAU); c.fill(); }
+      for (let k = 0; k < st.n; k++) {
+        const z = k / (st.n - 1), base = h * (.42 + z * .4), amp = h * (.14 - z * .08) * (.4 + .6 * s), drift = t * (.02 + z * .06);
+        c.beginPath(); c.moveTo(0, h);
+        for (let x = 0; x <= w + 6; x += 6) { const u = x / w + drift; c.lineTo(x, base - amp * (.6 * Math.sin(u * TAU * st.rough + k * 1.7 + st.ph) + .3 * Math.sin(u * TAU * 2.7 * st.rough + k) + .1 * Math.sin(u * TAU * 7 + k * 3))); }
+        c.lineTo(w, h); c.closePath(); c.fillStyle = fg(L, .55 - z * .45, t, 1); c.fill();
+        if (k < st.n - 1) { c.fillStyle = fg(L, .9, t, .18 * s); c.fillRect(0, base - amp, w, h); }  // atmospheric haze between ridges
+      }
+    } },
+  { name: 'weave',
+    // Truchet arcs joining into meandering paths; at s=0 one big arc pair
+    make(r, s, L) { return { L, cols: Math.max(1, Math.round(lerp(1, 9, s))), salt: Math.floor(r() * 1e6), lw: .12 + r() * .18 }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.cols === 1) { c.strokeStyle = fg(L, 0, t); c.lineWidth = Math.min(w, h) * .05; c.beginPath(); c.arc(w / 2, h / 2, Math.min(w, h) * .28, 0, TAU); c.stroke(); return; }
+      const cell = Math.max(w, h) / st.cols, off = (t * .15 * s) % 1, f0 = Math.floor(t * .15 * s), rows = Math.ceil(h / cell) + 1, h2 = cell / 2;
+      c.lineWidth = Math.max(2, cell * st.lw); c.lineCap = 'round';
+      for (let j = -1; j <= rows; j++) for (let i = -1; i <= st.cols; i++) {
+        let q = Math.imul((i - f0) * 374761393 + j * 668265263 + st.salt, 1274126177); q ^= q >>> 13;
+        const fl = (Math.imul(q, 1103515245) >>> 16) & 1, x = (i + off) * cell, y = j * cell;
+        c.strokeStyle = fg(L, ((i - f0 + j) & 3) / 4, t); c.beginPath();
+        if (fl) { c.moveTo(x + h2, y); c.arc(x, y, h2, 0, Math.PI / 2); c.moveTo(x + cell, y + h2); c.arc(x + cell, y + cell, h2, -Math.PI / 2, -Math.PI, true); }
+        else { c.moveTo(x + cell, y + h2); c.arc(x + cell, y, h2, Math.PI / 2, Math.PI); c.moveTo(x, y + h2); c.arc(x, y + cell, h2, -Math.PI / 2, 0); }
+        c.stroke();
+      }
+    } },
+  { name: 'halftone',
+    // a dot screen rippling out from a point; at s=0 one dot
+    make(r, s, L) { return { L, cols: Math.max(1, Math.round(lerp(1, 20, s))), ox: r(), oy: r(), k: 8 + r() * 10 }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (st.cols === 1) { c.fillStyle = fg(L, 0, t); c.beginPath(); c.arc(w / 2, h / 2, Math.min(w, h) * .12, 0, TAU); c.fill(); return; }
+      const cell = w / st.cols, rows = Math.ceil(h / cell);
+      for (let j = 0; j < rows; j++) {
+        c.fillStyle = fg(L, j / rows * .6, t); c.beginPath();
+        for (let i = 0; i < st.cols; i++) {
+          const x = (i + .5) * cell, y = (j + .5) * cell, d = Math.hypot(x / w - st.ox, y / h - st.oy);
+          const rad = cell * .48 * (.15 + .85 * (.5 + .5 * Math.sin(d * st.k - t * 1.4))); c.moveTo(x + rad, y); c.arc(x, y, rad, 0, TAU);
+        }
+        c.fill();
+      }
+    } },
+  { name: 'aura',
+    // soft overlapping glows, like an out-of-focus photo of lights; at s=0 one soft grey disc
+    make(r, s, L) { return { L, items: Array.from({ length: count(s, 7) }, () => ({ x: r(), y: r(), rad: .25 + r() * .4, sp: .05 + r() * .15, ph: r() * TAU, k: r() })) }; },
+    draw(c, w, h, t, st) {
+      const L = st.L, s = L.s, m = Math.max(w, h), one = st.items.length === 1; c.fillStyle = bg(L, t); c.fillRect(0, 0, w, h);
+      if (!L.light && s > .3) c.globalCompositeOperation = 'lighter';  // overlapping lights add up like real ones
+      for (const p of st.items) {
+        const x = (one ? .5 : p.x + .15 * Math.sin(t * p.sp * 2 + p.ph)) * w, y = (one ? .5 : p.y + .12 * Math.cos(t * p.sp * 2 + p.ph)) * h, R = (one ? .3 : p.rad) * m;
+        const g = c.createRadialGradient(x, y, 0, x, y, R); g.addColorStop(0, fg(L, p.k, t, 1)); g.addColorStop(one ? .5 : .3, fg(L, p.k, t, lerp(1, .6, s))); g.addColorStop(1, fg(L, p.k, t, 0));
+        c.fillStyle = g; c.fillRect(x - R, y - R, 2 * R, 2 * R);
+      }
+      c.globalCompositeOperation = 'source-over';
+    } },
+];
+
+/* ---------- avatars ---------- */
+// Five kinds (petals, rings, split, orb, glyph); colour, count and motion fade out with s.
+// At 0 every kind is a plain grey disc with one faint shape on it, so faces stay tellable apart without colour.
+function makeAvatar(r, s) { return { L: look(r, s), petals: Math.round(lerp(0, 6, Math.pow(s, .8)) * (.6 + .4 * r())), spin: (.2 + r() * .4) * (r() < .5 ? -1 : 1), kind: Math.floor(r() * 5), glyph: Math.floor(r() * 4), rot: r() * TAU }; }
+function drawAvatar(c, z, t, a) {
+  const L = a.L, s = L.s, h = z / 2, sp = t * a.spin * s;
+  c.clearRect(0, 0, z, z); c.save(); c.beginPath(); c.arc(h, h, h, 0, TAU); c.clip();
+  c.fillStyle = rgba(tone({ ...L, light: true }, .8).map(u => lerp(.17, u, chroma(s)))); c.fillRect(0, 0, z, z);
+  const k = a.kind; c.globalAlpha = smooth(.05, .35, s);  // the patterned kinds fade in from the plain disc
+  if (k === 0) for (let i = 0; i < a.petals; i++) {
+    const ang = i * TAU / a.petals + sp;
+    c.fillStyle = fg(L, i / Math.max(1, a.petals), t, lerp(.35, .7, s));
+    c.beginPath(); c.ellipse(h + Math.cos(ang) * z * .18, h + Math.sin(ang) * z * .18, z * .3, z * lerp(.3, .12, s), ang, 0, TAU); c.fill();
+  }
+  else if (k === 1) for (let i = Math.max(1, a.petals); i > 0; i--) {
+    c.fillStyle = fg(L, i / 6, t, i & 1 ? 1 : .25 + .5 * s); c.beginPath(); c.arc(h, h, z * (.12 + .38 * i / Math.max(1, a.petals)) * (1 + .04 * s * Math.sin(t * 2 + i)), 0, TAU); c.fill();
+  }
+  else if (k === 2) {
+    c.translate(h, h); c.rotate(a.rot + sp); c.fillStyle = fg(L, .1, t, lerp(.25, 1, s)); c.fillRect(-h, 0, z, h);
+    if (s > .2) { c.fillStyle = fg(L, .6, t, s); c.beginPath(); c.arc(0, 0, z * .2, 0, TAU); c.fill(); }
+  }
+  else if (k === 3) {
+    const g = c.createRadialGradient(h * .7, h * .6, 0, h, h, h * 1.1);
+    g.addColorStop(0, fg(L, .2, t, lerp(.5, 1, s))); g.addColorStop(.6, fg(L, .55, t, lerp(.15, .85, s))); g.addColorStop(1, fg(L, .9, t, lerp(0, .6, s)));
+    c.fillStyle = g; c.fillRect(0, 0, z, z);
+  }
+  c.globalAlpha = 1;
+  if (k === 4 || s < .25) {
+    // one simple shape; it is the whole avatar for the glyph kind and the faint mark on the calm grey disc for every kind
+    c.fillStyle = fg(L, .3, t, k === 4 ? lerp(.45, 1, s) : .4 * (1 - s / .25));
+    shapePath(c, a.glyph, h, h, z * .22, a.rot * (a.glyph ? 1 : 0) + sp); c.fill();
+  }
+  c.restore();
+}
+
+/* ---------- posts ---------- */
+function lineWords(r, frac, s) {
+  // Higher s chops a line into more, shorter "words"; near 0 it's one smooth bar.
+  const maxW = lerp(100, 18, smooth(0, .5, s)), words = []; let left = frac * 100;
+  while (left > 4) { const w = Math.min(left, between(r, maxW * .3, maxW)); words.push({ w, hi: r() < .14 * s * s }); left -= w + 2; }
+  return words;
+}
+function makeText(r, s, n) { return Array.from({ length: n }, (_, i) => lineWords(r, i === n - 1 ? between(r, .25, .8) : between(r, .86, 1), s)); }
+function makePost(seed, s) {
+  // Pure function of (seed, s): the same pair always gives the same post. s is snapped to thousandths
+  // so a shared link (which carries s as 0..999) rebuilds exactly the post that was shared.
+  s = Math.round(clamp(s) * 999) / 999;
+  const r = rng(seed), p = { seed, s, name: between(r, 22, 40), handle: between(r, 14, 26), time: between(r, 5, 9) };
+  p.L = look(r, s); p.avatar = makeAvatar(r, s);
+  p.lines = makeText(r, s, 1 + Math.floor(r() * lerp(1.6, 4, s)));
+  if (r() < lerp(.06, .62, Math.pow(s, 1.2))) {
+    const n = r() < .3 * s * s ? (r() < .5 ? 2 : 4) : 1;
+    p.pics = Array.from({ length: n }, () => ({ fam: Math.floor(r() * PICS.length), seed: (r() * 2 ** 31) | 0 }));
+    p.aspect = n > 1 ? 16 / 10 : [16 / 9, 4 / 3, 1, 4 / 5][Math.floor(r() * 4)];
+  } else if (r() < .16 * s) {
+    p.quote = { name: between(r, 20, 34), avatar: makeAvatar(r, s), lines: makeText(r, s, 1 + Math.floor(r() * 2)) };
+  }
+  p.thread = r() < .18 * s;
+  return p;
+}
+
+/* ---------- mount ---------- */
+function mount(root, opts = {}) {
+  const o = Object.assign({ stim: opts.level ? (opts.level - 1) / 3 : 1, decay: 1 / 24, floor: 0, chrome: false }, opts);
+  root.innerHTML = '';
+  const el = document.createElement('div'); el.className = 'tf'; root.appendChild(el);
+  let top = null;
+  if (o.chrome) {
+    top = document.createElement('div'); top.className = 'tf-top';
+    top.innerHTML = '<div class="tf-mark">wane<span>.</span></div><div class="tf-pill"><span class="tf-meter"><b><i></i></b><b><i></i></b><b><i></i></b><b><i></i></b></span><span class="tf-lvn"></span></div>';
+    el.appendChild(top);
+  }
+  const list = document.createElement('div'); list.className = 'tf-list'; list.setAttribute('aria-label', 'Text feed'); el.appendChild(list);
+  const sentinel = document.createElement('div'); sentinel.className = 'tf-sentinel'; list.appendChild(sentinel);
+
+  const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+  let gs, posts = [], live = new Set(), shown = -1, shownLevel = 0, ended = false, alive = true, serial = 0;
+  const seenIO = new IntersectionObserver(es => {
+    for (const e of es) {
+      const p = e.target._tf; if (!p) continue;
+      if (e.isIntersecting) { live.add(p); if (!p.seen && e.intersectionRatio >= .5) { p.seen = true; o.onSeen && o.onSeen(p.spec); } }
+      else live.delete(p);
+    }
+    updateStim();
+  }, { root: list, threshold: [0, .5] });
+  // The observer only fires when the sentinel crosses the margin, so topUp keeps adding until it is well below the fold.
+  const moreIO = new IntersectionObserver(() => topUp(), { root: list, rootMargin: '0px 0px 1200px 0px' });
+  moreIO.observe(sentinel);
+  list.addEventListener('click', e => {
+    const b = e.target.closest('.tf-share'), row = b && b.closest('.tf-post');
+    if (row && row._tf && o.onShare) o.onShare({ seed: row._tf.spec.seed, s: row._tf.spec.s });
+  });
+  let scrollRaf = 0;
+  list.addEventListener('scroll', () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; updateStim(); topUp(); }); }, { passive: true });
+
+  function topUp() {
+    for (let guard = 0; guard < 12 && !ended && alive; guard++) {
+      if (sentinel.getBoundingClientRect().top > list.getBoundingClientRect().bottom + 1200) break;
+      fill(6);
+    }
+  }
+
+  function updateStim() {
+    // The stimulation shown is that of the topmost post still mostly on screen.
+    let best = null; const edge = list.getBoundingClientRect().top + 60;
+    for (const p of live) if (p.el.getBoundingClientRect().bottom > edge && (!best || p.idx < best.idx)) best = p;
+    const s = best ? best.spec.s : gs.s;
+    if (Math.abs(s - shown) < 1e-4) return;
+    shown = s; o.onStim && o.onStim(s);
+    const lv = levelOf(s);
+    if (top) {
+      top.querySelector('.tf-lvn').textContent = LV[lv].name;
+      [...top.querySelectorAll('.tf-meter i')].forEach((b, i) => { b.style.transform = `scaleY(${clamp(s * 4 - i)})`; });
+      el.style.setProperty('--tf-lc', LV[lv].color);
+    }
+    if (lv !== shownLevel) { shownLevel = lv; o.onLevel && o.onLevel(lv); }
+  }
+
+  function canvasFor(parent, cssW, cssH) {
+    const cv = document.createElement('canvas'); cv.width = Math.round(cssW * dpr()); cv.height = Math.round(cssH * dpr());
+    parent.appendChild(cv); const c = cv.getContext('2d'); c.setTransform(dpr(), 0, 0, dpr(), 0, 0); return c;
+  }
+
+  function addPost(spec, cont) {
+    const s = spec.s, L = spec.L, C = chroma(s), row = document.createElement('article');
+    row.className = `tf-post${cont ? ' tf-cont' : ''}${s > .45 && !reduce ? ' tf-sh' : ''}`;
+    // Text bars: tinted and shimmering when stimulating, flat faint grey when calm.
+    const bar = (k, a) => `hsla(${L.h + k * L.spread},${80 * C}%,${lerp(92, 72, C)}%,${a})`;
+    row.style.cssText = `--tf-bar:${bar(0, lerp(.1, .36, s))};--tf-bar2:${bar(.5, lerp(.1, .36, s))};--tf-hi:${fg({ ...L, light: false }, .8, 0, lerp(.3, 1, s))};--tf-name:rgba(244,242,248,${lerp(.18, .75, s)});--tf-pad:${lerp(22, 14, s)}px;--tf-acts:${smooth(.25, .85, s)}`;
+    row.setAttribute('aria-label', 'Generated post');
+    const av = document.createElement('div'); av.className = 'tf-av'; row.appendChild(av);
+    const body = document.createElement('div'); body.className = 'tf-body'; row.appendChild(body);
+    const lineHTML = lines => `<div class="tf-text">${lines.map(ws => `<div class="tf-ln">${ws.map(w => `<i class="${w.hi ? 'tf-h' : ''}" style="width:${w.w.toFixed(1)}%"></i>`).join('')}</div>`).join('')}</div>`;
+    body.innerHTML = `<div class="tf-head"><i class="tf-n" style="width:${spec.name}%"></i><i style="width:${spec.handle}%"></i><i class="tf-d"></i><i style="width:${spec.time}%"></i></div>${lineHTML(spec.lines)}`;
+    list.insertBefore(row, sentinel);
+    const p = { spec, el: row, idx: serial++, draws: [], rate: motion(s), t: 0 };
+    const ac = canvasFor(av, 40, 40); p.draws.push(t => drawAvatar(ac, 40, t, spec.avatar));
+    const W = body.clientWidth || 300;
+    if (spec.pics) {
+      const m = document.createElement('div'); m.className = `tf-media${spec.pics.length > 1 ? ` tf-g${spec.pics.length}` : ''}`;
+      const H = W / spec.aspect; m.style.height = `${H}px`; body.appendChild(m);
+      const cw = spec.pics.length > 1 ? W / 2 : W, ch = spec.pics.length === 4 ? H / 2 : H;
+      for (const pic of spec.pics) {
+        const r = rng(pic.seed), gen = PICS[pic.fam], st = gen.make(r, s, look(r, s)), c = canvasFor(m, cw, ch), t0 = r() * 20;
+        p.draws.push(t => gen.draw(c, cw, ch, t0 + t, st));
+      }
+    } else if (spec.quote) {
+      const q = document.createElement('div'); q.className = 'tf-quote';
+      q.innerHTML = `<div class="tf-head"><span class="tf-qa"></span><i class="tf-n" style="width:${spec.quote.name}%"></i><i class="tf-d"></i><i style="width:8%"></i></div>${lineHTML(spec.quote.lines)}`;
+      body.appendChild(q);
+      const c = canvasFor(q.querySelector('.tf-qa'), 18, 18); p.draws.push(t => drawAvatar(c, 18, t, spec.quote.avatar));
+    }
+    // The placeholder icons fade out with s; the share button, when the host wants one, always stays.
+    const share = o.onShare ? '<button class="tf-share" type="button" aria-label="Share this post"><svg viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg></button>' : '';
+    if (s > .2 || share) body.insertAdjacentHTML('beforeend', `<div class="tf-acts">${s > .2 ? '<i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>' : ''}${share || (s > .2 ? '<i aria-hidden="true"></i>' : '')}</div>`);
+    for (const d of p.draws) d(0);
+    row._tf = p; posts.push(p); seenIO.observe(row);
+    return p;
+  }
+
+  function addEnd(reason) {
+    ended = true;
+    const e = document.createElement('div'); e.className = 'tf-end';
+    e.innerHTML = `<div class="tf-dot"></div><h2>That's today's time.</h2><p>You used your time budget for today. Tomorrow starts a little calmer.</p><div class="tf-row"><button class="tf-solid" data-tf="restart">Start over</button><button data-tf="more">Keep going anyway</button></div>`;
+    list.insertBefore(e, sentinel);
+    e.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-tf]'); if (!b) return;
+      if (b.dataset.tf === 'restart') { api.restart(); o.onRestart && o.onRestart(); }
+      else { e.remove(); ended = false; topUp(); }
+    });
+    o.onEnd && o.onEnd(reason);
+  }
+
+  // Posts far above the viewport are emptied but keep their height, so the feed stays light without
+  // ever moving the scroll position (which would cancel momentum scrolling on phones).
+  function trim() {
+    if (posts.length < 80) return;
+    const drop = posts.slice(0, posts.length - 60).filter(p => !live.has(p));
+    for (const p of drop) {
+      seenIO.unobserve(p.el); p.el.querySelectorAll('canvas').forEach(c => { c.width = c.height = 0; });
+      const h = p.el.offsetHeight;
+      p.el.className = 'tf-gone'; p.el.removeAttribute('style'); p.el.removeAttribute('aria-label'); p.el.style.height = `${h}px`;
+      p.el.innerHTML = ''; p.el._tf = null;
+    }
+    posts = posts.filter(p => !drop.includes(p));
+  }
+
+  const nextSeed = () => (Math.random() * 2 ** 31) | 0;
+  function fill(n) {
+    if (ended) return;
+    trim();
+    for (let i = 0; i < n; i++) {
+      if (o.stimAt) gs.s = clamp(o.stimAt());
+      const spec = makePost(nextSeed(), gs.s);
+      addPost(spec, spec.thread);
+      gs.s = Math.max(o.floor, gs.s - o.decay);
+      if (spec.thread) {
+        const s2 = makePost(nextSeed(), spec.s); s2.avatar = spec.avatar; s2.L = spec.L; s2.thread = false;
+        addPost(s2, false); gs.s = Math.max(o.floor, gs.s - o.decay);
+      }
+    }
+  }
+
+  // On-screen canvases redraw at a pace set by their own stimulation; calm ones also redraw less often.
+  let last = performance.now(), raf = 0, tick = 0;
+  function frame(now) {
+    if (!alive) return;
+    const dt = clamp((now - last) / 1000, 0, .05); last = now; tick++;
+    if (!document.hidden && !reduce) for (const p of live) {
+      p.t += dt * p.rate;
+      const every = p.rate > .4 ? 1 : p.rate > .15 ? 2 : 4;
+      if (tick % every === 0) for (const d of p.draws) d(p.t);
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function reset(s) {
+    for (const p of posts) seenIO.unobserve(p.el);
+    [...list.children].forEach(c => c !== sentinel && c.remove());
+    posts = []; live.clear(); serial = 0; shown = -1; shownLevel = 0; ended = false;
+    gs = { s: clamp(s) };
+    if (o.first) { const f = makePost(o.first.seed | 0, clamp(o.first.s)); f.thread = false; addPost(f, false); }
+    list.scrollTop = 0; topUp(); updateStim();
+  }
+
+  const api = {
+    get stim() { return shown; },
+    get level() { return shownLevel; },
+    // Regenerate everything below what's on screen from stimulation s (e.g. a "Calmer" button or the daily budget).
+    setStim(s) {
+      s = clamp(s); if (Math.abs(s - gs.s) < 1e-4) return;
+      const keep = [...live].reduce((m, p) => Math.max(m, p.idx), -1);
+      for (const p of posts.filter(p => p.idx > keep + 1)) { seenIO.unobserve(p.el); p.el.remove(); live.delete(p); }
+      posts = posts.filter(p => p.idx <= keep + 1);
+      [...list.querySelectorAll('.tf-end')].forEach(d => d.remove());
+      ended = false; gs = { s }; topUp();
+    },
+    setLevel(n) { if (n) api.setStim((n - 1) / 3); },
+    setDecay(d) { o.decay = d; },
+    end(reason = 'time') {
+      const keep = [...live].reduce((m, p) => Math.max(m, p.idx), -1);
+      for (const p of posts.filter(p => p.idx > keep + 2)) { seenIO.unobserve(p.el); p.el.remove(); }
+      posts = posts.filter(p => p.idx <= keep + 2);
+      [...list.querySelectorAll('.tf-end')].forEach(d => d.remove());
+      addEnd(reason);
+    },
+    restart(s = o.stim) { reset(s); },
+    destroy() { alive = false; cancelAnimationFrame(raf); seenIO.disconnect(); moreIO.disconnect(); root.innerHTML = ''; },
+  };
+
+  reset(o.stim);
+  raf = requestAnimationFrame(frame);
+  return api;
+}
+
+// Single-instance convenience API for the host app.
+let cur = null;
+window.WaneTextFeed = {
+  LEVELS: LV, levelOf, post: makePost,
+  mount(el, opts) { if (cur) cur.destroy(); cur = mount(el, opts); return cur; },
+  unmount() { if (cur) cur.destroy(); cur = null; },
+  setStim(s) { cur && cur.setStim(s); },
+  setLevel(n) { cur && cur.setLevel(n); },
+  setDecay(d) { cur && cur.setDecay(d); },
+  end(reason) { cur && cur.end(reason); },
+  restart(s) { cur && cur.restart(s); },
+  get stim() { return cur ? cur.stim : 0; },
+  get level() { return cur ? cur.level : 0; },
+};
+})();
+
+</script>
