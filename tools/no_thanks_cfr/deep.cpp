@@ -631,6 +631,25 @@ static int vsMain(int argc, char** argv){
   return 0;
 }
 
+// ./deep dump <w.json> <seed> <states>: random mid-game states and the net's outputs, one JSON line each, for
+// check-cnet.js to compare the page and the database against. Players are listed from the one to move.
+static int dumpMain(int argc, char** argv){
+  loadPool(argv[2]); const Model& net = *pool[0].net; unique_ptr<Work> w(net.work()); vector<float> x(MAXF);
+  Rng r((uint32_t)atoi(argv[3])); int want = atoi(argv[4]);
+  for (int got = 0; got < want;){
+    int n = 2 + (int)floor(r() * 6); Game g; newGame(g, n, r); int stop = (int)floor(r() * 90); bool over = false;
+    for (int s = 0; s < stop && !over; s++) over = step(g, g.chips[g.turn] == 0 || heuristic(g, r));
+    if (over || g.chips[g.turn] == 0) continue;
+    net.features(g, x.data()); const float* o = net.forward(x.data(), w.get());
+    printf("{\"n\":%d,\"card\":%d,\"pot\":%d,\"left\":%d,\"out\":[%.7g,%.7g],\"players\":[", n, g.deck[g.idx], g.pot, leftOf(g), o[0], o[1]);
+    for (int k = 0; k < n; k++){ int q = (g.turn + k) % n; printf("%s{\"chips\":%d,\"cards\":[", k ? "," : "", g.chips[q]); bool first = true;
+      for (int v = 3; v <= 35; v++) if (g.has[q * 37 + v]){ printf(first ? "%d" : ",%d", v); first = false; }
+      printf("]}"); }
+    printf("]}\n"); got++;
+  }
+  return 0;
+}
+
 // ./deep gradcheck <arch>: backward against finite differences, on a few positions from random games
 static int gradcheck(const string& arch){
   unique_ptr<Model> m(makeModel(arch, 2, 5)); unique_ptr<Work> w(m->work()); Rng r(9);
@@ -656,6 +675,7 @@ int main(int argc, char** argv){
   if (argc > 1 && !strcmp(argv[1], "eval")) return evalMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "league")) return leagueMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "vs")) return vsMain(argc, argv);
+  if (argc > 1 && !strcmp(argv[1], "dump")) return dumpMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "test")) return test(argv[2], atoi(argv[3]), atoi(argv[4]));
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
