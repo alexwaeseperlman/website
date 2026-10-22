@@ -24,6 +24,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <memory>
+#include <functional>
+#include <mutex>
+#include <atomic>
 using namespace std;
 
 // ---- game.js ----
@@ -542,6 +545,55 @@ static int evalMain(int argc, char** argv){
   return 0;
 }
 
+// ./deep league <games> a b c ...: every group of N (env N, default 3) distinct entries plays <games> deals; each deal is
+// replayed with every seating of the group, so no one gains from the cards or the seat. Prints each entry's win share
+// (fair = 1/N) and, for each pair, A's share in the groups that contain both A and B.
+static int leagueMain(int argc, char** argv){
+  int games = atoi(argv[2]), K = argc - 3, N = getenv("N") ? atoi(getenv("N")) : 3; vector<string> names;
+  for (int i = 3; i < argc; i++){ loadPool(argv[i]); names.push_back(argv[i]); }
+  if (K < N){ fprintf(stderr, "need at least %d entries\n", N); return 1; }
+  vector<vector<int>> groups; vector<int> cur;
+  function<void(int)> rec = [&](int from){ if ((int)cur.size() == N){ groups.push_back(cur); return; }
+    for (int i = from; i < K; i++){ cur.push_back(i); rec(i + 1); cur.pop_back(); } };
+  rec(0);
+  vector<double> share(K, 0), cnt(K, 0), pair(K * K, 0), pcnt(K * K, 0); mutex mu; atomic<int> next{ 0 };
+  vector<thread> th;
+  for (unsigned t = 0; t < thread::hardware_concurrency(); t++) th.emplace_back([&]{
+    auto pc = poolWork(); vector<float> x(MAXF);
+    for (int gi; (gi = next++) < (int)groups.size();){
+      const vector<int>& grp = groups[gi]; Rng r(1234 + gi * 7919); vector<double> s(N, 0); double plays = 0;
+      auto move = [&](const Game& g, int who){
+        const Opp& o = pool[who];
+        if (o.kind == 3) return heuristic(g, r);
+        if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
+        o.net->features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who].get());
+        return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+      };
+      for (int i = 0; i < games; i++){
+        Rng dr(99991 + i * 104729); Game g0; newGame(g0, N, dr);
+        vector<int> perm(N); for (int q = 0; q < N; q++) perm[q] = q;
+        do {   // perm[seat] = which member of the group sits there
+          Game g = g0; while (!step(g, g.chips[g.turn] == 0 || move(g, grp[perm[g.turn]])));
+          for (int q = 0; q < N; q++) s[perm[q]] += winShare(g, q);
+          plays++;
+        } while (next_permutation(perm.begin(), perm.end()));
+      }
+      lock_guard<mutex> lk(mu);
+      for (int a = 0; a < N; a++){ share[grp[a]] += s[a] / plays; cnt[grp[a]]++;
+        for (int b = 0; b < N; b++) if (a != b){ pair[grp[a] * K + grp[b]] += s[a] / plays; pcnt[grp[a] * K + grp[b]]++; } }
+    }
+  });
+  for (auto& t : th) t.join();
+  printf("%d players, %zu groups, %d deals x %d seatings each; fair share %.1f%%\n", N, groups.size(), games, (int)tgamma(N + 1), 100.0 / N);
+  printf("%-34s %6s %6s   share vs each (row's share in groups with column)\n", "entry", "share", "edge");
+  for (int a = 0; a < K; a++){
+    double v = share[a] / cnt[a]; printf("%-34s %5.1f%% %+5.1f  ", names[a].c_str(), 100 * v, (v * N - 1) * 100);
+    for (int b = 0; b < K; b++) printf(a == b ? "     -" : " %5.1f", a == b ? 0 : 100 * pair[a * K + b] / pcnt[a * K + b]);
+    printf("\n");
+  }
+  return 0;
+}
+
 // ./deep gradcheck <arch>: backward against finite differences, on a few positions from random games
 static int gradcheck(const string& arch){
   unique_ptr<Model> m(makeModel(arch, 2, 5)); unique_ptr<Work> w(m->work()); Rng r(9);
@@ -565,6 +617,7 @@ int main(int argc, char** argv){
   if (argc > 2 && !strcmp(argv[1], "gradcheck")) return gradcheck(argv[2]);
   if (getenv("DROP")){ dropSpec = getenv("DROP"); dropIdx = dropList(dropSpec); }
   if (argc > 1 && !strcmp(argv[1], "eval")) return evalMain(argc, argv);
+  if (argc > 1 && !strcmp(argv[1], "league")) return leagueMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "test")) return test(argv[2], atoi(argv[3]), atoi(argv[4]));
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
