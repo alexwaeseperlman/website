@@ -637,7 +637,7 @@ function localGame(nBots){
     if (s.phase !== 'playing') return;
     const p = s.players[s.turn]; if (p.pid === 'me') return;
     const n = s.players.length, others = Array.from({ length: n - 1 }, (_, k) => s.players[(s.turn + 1 + k) % n]).map(q => ({ cards: q.cards, chips: chips[q.pid] }));
-    botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, others, s.left, s.players.length)));
+    botT = setTimeout(() => move(p.pid, botTakes(p.cards, chips[p.pid], s.card, s.pot, others, s.left, s.players.length)), 100);
   };
   return { kind: 'local', act: async take => move('me', take), start: async () => deal(), leave(){ clearTimeout(botT); }, deal };
 }
@@ -672,13 +672,13 @@ function friendly(error){
 
 function onlineGame(code, pid){
   let sb, ch = null, pollT = 0, botT = 0, subscribed = false, chips = null, round = null, gone = false, state = null;
-  // when it's a bot's turn, ask the server to play it right away. Every browser in the room does this;
+  // when it's a bot's turn, ask the server to play it after a 100 ms pause. Every browser in the room does this;
   // the first ask moves the bot and the others are ignored, so a bot never stalls because one player left.
   const driveBots = st => {
     clearTimeout(botT);
     const cur = st.phase === 'playing' && st.players[st.turn];
     if (!cur || !cur.bot) return;
-    botT = setTimeout(() => { rpc('nothanks_bot', { p_code: code, p_v: st.v }).then(moved => { if (moved) pull().catch(() => {}); }, () => {}); });
+    botT = setTimeout(() => { rpc('nothanks_bot', { p_code: code, p_v: st.v }).then(moved => { if (moved) pull().catch(() => {}); }, () => {}); }, 100);
   };
   const pull = async () => {
     const { data, error } = await sb.from('nothanks_rooms').select('state').eq('code', code).maybeSingle();
