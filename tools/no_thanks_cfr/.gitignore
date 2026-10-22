@@ -6,3 +6,5 @@ deep-*.log
 deep
 abl/*.log
 abl/policy.json
+abl/live.json
+abl/score.txt

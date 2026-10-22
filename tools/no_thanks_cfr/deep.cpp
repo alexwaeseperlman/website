@@ -585,7 +585,7 @@ int main(int argc, char** argv){
   printf("average-strategy net on %ld decisions\n", pol.size); fflush(stdout);
   for (int s = 0; s < ps; s++){
     L = 0.98 * L + 0.02 * trainStep(avg, pol, 512, s < ps * 0.7 ? 1e-3 : 3e-4, nw, PG, PC, true);
-    if ((s + 1) % (ps / 10) == 0){ printf("  step %d/%d: loss %.4f\n", s + 1, ps, L); fflush(stdout); }
+    if (ps >= 10 && (s + 1) % (ps / 10) == 0){ printf("  step %d/%d: loss %.4f\n", s + 1, ps, L); fflush(stdout); }
   }
   saveJson("deep-" + name + ".json", arch, avg);
   printf("done, %.0fs\n", secs());

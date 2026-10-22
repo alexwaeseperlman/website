@@ -1,6 +1,6 @@
 // scores each ablation net: one of it among the live net / the table bot / the rule of thumb, 2-7 players
 //   node score.js live.json name1 name2 ...   (weights in deep-pnet-<name>-adv.json)
-const { execFileSync } = require('child_process'), live = process.argv[2], names = process.argv.slice(3), G = 20000;
+const { execFileSync } = require('child_process'), live = process.argv[2], names = process.argv.slice(3), G = +process.env.GAMES || 10000;
 const rows = [];
 for (const name of names){
   const f = `deep-pnet-${name}-adv.json`, r = { name, drop: require('./' + f).drop || '-' };
