@@ -226,7 +226,8 @@ returns int language sql immutable set search_path = public as $$
 $$;
 
 -- The neural-net bot (cnet3 in tools/no_thanks_cfr/deep.cpp, trained with Deep CFR), used at every table size.
--- Its weights ship as 16-bit integers with one scale per layer part (tools/supabase/nothanks_net.sql loads them) and
+-- w holds several such nets (different seeds) one after another, 16858 weights each; the bot averages their regrets.
+-- Their weights ship as 16-bit integers with one scale per layer part (tools/supabase/nothanks_net.sql loads them) and
 -- are unpacked once into w. Same layout as the page's NET_LAYERS: conv1 4x5->12 (offset 0), conv2 12x3->12 (252),
 -- encoder 106->32 (696), trunk 131->64 (4120), 64->64 (12568), 64->2 (16728); each is weights then biases.
 create table if not exists public.nothanks_net (
@@ -286,54 +287,59 @@ end $$;
 -- opp_cards / opp_chips: the other players in turn order after the mover. Null if the net isn't loaded.
 create or replace function public.nothanks_net_take(hand int[], chips int, card int, pot int, lft int, n int, opp_cards jsonb, opp_chips int[])
 returns real language plpgsql stable set search_path = public as $$
-declare w real[]; seen int[] := hand; pc int[]; pch int; c int := card - 3; pos int;
+declare w real[]; seen int[] := hand; pc int[]; pch int; c int := card - 3; pos int; b int; r1 float8 := 0; r2 float8 := 0; nn int;
   vx real[] := array_fill(0::real, array[132]); vbase real[]; inp real[]; a real[]; fl real[]; tin real[] := array_fill(0::real, array[131]);
   es real[] := '{}'; res real[]; s float8; m float8; sa float8; sb float8;
 begin
   select net.w into w from nothanks_net net where id = 1;
-  if w is null or array_length(w, 1) <> 16858 then return null; end if;
+  if w is null or array_length(w, 1) % 16858 <> 0 then return null; end if;
+  nn := array_length(w, 1) / 16858;
   for k in 0 .. n - 2 loop seen := seen || array(select jsonb_array_elements_text(opp_cards->k)::int); end loop;
-  -- conv1 of the value channel (card / 35) is the same for every player: work it out once, without bias or ReLU
-  for p in 0 .. 32 loop vx[99 + p + 1] := (p + 3) / 35.0; end loop;
-  vbase := nothanks_net_conv(w, 0, 4, 12, 5, vx, null, false);
-  for i in 1 .. 396 loop vbase[i] := vbase[i] - w[240 + (i - 1) / 33 + 1]; end loop;   -- take the bias back out
-  -- every player (the mover first, then in turn order) through the shared encoder; positions are 0-based like the page
-  for k in 0 .. n - 1 loop
-    if k = 0 then pc := hand; pch := chips; else pc := array(select jsonb_array_elements_text(opp_cards->(k - 1))::int); pch := opp_chips[k]; end if;
-    inp := array_fill(0::real, array[132]);
-    for p in 0 .. 32 loop
-      if p + 3 = any(pc) then inp[p + 1] := 1; end if;
-      if p + 3 = any(seen) then inp[33 + p + 1] := 1; end if;
+  for i in 0 .. 32 loop vx[99 + i + 1] := (i + 3) / 35.0; end loop;
+  for net_i in 0 .. nn - 1 loop   -- each net in turn
+    b := net_i * 16858; es := '{}';
+    -- conv1 of the value channel (card / 35) is the same for every player: work it out once, without bias or ReLU
+    vbase := nothanks_net_conv(w, b, 4, 12, 5, vx, null, false);
+    for i in 1 .. 396 loop vbase[i] := vbase[i] - w[b + 240 + (i - 1) / 33 + 1]; end loop;   -- take the bias back out
+    -- every player (the mover first, then in turn order) through the shared encoder; positions are 0-based like the page
+    for k in 0 .. n - 1 loop
+      if k = 0 then pc := hand; pch := chips; else pc := array(select jsonb_array_elements_text(opp_cards->(k - 1))::int); pch := opp_chips[k]; end if;
+      inp := array_fill(0::real, array[132]);
+      for p in 0 .. 32 loop
+        if p + 3 = any(pc) then inp[p + 1] := 1; end if;
+        if p + 3 = any(seen) then inp[33 + p + 1] := 1; end if;
+      end loop;
+      inp[66 + c + 1] := 1;
+      a := nothanks_net_conv(w, b + 252, 12, 12, 3, nothanks_net_conv(w, b, 4, 12, 5, inp, vbase, true), null, true);
+      fl := array_fill(0::real, array[106]);
+      for d in -2 .. 2 loop
+        pos := c + d;
+        if pos >= 0 and pos < 33 then for co in 0 .. 11 loop fl[(d + 2) * 12 + co + 1] := a[co * 33 + pos + 1]; end loop; end if;
+      end loop;
+      for co in 0 .. 11 loop
+        s := 0; m := -1;
+        for p in 0 .. 32 loop s := s + a[co * 33 + p + 1]; m := greatest(m, a[co * 33 + p + 1]); end loop;
+        fl[60 + co + 1] := s / 33; fl[72 + co + 1] := m;
+      end loop;
+      for d in -3 .. 3 loop
+        pos := c + d;
+        if pos >= 0 and pos < 33 then fl[84 + (d + 3) * 2 + 1] := inp[pos + 1]; fl[84 + (d + 3) * 2 + 2] := inp[33 + pos + 1]; end if;
+      end loop;
+      fl[99] := pch / 11.0; fl[100 + k] := 1;
+      es := es || nothanks_net_dense(w, b + 696, 106, 32, fl, 0, true);
     end loop;
-    inp[66 + c + 1] := 1;
-    a := nothanks_net_conv(w, 252, 12, 12, 3, nothanks_net_conv(w, 0, 4, 12, 5, inp, vbase, true), null, true);
-    fl := array_fill(0::real, array[106]);
-    for d in -2 .. 2 loop
-      pos := c + d;
-      if pos >= 0 and pos < 33 then for co in 0 .. 11 loop fl[(d + 2) * 12 + co + 1] := a[co * 33 + pos + 1]; end loop; end if;
-    end loop;
-    for co in 0 .. 11 loop
+    -- trunk input: mover, sum and max of the opponents, next player, table
+    for h in 1 .. 32 loop
       s := 0; m := -1;
-      for p in 0 .. 32 loop s := s + a[co * 33 + p + 1]; m := greatest(m, a[co * 33 + p + 1]); end loop;
-      fl[60 + co + 1] := s / 33; fl[72 + co + 1] := m;
+      for k in 1 .. n - 1 loop s := s + es[k * 32 + h]; m := greatest(m, es[k * 32 + h]); end loop;
+      tin[h] := es[h]; tin[32 + h] := s; tin[64 + h] := m; tin[96 + h] := es[32 + h];
     end loop;
-    for d in -3 .. 3 loop
-      pos := c + d;
-      if pos >= 0 and pos < 33 then fl[84 + (d + 3) * 2 + 1] := inp[pos + 1]; fl[84 + (d + 3) * 2 + 2] := inp[33 + pos + 1]; end if;
-    end loop;
-    fl[99] := pch / 11.0; fl[100 + k] := 1;
-    es := es || nothanks_net_dense(w, 696, 106, 32, fl, 0, true);
+    tin[129] := pot / 11.0; tin[130] := lft / 23.0; tin[131] := (n - 2) / 5.0;
+    res := nothanks_net_dense(w, b + 16728, 64, 2, nothanks_net_dense(w, b + 12568, 64, 64, nothanks_net_dense(w, b + 4120, 131, 64, tin, 0, true), 0, true), 0, false);
+    r1 := r1 + res[1] / nn; r2 := r2 + res[2] / nn;
   end loop;
-  -- trunk input: mover, sum and max of the opponents, next player, table
-  for h in 1 .. 32 loop
-    s := 0; m := -1;
-    for k in 1 .. n - 1 loop s := s + es[k * 32 + h]; m := greatest(m, es[k * 32 + h]); end loop;
-    tin[h] := es[h]; tin[32 + h] := s; tin[64 + h] := m; tin[96 + h] := es[32 + h];
-  end loop;
-  tin[129] := pot / 11.0; tin[130] := lft / 23.0; tin[131] := (n - 2) / 5.0;
-  res := nothanks_net_dense(w, 16728, 64, 2, nothanks_net_dense(w, 12568, 64, 64, nothanks_net_dense(w, 4120, 131, 64, tin, 0, true), 0, true), 0, false);
-  sa := greatest(res[1], 0); sb := greatest(res[2], 0);   -- regret matching
-  return case when sa + sb > 0 then sa / (sa + sb) when res[1] > res[2] then 1 else 0 end;
+  sa := greatest(r1, 0); sb := greatest(r2, 0);   -- regret matching
+  return case when sa + sb > 0 then sa / (sa + sb) when r1 > r2 then 1 else 0 end;
 end $$;
 
 -- a bot's move. Any player's browser calls this when it sees a bot's turn at room version p_v; the first call
