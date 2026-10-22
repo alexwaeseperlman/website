@@ -594,6 +594,43 @@ static int leagueMain(int argc, char** argv){
   return 0;
 }
 
+// ./deep vs <deals> live.json cand1.json cand2.json ...: the standard check for a new net against the live one.
+// Table A: 1 candidate + 2 live (3 players), it should win > 33.3%. Table B: 2 candidates + 2 live (4 players), together
+// they should win > 50%. Every deal is replayed with every distinct seating, so cards and seats cancel out.
+static int vsMain(int argc, char** argv){
+  int games = atoi(argv[2]); for (int i = 3; i < argc; i++) loadPool(argv[i]);
+  int K = argc - 4; vector<double> ra(K), rb(K); atomic<int> next{ 0 };
+  vector<thread> th;
+  for (unsigned t = 0; t < thread::hardware_concurrency(); t++) th.emplace_back([&]{
+    auto pc = poolWork(); vector<float> x(MAXF);
+    for (int job; (job = next++) < 2 * K;){
+      int cand = 1 + job / 2; bool four = job % 2; Rng r(555 + job * 7919);
+      auto move = [&](const Game& g, int who){
+        const Opp& o = pool[who];
+        if (o.kind == 3) return heuristic(g, r);
+        if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
+        o.net->features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who].get());
+        return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+      };
+      vector<int> base = four ? vector<int>{ 0, 0, 1, 1 } : vector<int>{ 0, 0, 1 };   // 1 = candidate seat
+      int n = base.size(); double s = 0, plays = 0;
+      for (int i = 0; i < games; i++){
+        Rng dr(99991 + i * 104729); Game g0; newGame(g0, n, dr); vector<int> seat = base;
+        do {
+          Game g = g0; while (!step(g, g.chips[g.turn] == 0 || move(g, seat[g.turn] ? cand : 0)));
+          for (int q = 0; q < n; q++) if (seat[q]) s += winShare(g, q);
+          plays++;
+        } while (next_permutation(seat.begin(), seat.end()));
+      }
+      (four ? rb : ra)[cand - 1] = s / plays;
+    }
+  });
+  for (auto& t : th) t.join();
+  printf("%-34s %16s %18s\n", "candidate", "1 vs 2 live (>33.3)", "2 vs 2 live (>50)");
+  for (int k = 0; k < K; k++) printf("%-34s %15.1f%% %c %15.1f%% %c\n", argv[4 + k], 100 * ra[k], ra[k] > 1 / 3.0 ? '+' : '-', 100 * rb[k], rb[k] > 0.5 ? '+' : '-');
+  return 0;
+}
+
 // ./deep gradcheck <arch>: backward against finite differences, on a few positions from random games
 static int gradcheck(const string& arch){
   unique_ptr<Model> m(makeModel(arch, 2, 5)); unique_ptr<Work> w(m->work()); Rng r(9);
@@ -618,6 +655,7 @@ int main(int argc, char** argv){
   if (getenv("DROP")){ dropSpec = getenv("DROP"); dropIdx = dropList(dropSpec); }
   if (argc > 1 && !strcmp(argv[1], "eval")) return evalMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "league")) return leagueMain(argc, argv);
+  if (argc > 1 && !strcmp(argv[1], "vs")) return vsMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "test")) return test(argv[2], atoi(argv[3]), atoi(argv[4]));
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
