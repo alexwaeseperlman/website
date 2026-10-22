@@ -8,3 +8,4 @@ abl/*.log
 abl/policy.json
 abl/live.json
 abl/score.txt
+abl/score*.txt

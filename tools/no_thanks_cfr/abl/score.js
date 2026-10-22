@@ -3,7 +3,7 @@
 const { execFileSync } = require('child_process'), live = process.argv[2], names = process.argv.slice(3), G = +process.env.GAMES || 10000;
 const rows = [];
 for (const name of names){
-  const f = `deep-pnet-${name}-adv.json`, r = { name, drop: require('./' + f).drop || '-' };
+  const f = name.endsWith('.json') ? name : `deep-pnet-${name}-adv.json`, r = { name, drop: require('./' + f).drop || '-' };
   for (const [k, b] of [['live', live], ['table', 'table'], ['rule', 'rule']]){
     const out = execFileSync('../deep', ['eval', f, b, String(G)]).toString().trim().split('\n').slice(1);
     r[k] = out.map(l => +l.trim().split(/\s+/)[2].replace('%', ''));   // % won by one of this net among b
