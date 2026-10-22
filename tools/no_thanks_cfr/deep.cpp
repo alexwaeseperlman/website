@@ -1,6 +1,6 @@
 // deep.js in C++: the same Deep CFR training of the player net (pnet.js), several times faster.
 //   g++ -O3 -march=native -ffast-math -std=c++17 -pthread deep.cpp -o deep      (on an M1: clang++ -mcpu=native ...)
-//   ./deep [iterations] [games per worker per iteration] [workers] [pnet|pnetw|cnet]   -> writes deep-<arch>-adv.json
+//   ./deep [iterations] [games per worker per iteration] [workers] [pnet|pnetw|cnet|cnet2]   -> writes deep-<arch>-adv.json
 // It reads and writes the same checkpoint as deep.js (deep-<arch>-ckpt/), so a run can move between the two.
 // At the end it also trains the average-strategy net (deep-<name>.json, P(take)) from the recorded strategies;
 // running it again with the same iteration count after a finished run retrains just that. TAG=x names the run
@@ -206,12 +206,15 @@ static void cfeatures(const Game& g, float* x){
   x[t + CL + c - 3] = 1;
   x[t + 2 * CL] = (float)(g.pot / 11.0); x[t + 2 * CL + 1] = (float)(leftOf(g) / 23.0); x[t + 2 * CL + 2] = (float)((n - 2) / 5.0);
 }
+// cnet2 (ro): instead of flattening the whole conv output into the dense layer (so every card position has to be
+// learned separately), it reads the conv features at the card in play and two either side, plus their mean and max
+// over the whole line; the same detectors then work wherever the card falls.
 struct CNet : Model {
-  static const int C0 = 4, K1 = 5, K2 = 3;
-  int C1, C2, H, T, FL; Layer cv1, cv2, L[4];
-  struct W : Work { vector<float> in, a1, a2, flat, e, tin, t1, t2, o, d2, d1, dtin, de, dflat, da1; vector<int> arg; };
-  CNet(int out_, uint32_t seed, int C1_ = 8, int C2_ = 8, int H_ = 32, int T_ = 64) : C1(C1_), C2(C2_), H(H_), T(T_){
-    out = out_; arch = "cnet"; FL = C2 * CL + 1 + MAXP;
+  static const int C0 = 4, K1 = 5, K2 = 3, RW = 2;
+  bool ro; int C1, C2, H, T, FL; Layer cv1, cv2, L[4];
+  struct W : Work { vector<float> in, a1, a2, flat, e, tin, t1, t2, o, d2, d1, dtin, de, dflat, da1, da2; vector<int> arg, amax, cpos; };
+  CNet(int out_, uint32_t seed, bool ro_ = false, int C1_ = 8, int C2_ = 8, int H_ = 32, int T_ = 64) : ro(ro_), C1(C1_), C2(C2_), H(H_), T(T_){
+    out = out_; arch = ro ? "cnet2" : "cnet"; FL = (ro ? (2 * RW + 3) * C2 : C2 * CL) + 1 + MAXP;
     int off = 0;
     cv1 = { C0 * K1, C1, off, off + C1 * C0 * K1 }; off += C1 * C0 * K1 + C1;
     cv2 = { C1 * K2, C2, off, off + C2 * C1 * K2 }; off += C2 * C1 * K2 + C2;
@@ -224,7 +227,8 @@ struct CNet : Model {
   void features(const Game& g, float* x) const override { cfeatures(g, x); }
   Work* work() const override { W* c = new W; c->in.assign(MAXP * C0 * CL, 0); c->a1.assign(MAXP * C1 * CL, 0); c->flat.assign(MAXP * FL, 0);
     c->e.assign(MAXP * H, 0); c->tin.assign(4 * H + 3, 0); c->t1.assign(T, 0); c->t2.assign(T, 0); c->o.assign(out, 0); c->arg.assign(H, 0);
-    c->d2.assign(T, 0); c->d1.assign(T, 0); c->dtin.assign(4 * H + 3, 0); c->de.assign(H, 0); c->dflat.assign(FL, 0); c->da1.assign(C1 * CL, 0); return c; }
+    c->d2.assign(T, 0); c->d1.assign(T, 0); c->dtin.assign(4 * H + 3, 0); c->de.assign(H, 0); c->dflat.assign(FL, 0); c->da1.assign(C1 * CL, 0);
+    c->a2.assign(MAXP * C2 * CL, 0); c->da2.assign(C2 * CL, 0); c->amax.assign(MAXP * C2, 0); c->cpos.assign(1, 0); return c; }
   // y[co][pos] = b[co] + sum over ci, j of w[co][ci][j] * x[ci][pos + j - K/2], zero padded
   void conv(const Layer& l, int ci_n, int K, const float* x, float* y, bool relu) const {
     const float* w = p.data() + l.w;
@@ -255,9 +259,20 @@ struct CNet : Model {
     for (int k = 0; k < nn; k++){
       float* in = &c.in[k * C0 * CL]; const float* px = x + 1 + k * CPL;
       for (int pos = 0; pos < CL; pos++){ in[pos] = px[pos]; in[CL + pos] = x[t + pos]; in[2 * CL + pos] = x[t + CL + pos]; in[3 * CL + pos] = (pos + 3) / 35.0f; }
-      float* a1 = &c.a1[k * C1 * CL]; float* fl = &c.flat[k * FL];
-      conv(cv1, C0, K1, in, a1, true); conv(cv2, C1, K2, a1, fl, true);
-      memcpy(fl + C2 * CL, px + CL, (1 + MAXP) * sizeof(float));
+      float* a1 = &c.a1[k * C1 * CL]; float* a2 = &c.a2[k * C2 * CL]; float* fl = &c.flat[k * FL];
+      conv(cv1, C0, K1, in, a1, true); conv(cv2, C1, K2, a1, a2, true);
+      if (!ro) memcpy(fl, a2, C2 * CL * sizeof(float));
+      else {
+        int cp = 0; for (int pos = 0; pos < CL; pos++) if (x[t + CL + pos] > 0) cp = pos;
+        c.cpos[0] = cp;
+        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; fl[(d + RW) * C2 + co] = pos >= 0 && pos < CL ? a2[co * CL + pos] : 0; }
+        for (int co = 0; co < C2; co++){
+          const float* r = a2 + co * CL; float sum = 0, mx = -1; int am = 0;
+          for (int pos = 0; pos < CL; pos++){ sum += r[pos]; if (r[pos] > mx){ mx = r[pos]; am = pos; } }
+          fl[(2 * RW + 1) * C2 + co] = sum / CL; fl[(2 * RW + 2) * C2 + co] = mx; c.amax[k * C2 + co] = am;
+        }
+      }
+      memcpy(fl + FL - 1 - MAXP, px + CL, (1 + MAXP) * sizeof(float));
       dense(L[0], fl, &c.e[k * H], true);
     }
     poolPlayers(c.e.data(), nn, H, c.tin.data(), c.arg.data());
@@ -275,9 +290,19 @@ struct CNet : Model {
       for (int h = 0; h < H; h++) if (c.e[k * H + h] <= 0) c.de[h] = 0;
       const float* fl = &c.flat[k * FL];
       back(L[0], fl, c.de.data(), g, c.dflat.data());
-      for (int i = 0; i < C2 * CL; i++) if (fl[i] <= 0) c.dflat[i] = 0;
+      const float* a2 = &c.a2[k * C2 * CL]; float* da2 = c.da2.data();
+      if (!ro) memcpy(da2, c.dflat.data(), C2 * CL * sizeof(float));
+      else {
+        memset(da2, 0, C2 * CL * sizeof(float)); int cp = c.cpos[0];
+        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; if (pos >= 0 && pos < CL) da2[co * CL + pos] += c.dflat[(d + RW) * C2 + co]; }
+        for (int co = 0; co < C2; co++){
+          float dm = c.dflat[(2 * RW + 1) * C2 + co] / CL; for (int pos = 0; pos < CL; pos++) da2[co * CL + pos] += dm;
+          da2[co * CL + c.amax[k * C2 + co]] += c.dflat[(2 * RW + 2) * C2 + co];
+        }
+      }
+      for (int i = 0; i < C2 * CL; i++) if (a2[i] <= 0) da2[i] = 0;
       const float* a1 = &c.a1[k * C1 * CL];
-      convBack(cv2, C1, K2, a1, c.dflat.data(), g, c.da1.data());
+      convBack(cv2, C1, K2, a1, da2, g, c.da1.data());
       for (int i = 0; i < C1 * CL; i++) if (a1[i] <= 0) c.da1[i] = 0;
       convBack(cv1, C0, K1, &c.in[k * C0 * CL], c.da1.data(), g, nullptr);
     }
@@ -287,6 +312,7 @@ static Model* makeModel(const string& arch, int out, uint32_t seed){
   if (arch == "pnet") return new PNet(out, seed, 32, 64);
   if (arch == "pnetw") return new PNet(out, seed, 64, 128);
   if (arch == "cnet") return new CNet(out, seed);
+  if (arch == "cnet2") return new CNet(out, seed, true, 12, 12);
   fprintf(stderr, "unknown arch %s\n", arch.c_str()); exit(1);
 }
 static double sigmaOf(const float* o){ double a = max<double>(o[0], 0), b = max<double>(o[1], 0); return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0; }
@@ -361,7 +387,7 @@ static void loadPool(const char* spec){
     string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
     string arch = jsonVal(j, "arch"); Model* net = makeModel(arch.empty() ? "pnet" : arch, out, 1);
     if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
-    net->p = w; pool.push_back({ 1, net, net->arch == "cnet" ? vector<int>() : dropList(jsonVal(j, "drop")) });
+    net->p = w; pool.push_back({ 1, net, net->arch.rfind("cnet", 0) == 0 ? vector<int>() : dropList(jsonVal(j, "drop")) });
   }
   if (getenv("POOL")) fprintf(stderr, "opponent pool: %zu\n", pool.size());
 }
@@ -541,7 +567,7 @@ int main(int argc, char** argv){
   if (getenv("POOL")) loadPool(getenv("POOL"));
   if (getenv("POOLP")) poolP = atof(getenv("POOLP"));
   uint32_t seedOff = getenv("SEED") ? (uint32_t)atoi(getenv("SEED")) : 0;   // SEED=k: a different run of the same setup
-  if (!dropIdx.empty() && arch == "cnet"){ fprintf(stderr, "DROP is for pnet\n"); return 1; }
+  if (!dropIdx.empty() && arch.rfind("cnet", 0) == 0){ fprintf(stderr, "DROP is for pnet\n"); return 1; }
   unique_ptr<Model> netp(makeModel(arch, 2, 11 + seedOff)); Model& net = *netp; int start = 1; const int F = net.nf();
   Buf adv{ 2, F, F + 3 }; adv.X.resize(CAP * F); adv.Y.resize(CAP * 2); adv.W.resize(CAP); adv.dirty.assign(CAP, 0);
   Buf pol{ 1, F, F + 2 }; pol.X.resize(CAP * F); pol.Y.resize(CAP); pol.W.resize(CAP); pol.dirty.assign(CAP, 0);
