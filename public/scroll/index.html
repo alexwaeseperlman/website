@@ -828,7 +828,8 @@ window.Wane = { LEVELS, rng, levelOf, stimColor };
 const $ = id => document.getElementById(id);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SPEED = reduce ? .6 : 1;
-const HOME = location.origin + location.pathname;
+// Inside the claude.ai frame, share the artifact link; hosted on its own page, share that page.
+const HOME = window.top !== window ? 'https://claude.ai/artifact/KgJZz6bmj9x7EyxeA1ENNE' : location.origin + location.pathname;
 
 /* ---------- the clock ----------
    Stimulation is a function of time spent in the feed today: it starts fully vivid and eases down
@@ -849,11 +850,11 @@ function stimNow() {
   return clamp01(Math.pow(1 - u, 1.3));
 }
 
-/* ---------- shared reels: #r-<seed hex>-<stimulation 0..999> regenerates the same reel ---------- */
-const reelHash = sl => `r-${(sl.seed >>> 0).toString(16)}-${Math.round(sl.s * 999)}`;
+/* ---------- shared links: #r-<seed hex>-<stimulation 0..999> (reel) or #p-... (post) regenerates the same item ---------- */
+const itemHash = (k, it) => `${k}-${(it.seed >>> 0).toString(16)}-${Math.round(it.s * 999)}`;
 function parseHash() {
-  const m = /^#r-([0-9a-f]{1,8})-(\d{1,3})$/.exec(location.hash || '');
-  return m ? { seed: parseInt(m[1], 16) | 0, s: Math.min(999, +m[2]) / 999 } : null;
+  const m = /^#([rp])-([0-9a-f]{1,8})-(\d{1,3})$/.exec(location.hash || '');
+  return m ? { kind: m[1] === 'p' ? 'post' : 'reel', seed: parseInt(m[2], 16) | 0, s: Math.min(999, +m[3]) / 999 } : null;
 }
 
 /* ---------- reels ---------- */
@@ -882,7 +883,7 @@ function attach(sl) {
   if (sl.canvas) return;
   if (!sl.state) {
     const r = rng(sl.seed);
-    if (sl.s == null) sl.s = stimNow();
+    if (sl.s == null) sl.s = Math.round(stimNow() * 999) / 999;
     sl.state = buildRecipe(r, sl.s); sl.t = 3 + r() * 12;
     sl.el.setAttribute('aria-label', sl.state.name);
     sl.el.innerHTML = `<div class="cap"><h2>${sl.state.name}</h2><div class="meta"><span class="seed">${seedTag(sl.seed)}</span></div></div>`;
@@ -932,16 +933,16 @@ feed.addEventListener('click', () => setPaused(!paused));
 let toastT;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
 function closeShare() { $('shareSheet').classList.remove('open'); $('scrim').classList.remove('open'); }
-$('shareBtn').onclick = async () => {
-  const sl = slides[active]; if (!sl || !sl.state) return;
-  const url = `${HOME}#${reelHash(sl)}`;
-  try { if (navigator.share) { await navigator.share({ title: sl.state.name, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+async function shareLink(url, name) {
+  try { if (navigator.share) { await navigator.share({ title: name, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
   try { await navigator.clipboard.writeText(url); toast('Link copied'); return; } catch (e) {}
   // Last resort: show the link so it can be copied by hand.
-  $('shareName').textContent = sl.state.name; $('shareUrl').value = url;
+  $('shareName').textContent = name; $('shareUrl').value = url;
   $('shareSheet').classList.add('open'); $('scrim').classList.add('open');
   setTimeout(() => { $('shareUrl').focus(); $('shareUrl').select(); }, 50);
-};
+}
+$('shareBtn').onclick = () => { const sl = slides[active]; if (sl && sl.state) shareLink(`${HOME}#${itemHash('r', sl)}`, sl.state.name); };
+const sharePost = p => shareLink(`${HOME}#${itemHash('p', p)}`, 'a post');
 $('shareDone').onclick = closeShare;
 
 /* ---------- posts (module inlined by build.py) ---------- */
@@ -954,7 +955,7 @@ function setFeedKind(kind) {
   $('mark').firstChild.nodeValue = kind; document.title = kind;
   if (kind === 'posts') {
     m.hidden = false;
-    try { window.WaneTextFeed.mount(m, { stim: stimNow(), stimAt: stimNow, decay: 0, floor: 0 }); } catch (e) { console.error(e); }
+    try { window.WaneTextFeed.mount(m, { stim: stimNow(), stimAt: stimNow, decay: 0, floor: 0, onShare: sharePost, first: firstPost }); firstPost = undefined; } catch (e) { console.error(e); }
   } else {
     try { window.WaneTextFeed.unmount(); } catch (e) {}
     m.hidden = true; m.innerHTML = '';
@@ -1020,10 +1021,11 @@ window.addEventListener('pagehide', saveC);
 
 /* ---------- boot: straight into the feed, opening on a shared reel if the link has one ---------- */
 const shared = parseHash();
-if (shared) makeSlide(shared);
+let firstPost = shared && shared.kind === 'post' ? { seed: shared.seed, s: shared.s } : undefined;
+if (shared && shared.kind === 'reel') makeSlide(shared);
 fill(); setActive(0);
 requestAnimationFrame(frame);
-const offerPosts = () => { if (window.WaneTextFeed && window.WaneTextFeed.mount) $('fswitch').hidden = false; };
+const offerPosts = () => { if (window.WaneTextFeed && window.WaneTextFeed.mount) { $('fswitch').hidden = false; if (firstPost) setFeedKind('posts'); } };
 window.addEventListener('load', offerPosts); setTimeout(offerPosts, 0);
 
 })();
@@ -1063,7 +1065,13 @@ window.addEventListener('load', offerPosts); setTimeout(offerPosts, 0);
 .tf-media canvas{width:100%;height:100%;display:block;background:#111}
 .tf-quote{border:1px solid var(--tf-line);border-radius:14px;padding:10px 12px;display:grid;gap:8px;margin-top:3px}
 .tf-quote .tf-head canvas{width:18px;height:18px;border-radius:50%}
-.tf-acts{display:flex;justify-content:space-between;max-width:300px;margin-top:2px;opacity:var(--tf-acts,1)}
+.tf-acts{display:flex;justify-content:space-between;align-items:center;max-width:300px;margin-top:2px}
+.tf-acts:has(> :only-child){justify-content:flex-end}
+.tf-acts i{opacity:var(--tf-acts,1)}
+.tf-share{display:grid;place-items:center;width:32px;height:32px;margin:-8px;padding:0;border:0;border-radius:50%;background:none;color:var(--tf-dim);cursor:pointer;opacity:calc(.55 + .45 * var(--tf-acts,1))}
+.tf-share svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tf-share:active{transform:scale(.9)}
+.tf-share:focus-visible{outline:2px solid var(--tf-ink);outline-offset:1px}
 .tf-acts i{display:block;width:16px;height:16px;border-radius:5px;border:1.5px solid var(--tf-line)}
 .tf-acts i:nth-child(odd){border-radius:50%}
 .tf-end{display:grid;gap:16px;padding:56px max(28px,env(safe-area-inset-left,0px)) 80px}
@@ -1090,7 +1098,9 @@ window.addEventListener('load', offerPosts); setTimeout(offerPosts, 0);
    API: WaneTextFeed.mount(el, opts), unmount(), setStim(s), setLevel(n), setDecay(d), end(reason), restart(s), stim, level, post(seed, s).
    opts: stim (starting s, default 1), decay (s lost per post, default 1/24), floor (s never goes below it, default 0),
          stimAt (optional () => s; when given, each new post takes s = stimAt() and decay is ignored),
-         chrome (own top bar, default false), onStim(s), onLevel(level), onSeen(post), onEnd(reason), onRestart().
+         chrome (own top bar, default false), onStim(s), onLevel(level), onSeen(post), onEnd(reason), onRestart(),
+         onShare({seed, s}) (shows a share button on every post; the host builds and shares the link),
+         first ({seed, s}: open with this exact post on top, e.g. from a shared link).
    The feed never ends: s settles at floor and posts keep coming. */
 (() => {
 const TAU = Math.PI * 2;
@@ -1337,7 +1347,9 @@ function lineWords(r, frac, s) {
 }
 function makeText(r, s, n) { return Array.from({ length: n }, (_, i) => lineWords(r, i === n - 1 ? between(r, .25, .8) : between(r, .86, 1), s)); }
 function makePost(seed, s) {
-  // Pure function of (seed, s): the same pair always gives the same post.
+  // Pure function of (seed, s): the same pair always gives the same post. s is snapped to thousandths
+  // so a shared link (which carries s as 0..999) rebuilds exactly the post that was shared.
+  s = Math.round(clamp(s) * 999) / 999;
   const r = rng(seed), p = { seed, s, name: between(r, 22, 40), handle: between(r, 14, 26), time: between(r, 5, 9) };
   p.L = look(r, s); p.avatar = makeAvatar(r, s);
   p.lines = makeText(r, s, 1 + Math.floor(r() * lerp(1.6, 4, s)));
@@ -1379,6 +1391,10 @@ function mount(root, opts = {}) {
   // The observer only fires when the sentinel crosses the margin, so topUp keeps adding until it is well below the fold.
   const moreIO = new IntersectionObserver(() => topUp(), { root: list, rootMargin: '0px 0px 1200px 0px' });
   moreIO.observe(sentinel);
+  list.addEventListener('click', e => {
+    const b = e.target.closest('.tf-share'), row = b && b.closest('.tf-post');
+    if (row && row._tf && o.onShare) o.onShare({ seed: row._tf.spec.seed, s: row._tf.spec.s });
+  });
   let scrollRaf = 0;
   list.addEventListener('scroll', () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; updateStim(); topUp(); }); }, { passive: true });
 
@@ -1439,7 +1455,9 @@ function mount(root, opts = {}) {
       body.appendChild(q);
       const c = canvasFor(q.querySelector('.tf-qa'), 18, 18); p.draws.push(t => drawAvatar(c, 18, t, spec.quote.avatar));
     }
-    if (s > .2) body.insertAdjacentHTML('beforeend', '<div class="tf-acts" aria-hidden="true"><i></i><i></i><i></i><i></i></div>');
+    // The placeholder icons fade out with s; the share button, when the host wants one, always stays.
+    const share = o.onShare ? '<button class="tf-share" type="button" aria-label="Share this post"><svg viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg></button>' : '';
+    if (s > .2 || share) body.insertAdjacentHTML('beforeend', `<div class="tf-acts">${s > .2 ? '<i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i>' : ''}${share || (s > .2 ? '<i aria-hidden="true"></i>' : '')}</div>`);
     for (const d of p.draws) d(0);
     row._tf = p; posts.push(p); seenIO.observe(row);
     return p;
@@ -1506,6 +1524,7 @@ function mount(root, opts = {}) {
     [...list.children].forEach(c => c !== sentinel && c.remove());
     posts = []; live.clear(); serial = 0; shown = -1; shownLevel = 0; ended = false;
     gs = { s: clamp(s) };
+    if (o.first) { const f = makePost(o.first.seed | 0, clamp(o.first.s)); f.thread = false; addPost(f, false); }
     list.scrollTop = 0; topUp(); updateStim();
   }
 
