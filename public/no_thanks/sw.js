@@ -1,6 +1,6 @@
 // No Thanks! service worker: the page opens offline after the first visit (practice against bots works offline;
 // online rooms need the network and are never cached)
-const CACHE = 'nothanks-v8';
+const CACHE = 'nothanks-v9';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './bot-policy.txt', './bot-net.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
