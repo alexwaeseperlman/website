@@ -1,6 +1,6 @@
 // deep.js in C++: the same Deep CFR training of the player net (pnet.js), several times faster.
 //   g++ -O3 -march=native -ffast-math -std=c++17 -pthread deep.cpp -o deep      (on an M1: clang++ -mcpu=native ...)
-//   ./deep [iterations] [games per worker per iteration] [workers] [pnet|pnetw|cnet|cnet2]   -> writes deep-<arch>-adv.json
+//   ./deep [iterations] [games per worker per iteration] [workers] [pnet|pnetw|cnet|cnet2|cnet3]   -> writes deep-<arch>-adv.json
 // It reads and writes the same checkpoint as deep.js (deep-<arch>-ckpt/), so a run can move between the two.
 // At the end it also trains the average-strategy net (deep-<name>.json, P(take)) from the recorded strategies;
 // running it again with the same iteration count after a finished run retrains just that. TAG=x names the run
@@ -209,12 +209,13 @@ static void cfeatures(const Game& g, float* x){
 // cnet2 (ro): instead of flattening the whole conv output into the dense layer (so every card position has to be
 // learned separately), it reads the conv features at the card in play and two either side, plus their mean and max
 // over the whole line; the same detectors then work wherever the card falls.
+// cnet3 (sk): cnet2 plus the raw holds/seen bits for the three cards either side of the card in play.
 struct CNet : Model {
-  static const int C0 = 4, K1 = 5, K2 = 3, RW = 2;
-  bool ro; int C1, C2, H, T, FL; Layer cv1, cv2, L[4];
+  static const int C0 = 4, K1 = 5, K2 = 3, RW = 2, SW = 3;
+  bool ro, sk; int C1, C2, H, T, FL; Layer cv1, cv2, L[4];
   struct W : Work { vector<float> in, a1, a2, flat, e, tin, t1, t2, o, d2, d1, dtin, de, dflat, da1, da2; vector<int> arg, amax, cpos; };
-  CNet(int out_, uint32_t seed, bool ro_ = false, int C1_ = 8, int C2_ = 8, int H_ = 32, int T_ = 64) : ro(ro_), C1(C1_), C2(C2_), H(H_), T(T_){
-    out = out_; arch = ro ? "cnet2" : "cnet"; FL = (ro ? (2 * RW + 3) * C2 : C2 * CL) + 1 + MAXP;
+  CNet(int out_, uint32_t seed, bool ro_ = false, int C1_ = 8, int C2_ = 8, int H_ = 32, int T_ = 64, bool sk_ = false) : ro(ro_), sk(sk_), C1(C1_), C2(C2_), H(H_), T(T_){
+    out = out_; arch = sk ? "cnet3" : ro ? "cnet2" : "cnet"; FL = (ro ? (2 * RW + 3) * C2 : C2 * CL) + (sk ? 2 * (2 * SW + 1) : 0) + 1 + MAXP;
     int off = 0;
     cv1 = { C0 * K1, C1, off, off + C1 * C0 * K1 }; off += C1 * C0 * K1 + C1;
     cv2 = { C1 * K2, C2, off, off + C2 * C1 * K2 }; off += C2 * C1 * K2 + C2;
@@ -271,6 +272,9 @@ struct CNet : Model {
           for (int pos = 0; pos < CL; pos++){ sum += r[pos]; if (r[pos] > mx){ mx = r[pos]; am = pos; } }
           fl[(2 * RW + 1) * C2 + co] = sum / CL; fl[(2 * RW + 2) * C2 + co] = mx; c.amax[k * C2 + co] = am;
         }
+        // raw has / seen bits next to the current card, so adjacency doesn't have to go through the conv
+        if (sk) for (int d = -SW; d <= SW; d++) for (int ch = 0; ch < 2; ch++){ int pos = cp + d;
+          fl[(2 * RW + 3) * C2 + (d + SW) * 2 + ch] = pos >= 0 && pos < CL ? in[ch * CL + pos] : 0; }
       }
       memcpy(fl + FL - 1 - MAXP, px + CL, (1 + MAXP) * sizeof(float));
       dense(L[0], fl, &c.e[k * H], true);
@@ -313,6 +317,7 @@ static Model* makeModel(const string& arch, int out, uint32_t seed){
   if (arch == "pnetw") return new PNet(out, seed, 64, 128);
   if (arch == "cnet") return new CNet(out, seed);
   if (arch == "cnet2") return new CNet(out, seed, true, 12, 12);
+  if (arch == "cnet3") return new CNet(out, seed, true, 12, 12, 32, 64, true);
   fprintf(stderr, "unknown arch %s\n", arch.c_str()); exit(1);
 }
 static double sigmaOf(const float* o){ double a = max<double>(o[0], 0), b = max<double>(o[1], 0); return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0; }
