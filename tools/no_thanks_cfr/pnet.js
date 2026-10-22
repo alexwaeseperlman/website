@@ -115,4 +115,17 @@ class PNet {
     return total;
   }
 }
-module.exports = { PNet, features, F, PL, TB, NW, OFFS, MAXP };
+// feature ablations (deep.cpp's DROP): the input positions of each group, per player or on the table
+const DROP_GROUPS = { window: [0, NW], chips: [NW, 1], chipsin: [NW + 1, 4], pts: [NW + 5, 1], seat: [NW + 6, 7], cost: [NW + 13, 1], ncards: [NW + 14, 1],
+  unseen: [-1, 0, NW], offboard: [-1, NW, NW], card: [-1, 2 * NW, 1], pot: [-1, 2 * NW + 1, 1], potsin: [-1, 2 * NW + 2, 4], left: [-1, 2 * NW + 6, 1], n: [-1, 2 * NW + 7, 1] };
+// features() without the groups listed in drop ("cost,pts")
+function featuresWithout(drop){
+  const idx = [];
+  for (const g of (drop || '').split(',').filter(Boolean)){
+    const d = DROP_GROUPS[g]; if (!d) throw new Error('unknown feature group ' + g);
+    if (d[0] === -1) for (let i = 0; i < d[2]; i++) idx.push(1 + MAXP * PL + d[1] + i);
+    else for (let k = 0; k < MAXP; k++) for (let i = 0; i < d[1]; i++) idx.push(1 + k * PL + d[0] + i);
+  }
+  return idx.length ? (g, x) => { features(g, x); for (const k of idx) x[k] = 0; return x; } : features;
+}
+module.exports = { PNet, features, featuresWithout, DROP_GROUPS, F, PL, TB, NW, OFFS, MAXP };

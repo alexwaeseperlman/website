@@ -5,7 +5,9 @@
 // At the end it also trains the average-strategy net (deep-<name>.json, P(take)) from the recorded strategies;
 // running it again with the same iteration count after a finished run retrains just that. TAG=x names the run
 // <arch>-x (its checkpoint and output files). POOL (see loadPool) seats older bots at some of the learner's games.
+// DROP (see setDrop) trains without some of the inputs; SEED=k varies the random start.
 //   ./deep test <weights.json> <seed> <games>   prints game steps, features and net outputs (compare with check-cpp.js)
+//   ./deep eval a.json b [games]                 head to head, like h2h.js (b can also be table or rule)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -53,6 +55,26 @@ static const int OFFS[12] = { -6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6 };
 static const int NW = 12, MAXP = 7, PL = NW + 18, TB = 2 * NW + 8, F = 1 + MAXP * PL + TB;
 static void sinus(double v, float* x, int o){ const double per[2] = { 4, 8 };
   for (int i = 0; i < 2; i++){ x[o + 2 * i] = (float)sin(2 * M_PI * v / per[i]); x[o + 2 * i + 1] = (float)cos(2 * M_PI * v / per[i]); } }
+// feature ablations: DROP=cost,pts,... zeroes those inputs (for every player where it's a per-player input), which
+// is the same as removing them. The groups are pnet.js's DROP_GROUPS.
+static vector<int> dropIdx; static string dropSpec;   // the net being trained
+static vector<int> dropList(const string& spec){
+  vector<int> dropIdx; const int t = 1 + MAXP * PL;
+  auto per = [&](int a, int len){ for (int k = 0; k < MAXP; k++) for (int i = 0; i < len; i++) dropIdx.push_back(1 + k * PL + a + i); };
+  auto tab = [&](int a, int len){ for (int i = 0; i < len; i++) dropIdx.push_back(t + a + i); };
+  size_t a = 0;
+  while (a <= spec.size()){
+    size_t b = spec.find(',', a); if (b == string::npos) b = spec.size(); string g = spec.substr(a, b - a); a = b + 1;
+    if (g.empty()) continue;
+    if (g == "window") per(0, NW); else if (g == "chips") per(NW, 1); else if (g == "chipsin") per(NW + 1, 4); else if (g == "pts") per(NW + 5, 1);
+    else if (g == "seat") per(NW + 6, 7); else if (g == "cost") per(NW + 13, 1); else if (g == "ncards") per(NW + 14, 1);
+    else if (g == "unseen") tab(0, NW); else if (g == "offboard") tab(NW, NW); else if (g == "card") tab(2 * NW, 1); else if (g == "pot") tab(2 * NW + 1, 1);
+    else if (g == "potsin") tab(2 * NW + 2, 4); else if (g == "left") tab(2 * NW + 6, 1); else if (g == "n") tab(2 * NW + 7, 1);
+    else { fprintf(stderr, "unknown feature group %s\n", g.c_str()); exit(1); }
+  }
+  return dropIdx;
+}
+static void dropOut(float* x, const vector<int>& d){ for (int k : d) x[k] = 0; }
 static void features(const Game& g, float* x){
   memset(x, 0, F * sizeof(float));
   int p = g.turn, c = g.deck[g.idx], n = g.n;
@@ -198,23 +220,23 @@ static bool heuristic(const Game& g, Rng& r){
   int limit = chips <= 2 ? 12 : chips <= 4 ? 7 : chips <= 7 ? 3 : 0;
   return cost <= limit + (r() < 0.2 ? 2 : 0);
 }
-struct Opp { int kind; const PNet* net; };   // kind 0: the net being trained, 1: a saved net, 2: the table bot, 3: the rule of thumb
+struct Opp { int kind; const PNet* net; vector<int> drop; };   // kind 0: the net being trained, 1: a saved net, 2: the table bot, 3: the rule of thumb
 static vector<Opp> pool; static vector<float> table; static double poolP = 0.5;
 static void loadPool(const char* spec){
   string s = spec; size_t a = 0;
   while (a <= s.size()){
     size_t b = s.find(',', a); if (b == string::npos) b = s.size(); string it = s.substr(a, b - a); a = b + 1;
     if (it.empty()) continue;
-    if (it == "rule"){ pool.push_back({ 3, nullptr }); continue; }
+    if (it == "rule"){ pool.push_back({ 3, nullptr, {} }); continue; }
     if (it == "table"){ string j = readFile("policy.json"); const char* q = j.c_str() + 1; char* e;
       for (;;){ double v = strtod(q, &e); table.push_back(v < 0 ? -1 : (float)(v / 100)); q = e; if (*q != ',') break; q++; }
-      pool.push_back({ 2, nullptr }); continue; }
+      pool.push_back({ 2, nullptr, {} }); continue; }
     string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
     bool wide = jsonVal(j, "arch") == "pnetw"; PNet* net = new PNet(out, 1, wide ? 64 : 32, wide ? 128 : 64);
     if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
-    net->p = w; pool.push_back({ 1, net });
+    net->p = w; pool.push_back({ 1, net, dropList(jsonVal(j, "drop")) });
   }
-  fprintf(stderr, "opponent pool: %zu\n", pool.size());
+  if (getenv("POOL")) fprintf(stderr, "opponent pool: %zu\n", pool.size());
 }
 
 static void play(const PNet& net, Rng& r, int games, Out& out){
@@ -222,12 +244,12 @@ static void play(const PNet& net, Rng& r, int games, Out& out){
   Cache c = net.cache(), oc = net.cache(); vector<float> x(F), feats(F), ox(F);
   vector<Cache> pc; for (auto& o : pool) pc.push_back(o.net ? o.net->cache() : Cache());
   int seat[7];   // which pool member sits in each seat (-1: the net being trained)
-  auto sigma = [&](const Game& g){ features(g, x.data()); return sigmaOf(net.forward(x.data(), c)); };
+  auto sigma = [&](const Game& g){ features(g, x.data()); dropOut(x.data(), dropIdx); return sigmaOf(net.forward(x.data(), c)); };
   auto other = [&](const Game& g, Rng& rr){   // a pool member's move
     int k = seat[g.turn]; const Opp& o = pool[k];
     if (o.kind == 3) return heuristic(g, rr);
     if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? rr() < pt : heuristic(g, rr); }
-    features(g, ox.data()); const float* y = o.net->forward(ox.data(), pc[k]);
+    features(g, ox.data()); dropOut(ox.data(), o.drop); const float* y = o.net->forward(ox.data(), pc[k]);
     return rr() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
   };
   auto rollout = [&](Game g, bool take, uint32_t seed){
@@ -304,7 +326,7 @@ static double trainStep(PNet& net, const Buf& B, int bs, double lr, int nt, vect
 
 static void saveJson(const string& file, const string& arch, const PNet& net){
   FILE* f = fopen((file + ".tmp").c_str(), "w");
-  fprintf(f, "{\"arch\":\"%s\",\"out\":%d,\"p\":[", arch.c_str(), net.out);
+  fprintf(f, "{\"arch\":\"%s\",\"out\":%d,\"drop\":\"%s\",\"p\":[", arch.c_str(), net.out, dropSpec.c_str());
   for (int k = 0; k < net.n; k++) fprintf(f, k ? ",%.5g" : "%.5g", net.p[k]);
   fprintf(f, "]}"); fclose(f); rename((file + ".tmp").c_str(), file.c_str());
 }
@@ -316,7 +338,7 @@ static int test(const char* wfile, uint32_t seed, int games){
   for (int i = 0; i < games; i++){
     int n = 2 + (int)floor(r() * 6); Game g; newGame(g, n, r);
     for (;;){
-      features(g, x.data()); const float* o = net.forward(x.data(), c);
+      features(g, x.data()); dropOut(x.data(), dropIdx); const float* o = net.forward(x.data(), c);
       double fs = 0; for (int k = 0; k < F; k++) fs += x[k] * (k % 7 + 1);
       printf("%d %d %d %d %.6f %.6f %.6f %d\n", g.turn, g.deck[g.idx], g.pot, g.chips[g.turn], fs, o[0], o[1], keyOf(g));
       if (step(g, g.chips[g.turn] == 0 || r() < 0.4)) break;
@@ -325,13 +347,45 @@ static int test(const char* wfile, uint32_t seed, int games){
   }
   // gradient of out0 + 0.5 out1 summed over the last game's first 5 states (compare with check-cpp.js)
   Grads d = net.grads(); Rng r2(seed + 1); Game g; newGame(g, 5, r2); float dout[2] = { 1, 0.5f };
-  for (int s = 0; s < 5; s++){ features(g, x.data()); net.forward(x.data(), c); net.backward(x.data(), c, dout, d); step(g, r2() < 0.5); }
+  for (int s = 0; s < 5; s++){ features(g, x.data()); dropOut(x.data(), dropIdx); net.forward(x.data(), c); net.backward(x.data(), c, dout, d); step(g, r2() < 0.5); }
   double a = 0, b = 0; for (int k = 0; k < net.n; k++){ a += d.g[k]; b += fabs(d.g[k]) * (k % 13 + 1); }
   printf("grad %.6f %.6f\n", a, b);
   return 0;
 }
 
+// ./deep eval a.json b [games per table size]: one A among B's and one B among A's at 2-7 players, as h2h.js does.
+// a and b are weight files, or "table" (the CFR table bot, policy.json) or "rule" (the old rule of thumb).
+static int evalMain(int argc, char** argv){
+  loadPool((string(argv[2]) + "," + argv[3]).c_str()); int games = argc > 4 ? atoi(argv[4]) : 4000;
+  double res[6][2];
+  vector<thread> th;
+  for (int n = 2; n <= 7; n++) for (int side = 0; side < 2; side++) th.emplace_back([&, n, side]{
+    vector<Cache> pc; for (auto& o : pool) pc.push_back(o.net ? o.net->cache() : Cache());
+    vector<float> x(F); Rng r(77 + n * 31 + side * 7);
+    auto move = [&](const Game& g, int who){
+      const Opp& o = pool[who];
+      if (o.kind == 3) return heuristic(g, r);
+      if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
+      features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who]);
+      return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+    };
+    double w = 0;
+    for (int i = 0; i < games; i++){
+      Game g; newGame(g, n, r);
+      while (!step(g, g.chips[g.turn] == 0 || move(g, g.turn == 0 ? side : 1 - side)));
+      w += winShare(g, 0);
+    }
+    res[n - 2][side] = w / games;
+  });
+  for (auto& t : th) t.join();
+  printf("players  fair   1 A among B   1 B among A\n");
+  for (int n = 2; n <= 7; n++) printf("%d       %5.1f%%   %5.1f%%        %5.1f%%\n", n, 100.0 / n, 100 * res[n - 2][0], 100 * res[n - 2][1]);
+  return 0;
+}
+
 int main(int argc, char** argv){
+  if (getenv("DROP")){ dropSpec = getenv("DROP"); dropIdx = dropList(dropSpec); }
+  if (argc > 1 && !strcmp(argv[1], "eval")) return evalMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "test")) return test(argv[2], atoi(argv[3]), atoi(argv[4]));
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
@@ -339,7 +393,8 @@ int main(int argc, char** argv){
   if (getenv("POOL")) loadPool(getenv("POOL"));
   if (getenv("POOLP")) poolP = atof(getenv("POOLP"));
   int H = arch == "pnetw" ? 64 : 32, TT = arch == "pnetw" ? 128 : 64;
-  PNet net(2, 11, H, TT); int start = 1;
+  uint32_t seedOff = getenv("SEED") ? (uint32_t)atoi(getenv("SEED")) : 0;   // SEED=k: a different run of the same setup
+  PNet net(2, 11 + seedOff, H, TT); int start = 1;
   Buf adv{ 2, F + 3 }; adv.X.resize(CAP * F); adv.Y.resize(CAP * 2); adv.W.resize(CAP); adv.dirty.assign(CAP, 0);
   Buf pol{ 1, F + 2 }; pol.X.resize(CAP * F); pol.Y.resize(CAP); pol.W.resize(CAP); pol.dirty.assign(CAP, 0);
   string name = arch + (getenv("TAG") ? string("-") + getenv("TAG") : ""), CK = "deep-" + name + "-ckpt"; mkdir(CK.c_str(), 0755);
@@ -356,7 +411,7 @@ int main(int argc, char** argv){
     if ((int)net.p.size() != net.n){ fprintf(stderr, "checkpoint has %zu weights, want %d\n", net.p.size(), net.n); return 1; }
     load(adv); load(pol); printf("resuming after iteration %d (%ld regret examples)\n", start - 1, adv.size); fflush(stdout);
   }
-  vector<Rng> rngs; for (int w = 0; w < nw; w++) rngs.emplace_back(4242 + w * 7919 + (start - 1) * 104729);
+  vector<Rng> rngs; for (int w = 0; w < nw; w++) rngs.emplace_back(4242 + w * 7919 + (start - 1) * 104729 + seedOff * 1000003);
   vector<Grads> G; vector<Cache> C; for (int t = 0; t < nw; t++){ G.push_back(net.grads()); C.push_back(net.cache()); }
   int steps = getenv("STEPS") ? atoi(getenv("STEPS")) : 1500;
   auto t0 = chrono::steady_clock::now(); auto secs = [&]{ return chrono::duration<double>(chrono::steady_clock::now() - t0).count(); };
