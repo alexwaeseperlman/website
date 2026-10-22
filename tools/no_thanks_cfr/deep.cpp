@@ -383,6 +383,30 @@ static bool heuristic(const Game& g, Rng& r){
 }
 struct Opp { int kind; const Model* net; vector<int> drop; };   // kind 0: the net being trained, 1: a saved net, 2: the table bot, 3: the rule of thumb
 static vector<Opp> pool; static vector<float> table; static double poolP = 0.5;
+// a+b+...: an ensemble of saved nets with the same inputs (e.g. two seeds of one arch), outputs averaged. Eval only.
+struct Ens : Model {
+  vector<const Model*> m;
+  struct W : Work { vector<unique_ptr<Work>> w; vector<float> o; };
+  explicit Ens(vector<const Model*> ms) : m(ms){ arch = "ens"; out = m[0]->out; }
+  int nf() const override { return m[0]->nf(); }
+  void features(const Game& g, float* x) const override { m[0]->features(g, x); }
+  Work* work() const override { W* c = new W; for (auto* x : m) c->w.emplace_back(x->work()); c->o.assign(out, 0); return c; }
+  const float* forward(const float* x, Work* w) const override {
+    W& c = *(W*)w; fill(c.o.begin(), c.o.end(), 0.0f);
+    for (size_t i = 0; i < m.size(); i++){ const float* y = m[i]->forward(x, c.w[i].get()); for (int k = 0; k < out; k++) c.o[k] += y[k] / m.size(); }
+    return c.o.data();
+  }
+  void backward(const float*, Work*, const float*, float*) const override { fprintf(stderr, "ens is eval only\n"); exit(1); }
+};
+static Model* loadNet(const string& it){
+  if (it.find('+') != string::npos){ vector<const Model*> ms; size_t a = 0;
+    for (;;){ size_t b = it.find('+', a); ms.push_back(loadNet(it.substr(a, b == string::npos ? string::npos : b - a))); if (b == string::npos) break; a = b + 1; }
+    return new Ens(ms); }
+  string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
+  string arch = jsonVal(j, "arch"); Model* net = makeModel(arch.empty() ? "pnet" : arch, out, 1);
+  if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
+  net->p = w; return net;
+}
 static void loadPool(const char* spec){
   string s = spec; size_t a = 0;
   while (a <= s.size()){
@@ -392,10 +416,8 @@ static void loadPool(const char* spec){
     if (it == "table"){ string j = readFile("policy.json"); const char* q = j.c_str() + 1; char* e;
       for (;;){ double v = strtod(q, &e); table.push_back(v < 0 ? -1 : (float)(v / 100)); q = e; if (*q != ',') break; q++; }
       pool.push_back({ 2, nullptr, {} }); continue; }
-    string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
-    string arch = jsonVal(j, "arch"); Model* net = makeModel(arch.empty() ? "pnet" : arch, out, 1);
-    if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
-    net->p = w; pool.push_back({ 1, net, net->arch.rfind("cnet", 0) == 0 ? vector<int>() : dropList(jsonVal(j, "drop")) });
+    Model* net = loadNet(it);
+    pool.push_back({ 1, net, net->arch == "pnet" || net->arch == "pnetw" ? dropList(jsonVal(readFile(it), "drop")) : vector<int>() });
   }
   if (getenv("POOL")) fprintf(stderr, "opponent pool: %zu\n", pool.size());
 }
