@@ -151,6 +151,7 @@ svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       <div>
         <div class="label">Winds down over</div>
         <div class="seg" id="windSeg">
+          <button id="wind-5" data-wind="5">5 min</button>
           <button id="wind-10" data-wind="10">10 min</button>
           <button id="wind-20" data-wind="20">20 min</button>
           <button id="wind-40" data-wind="40">40 min</button>
@@ -834,9 +835,9 @@ const HOME = window.top !== window ? 'https://claude.ai/artifact/KgJZz6bmj9x7Eyx
 /* ---------- the clock ----------
    Stimulation is a function of time spent in the feed today: it starts fully vivid and eases down
    to nothing over S.wind minutes, then stays calm. Nothing on screen says where it is. */
-let S = { wind: 20 };
+let S = { wind: 5 };
 try { Object.assign(S, JSON.parse(localStorage.getItem('wane.settings') || '{}')); } catch (e) {}
-if (![10, 20, 40].includes(S.wind)) S.wind = 20;
+if (![5, 10, 20, 40].includes(S.wind)) S.wind = 5;
 const save = () => { try { localStorage.setItem('wane.settings', JSON.stringify({ wind: S.wind })); } catch (e) {} };
 
 const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
