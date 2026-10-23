@@ -8,6 +8,7 @@
 // DROP (see setDrop) trains without some of the inputs; SEED=k varies the random start.
 //   ./deep test <weights.json> <seed> <games>   prints game steps, features and net outputs (compare with check-cpp.js)
 //   ./deep eval a.json b [games]                 head to head, like h2h.js (b can also be table or rule)
+//   ./deep ppo <iterations> <games> [workers] [arch]   self-play PPO (see ppoMain)
 //   ./deep gradcheck <arch>                      checks a net's backward pass against finite differences
 #include <cmath>
 #include <cstdint>
@@ -108,6 +109,7 @@ struct Work { virtual ~Work(){} };
 // what the trainer needs from a net: its inputs (features) and forward / backward passes over them
 struct Model {
   string arch; int out, n = 0; vector<float> p, m, v; int at = 0;
+  bool logit = false;   // PPO nets: out[0] is the take logit (out[1] the value); otherwise regrets or P(take) logit when out == 1
   virtual ~Model(){}
   virtual int nf() const = 0;                                   // inputs per position
   virtual void features(const Game& g, float* x) const = 0;
@@ -324,6 +326,8 @@ static Model* makeModel(const string& arch, int out, uint32_t seed){
   fprintf(stderr, "unknown arch %s\n", arch.c_str()); exit(1);
 }
 static double sigmaOf(const float* o){ double a = max<double>(o[0], 0), b = max<double>(o[1], 0); return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0; }
+// P(take) from any saved net's outputs
+static double takeProb(const Model& m, const float* y){ return m.out == 1 || m.logit ? 1 / (1 + exp(-y[0])) : sigmaOf(y); }
 
 // ---- files ----
 static string readFile(const string& f){ ifstream in(f, ios::binary); stringstream ss; ss << in.rdbuf(); return ss.str(); }
@@ -387,7 +391,7 @@ static vector<Opp> pool; static vector<float> table; static double poolP = 0.5;
 struct Ens : Model {
   vector<const Model*> m;
   struct W : Work { vector<unique_ptr<Work>> w; vector<float> o; };
-  explicit Ens(vector<const Model*> ms) : m(ms){ arch = "ens"; out = m[0]->out; }
+  explicit Ens(vector<const Model*> ms) : m(ms){ arch = "ens"; out = m[0]->out; logit = m[0]->logit; }
   int nf() const override { return m[0]->nf(); }
   void features(const Game& g, float* x) const override { m[0]->features(g, x); }
   Work* work() const override { W* c = new W; for (auto* x : m) c->w.emplace_back(x->work()); c->o.assign(out, 0); return c; }
@@ -405,7 +409,7 @@ static Model* loadNet(const string& it){
   string j = readFile(it); vector<float> w = jsonFloats(j, "p"); int out = atoi(jsonVal(j, "out").c_str());
   string arch = jsonVal(j, "arch"); Model* net = makeModel(arch.empty() ? "pnet" : arch, out, 1);
   if ((int)w.size() != net->n){ fprintf(stderr, "%s: %zu weights, want %d\n", it.c_str(), w.size(), net->n); exit(1); }
-  net->p = w; return net;
+  net->p = w; net->logit = jsonVal(j, "head") == "logit"; return net;
 }
 static void loadPool(const char* spec){
   string s = spec; size_t a = 0;
@@ -435,7 +439,7 @@ static void play(const Model& net, Rng& r, int games, Out& out){
     if (o.kind == 3) return heuristic(g, rr);
     if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? rr() < pt : heuristic(g, rr); }
     o.net->features(g, ox.data()); dropOut(ox.data(), o.drop); const float* y = o.net->forward(ox.data(), pc[k].get());
-    return rr() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+    return rr() < (takeProb(*o.net, y));
   };
   auto rollout = [&](Game g, bool take, uint32_t seed){
     Rng rr(seed); bool over = step(g, take);
@@ -511,7 +515,7 @@ static double trainStep(Model& net, const Buf& B, int bs, double lr, int nt, vec
 
 static void saveJson(const string& file, const string& arch, const Model& net){
   FILE* f = fopen((file + ".tmp").c_str(), "w");
-  fprintf(f, "{\"arch\":\"%s\",\"out\":%d,\"drop\":\"%s\",\"p\":[", arch.c_str(), net.out, dropSpec.c_str());
+  fprintf(f, "{\"arch\":\"%s\",\"out\":%d,\"drop\":\"%s\",%s\"p\":[", arch.c_str(), net.out, dropSpec.c_str(), net.logit ? "\"head\":\"logit\"," : "");
   for (int k = 0; k < net.n; k++) fprintf(f, k ? ",%.5g" : "%.5g", net.p[k]);
   fprintf(f, "]}"); fclose(f); rename((file + ".tmp").c_str(), file.c_str());
 }
@@ -551,7 +555,7 @@ static int evalMain(int argc, char** argv){
       if (o.kind == 3) return heuristic(g, r);
       if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
       o.net->features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who].get());
-      return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+      return r() < (takeProb(*o.net, y));
     };
     double w = 0;
     for (int i = 0; i < games; i++){
@@ -589,7 +593,7 @@ static int leagueMain(int argc, char** argv){
         if (o.kind == 3) return heuristic(g, r);
         if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
         o.net->features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who].get());
-        return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+        return r() < (takeProb(*o.net, y));
       };
       for (int i = 0; i < games; i++){
         Rng dr(99991 + i * 104729); Game g0; newGame(g0, N, dr);
@@ -632,7 +636,7 @@ static int vsMain(int argc, char** argv){
         if (o.kind == 3) return heuristic(g, r);
         if (o.kind == 2){ float pt = table[keyOf(g)]; return pt >= 0 ? r() < pt : heuristic(g, r); }
         o.net->features(g, x.data()); dropOut(x.data(), o.drop); const float* y = o.net->forward(x.data(), pc[who].get());
-        return r() < (o.net->out == 1 ? 1 / (1 + exp(-y[0])) : sigmaOf(y));
+        return r() < (takeProb(*o.net, y));
       };
       vector<int> base = four ? vector<int>{ 0, 0, 1, 1 } : vector<int>{ 0, 0, 1 };   // 1 = candidate seat
       int n = base.size(); double s = 0, plays = 0;
@@ -672,6 +676,117 @@ static int dumpMain(int argc, char** argv){
   return 0;
 }
 
+// ./deep ppo <iterations> <games per worker per iteration> [workers] [arch]: self-play PPO instead of Deep CFR.
+// The net's out[0] is the take logit and out[1] a value head (expected win share), sharing the trunk; reward is the
+// win share at the end of the game. Each seat is the learner, or with probability POOLP an opponent: OPP (default the
+// live nets) half the time, else an earlier snapshot of the learner (one every SNAP iterations). Writes deep-ppo-<arch>[-TAG].json;
+// resumes from deep-ppo-<name>-ckpt.json. Env: LR (3e-4), EPOCHS (4), CLIP (0.2), ENT (0.01), LAMBDA (0.95), INIT=w.json (start from a net).
+struct Sample { int a; float lp, v, adv, ret; };
+static int ppoMain(int argc, char** argv){
+  auto env = [](const char* k, double d){ return getenv(k) ? atof(getenv(k)) : d; };
+  int T = atoi(argv[2]), games = atoi(argv[3]); int nw = argc > 4 ? atoi(argv[4]) : (int)thread::hardware_concurrency();
+  string arch = argc > 5 ? argv[5] : "cnet3";
+  double lr = env("LR", 3e-4), clipE = env("CLIP", 0.2), ent = env("ENT", 0.01), lam = env("LAMBDA", 0.95), vc = 0.5;
+  int epochs = (int)env("EPOCHS", 4), snapEvery = (int)env("SNAP", 10), bs = 512; poolP = env("POOLP", 0.5);
+  uint32_t seedOff = (uint32_t)env("SEED", 0);
+  string name = arch + (getenv("TAG") ? string("-") + getenv("TAG") : ""), out = "deep-ppo-" + name + ".json", ck = "deep-ppo-" + name + "-ckpt.json";
+  loadPool(getenv("OPP") ? getenv("OPP") : "abl/deep-cnet3-cnet3-adv-deq.json+abl/deep-cnet3-cnet3b-adv-deq.json+abl/deep-cnet3-cnet3c-adv-deq.json");
+  size_t nOpp = pool.size();
+  unique_ptr<Model> netp(makeModel(arch, 2, 21 + seedOff)); Model& net = *netp; net.logit = true; int start = 1;
+  if (getenv("INIT")){ unique_ptr<Model> w(loadNet(getenv("INIT"))); net.p = w->p; }
+  vector<unique_ptr<Model>> snaps;
+  string meta = readFile(ck);
+  if (!meta.empty()){
+    start = atoi(jsonVal(meta, "t").c_str()) + 1; net.p = unb64(jsonVal(meta, "p")); net.m = unb64(jsonVal(meta, "m")); net.v = unb64(jsonVal(meta, "v"));
+    net.at = atoi(jsonVal(meta, "at").c_str()); int ns = atoi(jsonVal(meta, "snaps").c_str());
+    for (int s = 0; s < ns; s++){ snaps.emplace_back(makeModel(arch, 2, 1)); snaps.back()->logit = true; snaps.back()->p = unb64(jsonVal(meta, "s" + to_string(s))); }
+    for (auto& s : snaps) pool.push_back({ 1, s.get(), {} });
+    printf("resuming after iteration %d (%zu snapshots)\n", start - 1, snaps.size()); fflush(stdout);
+  }
+  const int F = net.nf();
+  vector<vector<float>> G(nw, vector<float>(net.n)); vector<unique_ptr<Work>> C; for (int t = 0; t < nw; t++) C.emplace_back(net.work());
+  auto t0 = chrono::steady_clock::now(); auto secs = [&]{ return chrono::duration<double>(chrono::steady_clock::now() - t0).count(); };
+  for (int t = start; t <= T; t++){
+    double tp = secs();
+    vector<vector<float>> WX(nw); vector<vector<Sample>> WS(nw); vector<double> mixW(nw, 0), mixN(nw, 0);
+    vector<thread> th;
+    for (int w = 0; w < nw; w++) th.emplace_back([&, w]{
+      static const int tables[12] = { 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7 };
+      Rng r(777 + w * 7919 + t * 104729 + seedOff * 1000003); unique_ptr<Work> c(net.work()); auto pc = poolWork(); vector<float> x(MAXF);
+      for (int i = 0; i < games; i++){
+        int n = tables[(int)floor(r() * 12)]; Game g; newGame(g, n, r); int seat[7]; bool any = false;
+        for (int q = 0; q < n; q++){ seat[q] = -1;
+          if (r() < poolP){ seat[q] = snaps.empty() || r() < 0.5 ? (int)floor(r() * nOpp) : (int)(nOpp + floor(r() * snaps.size())); any = true; } }
+        bool learner = false; for (int q = 0; q < n; q++) learner |= seat[q] < 0;
+        if (!learner) seat[(int)floor(r() * n)] = -1;
+        vector<vector<int>> traj(n);
+        for (;;){
+          int p = g.turn; bool take;
+          if (g.chips[p] == 0) take = true;
+          else if (seat[p] >= 0){ const Opp& o = pool[seat[p]]; o.net->features(g, x.data()); take = r() < takeProb(*o.net, o.net->forward(x.data(), pc[seat[p]].get())); }
+          else {
+            net.features(g, x.data()); const float* y = net.forward(x.data(), c.get());
+            double pt = 1 / (1 + exp(-y[0])); take = r() < pt;
+            WX[w].insert(WX[w].end(), x.begin(), x.begin() + F);
+            WS[w].push_back({ take, (float)log(max(1e-8, take ? pt : 1 - pt)), y[1], 0, 0 }); traj[p].push_back((int)WS[w].size() - 1);
+          }
+          if (step(g, take)) break;
+        }
+        for (int q = 0; q < n; q++){
+          double R = winShare(g, q), A = 0, next = R;
+          for (int k = (int)traj[q].size() - 1; k >= 0; k--){ Sample& s = WS[w][traj[q][k]]; double d = next - s.v; A = d + lam * A; s.adv = (float)A; s.ret = (float)(A + s.v); next = s.v; }
+          if (any && seat[q] < 0){ mixW[w] += R * n - 1; mixN[w]++; }
+        }
+      }
+    });
+    for (auto& x : th) x.join();
+    tp = secs() - tp;
+    vector<float> X; vector<Sample> S;
+    for (int w = 0; w < nw; w++){ X.insert(X.end(), WX[w].begin(), WX[w].end()); S.insert(S.end(), WS[w].begin(), WS[w].end()); }
+    long N = (long)S.size(); double am = 0, av = 0; for (auto& s : S) am += s.adv; am /= N; for (auto& s : S) av += (s.adv - am) * (s.adv - am); av = sqrt(av / N) + 1e-8;
+    for (auto& s : S) s.adv = (float)((s.adv - am) / av);
+    vector<long> order(N); for (long i = 0; i < N; i++) order[i] = i;
+    double sumH = 0, sumV = 0, sumClip = 0; long cntS = 0;
+    for (int e = 0; e < epochs; e++){
+      for (long i = N - 1; i > 0; i--){ long j = (long)floor(rnd() * (i + 1)); swap(order[i], order[j]); }
+      for (long b0 = 0; b0 + bs <= N; b0 += bs){
+        vector<double> tH(nw, 0), tV(nw, 0), tC(nw, 0); vector<thread> tt;
+        for (int w = 0; w < nw; w++) tt.emplace_back([&, w]{
+          fill(G[w].begin(), G[w].end(), 0.f); float dout[2];
+          for (long b = b0 + w; b < b0 + bs; b += nw){
+            long j = order[b]; const Sample& s = S[j]; const float* x = &X[j * F]; const float* y = net.forward(x, C[w].get());
+            double l = y[0], p = 1 / (1 + exp(-l)), lp = log(max(1e-8, s.a ? p : 1 - p)), ratio = exp(lp - s.lp);
+            bool clipped = (s.adv > 0 && ratio > 1 + clipE) || (s.adv < 0 && ratio < 1 - clipE);
+            double dl = clipped ? 0 : -ratio * s.adv * (s.a - p);
+            dl += ent * l * p * (1 - p);   // - ent * d(entropy)/dl
+            double dv = 2 * vc * (y[1] - s.ret);
+            dout[0] = (float)(dl / bs); dout[1] = (float)(dv / bs);
+            net.backward(x, C[w].get(), dout, G[w].data());
+            tH[w] += -(p * log(p + 1e-8) + (1 - p) * log(1 - p + 1e-8)); tV[w] += (y[1] - s.ret) * (y[1] - s.ret); tC[w] += clipped;
+          }
+        });
+        for (auto& x : tt) x.join();
+        for (int w = 1; w < nw; w++) for (int k = 0; k < net.n; k++) G[0][k] += G[w][k];
+        double gn = 0; for (int k = 0; k < net.n; k++) gn += G[0][k] * G[0][k]; gn = sqrt(gn);
+        if (gn > 1) for (int k = 0; k < net.n; k++) G[0][k] /= gn;
+        net.adam(G[0], lr);
+        for (int w = 0; w < nw; w++){ sumH += tH[w]; sumV += tV[w]; sumClip += tC[w]; } cntS += bs;
+      }
+    }
+    double mw = 0, mn = 0; for (int w = 0; w < nw; w++){ mw += mixW[w]; mn += mixN[w]; }
+    printf("iter %d/%d: %ld decisions, edge vs opponents %+.1f%%, entropy %.3f, value mse %.4f, clipped %.1f%%, %.0fs (play %.0fs)\n",
+      t, T, N, mn ? 100 * mw / mn : 0.0, sumH / cntS, sumV / cntS, 100 * sumClip / cntS, secs(), tp); fflush(stdout);
+    if (snapEvery > 0 && t % snapEvery == 0){ snaps.emplace_back(makeModel(arch, 2, 1)); snaps.back()->logit = true; snaps.back()->p = net.p; pool.push_back({ 1, snaps.back().get(), {} }); }
+    saveJson(out, arch, net);
+    FILE* f = fopen((ck + ".tmp").c_str(), "w");
+    fprintf(f, "{\"t\":%d,\"at\":%d,\"snaps\":%zu,\"p\":\"%s\",\"m\":\"%s\",\"v\":\"%s\"", t, net.at, snaps.size(), b64(net.p.data(), net.n).c_str(), b64(net.m.data(), net.n).c_str(), b64(net.v.data(), net.n).c_str());
+    for (size_t s = 0; s < snaps.size(); s++) fprintf(f, ",\"s%zu\":\"%s\"", s, b64(snaps[s]->p.data(), net.n).c_str());
+    fprintf(f, "}"); fclose(f); rename((ck + ".tmp").c_str(), ck.c_str());
+    if (getenv("SAVEEVERY") && t % atoi(getenv("SAVEEVERY")) == 0) saveJson("deep-ppo-" + name + "-" + to_string(t) + ".json", arch, net);
+  }
+  return 0;
+}
+
 // ./deep gradcheck <arch>: backward against finite differences, on a few positions from random games
 static int gradcheck(const string& arch){
   unique_ptr<Model> m(makeModel(arch, 2, 5)); unique_ptr<Work> w(m->work()); Rng r(9);
@@ -698,6 +813,7 @@ int main(int argc, char** argv){
   if (argc > 1 && !strcmp(argv[1], "league")) return leagueMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "vs")) return vsMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "dump")) return dumpMain(argc, argv);
+  if (argc > 3 && !strcmp(argv[1], "ppo")) return ppoMain(argc, argv);
   if (argc > 1 && !strcmp(argv[1], "test")) return test(argv[2], atoi(argv[3]), atoi(argv[4]));
   int T = argc > 1 ? atoi(argv[1]) : 40, games = argc > 2 ? atoi(argv[2]) : 2500;
   int nw = argc > 3 ? atoi(argv[3]) : (int)thread::hardware_concurrency();
