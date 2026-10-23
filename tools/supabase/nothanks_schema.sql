@@ -225,8 +225,9 @@ returns int language sql immutable set search_path = public as $$
   from (select nothanks_points(hand || card) - nothanks_points(hand) - pot as cost) x
 $$;
 
--- The neural-net bot (cnet3 in tools/no_thanks_cfr/deep.cpp, trained with Deep CFR), used at every table size.
--- w holds several such nets (different seeds) one after another, 16858 weights each; the bot averages their regrets.
+-- The neural-net bot (cnet3 in tools/no_thanks_cfr/deep.cpp), used at every table size. w holds one or more such nets
+-- one after another, 16858 weights each, and the bot averages their outputs: regrets for nets trained with Deep CFR,
+-- or (logit) the take logit and a value for nets trained with PPO.
 -- Their weights ship as 16-bit integers with one scale per layer part (tools/supabase/nothanks_net.sql loads them) and
 -- are unpacked once into w. Same layout as the page's NET_LAYERS: conv1 4x5->12 (offset 0), conv2 12x3->12 (252),
 -- encoder 106->32 (696), trunk 131->64 (4120), 64->64 (12568), 64->2 (16728); each is weights then biases.
@@ -234,8 +235,10 @@ create table if not exists public.nothanks_net (
   id     int primary key,
   scales real[] not null,
   q      bytea not null,
-  w      real[]
+  w      real[],
+  logit  boolean not null default false
 );
+alter table public.nothanks_net add column if not exists logit boolean not null default false;
 alter table public.nothanks_net enable row level security;
 revoke all on public.nothanks_net from anon, authenticated;
 
@@ -289,9 +292,9 @@ create or replace function public.nothanks_net_take(hand int[], chips int, card 
 returns real language plpgsql stable set search_path = public as $$
 declare w real[]; seen int[] := hand; pc int[]; pch int; c int := card - 3; pos int; b int; r1 float8 := 0; r2 float8 := 0; nn int;
   vx real[] := array_fill(0::real, array[132]); vbase real[]; inp real[]; a real[]; fl real[]; tin real[] := array_fill(0::real, array[131]);
-  es real[] := '{}'; res real[]; s float8; m float8; sa float8; sb float8;
+  es real[] := '{}'; res real[]; s float8; m float8; sa float8; sb float8; lg boolean;
 begin
-  select net.w into w from nothanks_net net where id = 1;
+  select net.w, net.logit into w, lg from nothanks_net net where id = 1;
   if w is null or array_length(w, 1) % 16858 <> 0 then return null; end if;
   nn := array_length(w, 1) / 16858;
   for k in 0 .. n - 2 loop seen := seen || array(select jsonb_array_elements_text(opp_cards->k)::int); end loop;
@@ -338,6 +341,7 @@ begin
     res := nothanks_net_dense(w, b + 16728, 64, 2, nothanks_net_dense(w, b + 12568, 64, 64, nothanks_net_dense(w, b + 4120, 131, 64, tin, 0, true), 0, true), 0, false);
     r1 := r1 + res[1] / nn; r2 := r2 + res[2] / nn;
   end loop;
+  if lg then return 1 / (1 + exp(-r1)); end if;
   sa := greatest(r1, 0); sb := greatest(r2, 0);   -- regret matching
   return case when sa + sb > 0 then sa / (sa + sb) when r1 > r2 then 1 else 0 end;
 end $$;

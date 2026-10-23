@@ -515,13 +515,13 @@ function botKey(cards, chips, card, pot, others, left, n){
   const nb = n <= 3 ? 0 : n <= 5 ? 1 : 2;
   return ((((((cb * 6 + mb) * 3 + pb) * 2 + (fits(cards) ? 1 : 0)) * 2 + (others.some(o => fits(o.cards)) ? 1 : 0)) * 3 + ob) * 3 + lb) * 3 + nb;
 }
-// The bots use a small neural net trained with Deep CFR (cnet3 in tools/no_thanks_cfr/deep.cpp). Every player, the
+// The bots use a small neural net (cnet3 in tools/no_thanks_cfr/deep.cpp). Every player, the
 // bot included, goes through one shared encoder: two 1D convolutions over the card line 3..35 (channels: this player
 // holds the card, anyone holds it, it's the card in play, its value), read out at the card in play +-2 plus the mean
 // and max over the line, the raw holds/seen bits at the card +-3, chips and seat. The opponents are pooled by sum and
-// by max, and a trunk outputs how much it regrets taking vs passing. bot-net.json holds the weights of several such
-// nets (trained from different seeds; the bot averages their regrets) as 16-bit integers (base64) with a scale per
-// layer part. Until the nets load, the bots use the table above.
+// by max, and a trunk outputs either how much it regrets taking vs passing (nets trained with Deep CFR) or, with
+// head "logit" (trained with PPO), the log-odds of taking and a value. bot-net.json holds the weights of one or more
+// such nets (the bot averages their outputs) as 16-bit integers (base64) with a scale per layer part. Until the nets load, the bots use the table above.
 let net = null, netP = null;
 const NET_LAYERS = [[20, 12], [36, 12], [106, 32], [131, 64], [64, 64], [64, 2]];   // conv1, conv2, encoder, trunk x3
 const loadNet = () => netP || (netP = fetch('bot-net.json').then(r => r.ok ? r.json() : null).then(j => {
@@ -533,7 +533,7 @@ const loadNet = () => netP || (netP = fetch('bot-net.json').then(r => r.ok ? r.j
     for (const len of [i * n, n]){ const s = j.scales[si++]; for (let k = 0; k < len; k++) p[o + k] = q[o + k] * s; o += len; }
     L.push({ i, o: n, w: o - i * n - n, b: o - n });
   }
-  net = { p, nets: Array.from({ length: j.nets || 1 }, (_, m) => L.slice(m * 6, m * 6 + 6)) };
+  net = { p, logit: j.head === 'logit', nets: Array.from({ length: j.nets || 1 }, (_, m) => L.slice(m * 6, m * 6 + 6)) };
 }, () => { netP = null; }));
 // others: the other players in turn order after the mover, as { cards, chips }
 function netFeatures(cards, chips, card, pot, others, left, n){
@@ -587,6 +587,7 @@ function netForwardOne(x, L){
 }
 function netTakeProb(cards, chips, card, pot, others, left, n){
   const o = netForward(netFeatures(cards, chips, card, pot, others, left, n)), a = Math.max(o[0], 0), b = Math.max(o[1], 0);
+  if (net.logit) return 1 / (1 + Math.exp(-o[0]));
   return a + b > 0 ? a / (a + b) : o[0] > o[1] ? 1 : 0;   // regret matching
 }
 function botTakes(cards, chips, card, pot, others, left, n){
