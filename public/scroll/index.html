@@ -116,6 +116,27 @@ svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 #shareName{text-transform:none;letter-spacing:0;color:var(--ink-dim)}
 @media (prefers-reduced-motion:reduce){.sheet{transition:none}}
 
+/* likes and comments */
+#likeBtn[aria-pressed="true"] svg{fill:var(--heart,#ff3b5c);stroke:var(--heart,#ff3b5c)}
+#likeBtn.pop .ic svg{animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{0%{transform:scale(.6)}100%{transform:scale(1)}}
+.csheet{gap:12px;padding-block:10px 0;min-height:min(38%,320px);max-height:min(72%,640px);grid-template-rows:auto auto minmax(0,1fr);align-content:start;padding-left:0;padding-right:0}
+.chead{display:grid;grid-template-columns:36px 1fr 36px;align-items:center;padding-inline:max(14px,env(safe-area-inset-left,0px)) max(14px,env(safe-area-inset-right,0px));font-weight:600;font-size:.88rem}
+.chead span{grid-column:2;text-align:center;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.chead .iconbtn{grid-column:3;background:var(--raise)}
+.clist{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.clist::-webkit-scrollbar{display:none}
+.ccom{display:grid;grid-template-columns:32px 1fr 34px;gap:0 12px;align-items:start;padding:10px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px))}
+.ccom .tf-body{gap:8px}
+.ccom .tf-head{height:12px}
+.ccom .tf-head i{height:8px}
+.ccom .tf-ln{height:9px}
+.cav canvas{width:32px;height:32px;display:block;border-radius:50%}
+.clike{display:grid;justify-items:center;gap:2px;border:0;background:none;padding:2px 0 0;color:var(--ink-faint);font-size:.68rem;font-weight:600;font-variant-numeric:tabular-nums}
+.clike svg{width:17px;height:17px}
+.clike[aria-pressed="true"] svg{fill:var(--heart,#ff3b5c);stroke:var(--heart,#ff3b5c)}
+@media (prefers-reduced-motion:reduce){#likeBtn.pop .ic svg{animation:none}}
+
 </style>
 
 <div class="stage">
@@ -135,6 +156,12 @@ svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     </div>
 
     <div class="rail">
+      <button id="likeBtn" aria-label="Like" aria-pressed="false">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-9.2-9.3C1.6 7.4 3.8 4 7.2 4c2 0 3.6 1.1 4.8 2.8C13.2 5.1 14.8 4 16.8 4c3.4 0 5.6 3.4 4.4 6.7C19.5 15.4 12 20 12 20z"/></svg></span><span id="likeN"></span>
+      </button>
+      <button id="commentBtn" aria-label="Comments">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/></svg></span><span id="commentN"></span>
+      </button>
       <button id="shareBtn" aria-label="Share this reel">
         <span class="ic"><svg viewBox="0 0 24 24"><path d="M14 5l7 7-7 7M21 12H10a7 7 0 0 0-7 7"/></svg></span>Share
       </button>
@@ -151,6 +178,7 @@ svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       <div>
         <div class="label">Winds down over</div>
         <div class="seg" id="windSeg">
+          <button id="wind-5" data-wind="5">5 min</button>
           <button id="wind-10" data-wind="10">10 min</button>
           <button id="wind-20" data-wind="20">20 min</button>
           <button id="wind-40" data-wind="40">40 min</button>
@@ -161,6 +189,11 @@ svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         <button class="btn solid" id="done">Done</button>
         <button class="btn" id="fresh">Start fresh</button>
       </div>
+    </div>
+    <div class="sheet csheet" id="commentSheet" role="dialog" aria-modal="true" aria-label="Comments">
+      <div class="grab"></div>
+      <div class="chead"><span id="commentHead"></span><button class="iconbtn" id="commentClose" aria-label="Close comments"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="clist" id="commentList"></div>
     </div>
     <div class="sheet" id="shareSheet" role="dialog" aria-modal="true" aria-label="Share reel">
       <div class="grab"></div>
@@ -834,9 +867,9 @@ const HOME = window.top !== window ? 'https://claude.ai/artifact/KgJZz6bmj9x7Eyx
 /* ---------- the clock ----------
    Stimulation is a function of time spent in the feed today: it starts fully vivid and eases down
    to nothing over S.wind minutes, then stays calm. Nothing on screen says where it is. */
-let S = { wind: 20 };
+let S = { wind: 5 };
 try { Object.assign(S, JSON.parse(localStorage.getItem('wane.settings') || '{}')); } catch (e) {}
-if (![10, 20, 40].includes(S.wind)) S.wind = 20;
+if (![5, 10, 20, 40].includes(S.wind)) S.wind = 5;
 const save = () => { try { localStorage.setItem('wane.settings', JSON.stringify({ wind: S.wind })); } catch (e) {} };
 
 const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -906,6 +939,7 @@ function setActive(i) {
   active = i; neighbours();
   if (i >= slides.length - 3) fill();
   if (i > 0) $('hint').classList.add('gone');
+  paintRail();
 }
 function goTo(i) { feed.scrollTo({ top: i * feed.clientHeight, behavior: reduce ? 'auto' : 'smooth' }); }
 // Drop the reels below the current one so the next ones pick up the current stimulation.
@@ -945,6 +979,65 @@ $('shareBtn').onclick = () => { const sl = slides[active]; if (sl && sl.state) s
 const sharePost = p => shareLink(`${HOME}#${itemHash('p', p)}`, 'a post');
 $('shareDone').onclick = closeShare;
 
+/* ---------- likes and comments ----------
+   Nobody else is here: the like count, the comment count and every comment (placeholder bars, generated avatars)
+   come from the reel's seed and stimulation, so calmer reels have quieter numbers and plainer comments. */
+const liked = new Set(), likedC = new Set();
+const fmt = n => n >= 1e6 ? +(n / 1e6).toFixed(n < 1e7 ? 1 : 0) + 'M' : n >= 1e4 ? +(n / 1e3).toFixed(n < 1e5 ? 1 : 0) + 'K' : n.toLocaleString('en-US');
+function stats(sl) {
+  if (!sl.stats) {
+    const r = rng(sl.seed ^ 0x2c1b3c6d), likes = Math.round(Math.exp(lerp(Math.log(2), Math.log(3e6), sl.s * (.6 + .4 * r()))));
+    sl.stats = { likes, comments: Math.max(1, Math.round(likes * lerp(.004, .03, r()))) };
+  }
+  return sl.stats;
+}
+// the heart is red on vivid reels and drains to white as they calm
+const heart = s => { const k = clamp01((s - .3) / .6); return `hsl(348,${Math.round(100 * k)}%,${Math.round(lerp(100, 62, k))}%)`; };
+function paintRail() {
+  const sl = slides[active]; if (!sl || !sl.state) return;
+  const st = stats(sl), on = liked.has(sl.seed);
+  $('likeBtn').setAttribute('aria-pressed', String(on)); $('likeN').textContent = fmt(st.likes + on);
+  $('commentN').textContent = fmt(st.comments);
+  $('app').style.setProperty('--heart', heart(sl.s));
+}
+$('likeBtn').onclick = () => {
+  const sl = slides[active]; if (!sl || !sl.state) return;
+  liked.has(sl.seed) ? liked.delete(sl.seed) : liked.add(sl.seed); paintRail();
+  const b = $('likeBtn'); b.classList.remove('pop'); void b.offsetWidth; if (liked.has(sl.seed)) b.classList.add('pop');
+};
+
+const HEART = '<svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-9.2-9.3C1.6 7.4 3.8 4 7.2 4c2 0 3.6 1.1 4.8 2.8C13.2 5.1 14.8 4 16.8 4c3.4 0 5.6 3.4 4.4 6.7C19.5 15.4 12 20 12 20z"/></svg>';
+let cOpen = null;  // { sl, draws, t, rate } while the panel is up
+function openComments() {
+  const sl = slides[active], tf = window.WaneTextFeed; if (!sl || !sl.state || !tf || !tf.comments) return;
+  const st = stats(sl), list = tf.comments(sl.seed, sl.s, Math.min(30, st.comments)), box = $('commentList'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  $('commentHead').textContent = `${fmt(st.comments)} comment${st.comments === 1 ? '' : 's'}`;
+  box.innerHTML = ''; box.scrollTop = 0; box.classList.toggle('tf-sh', sl.s > .45 && !reduce);
+  box.style.setProperty('--heart', heart(sl.s));
+  const draws = [];
+  list.forEach((cm, i) => {
+    const row = document.createElement('div'), key = `${sl.seed}:${i}`, on = likedC.has(key);
+    row.className = 'ccom'; row.style.cssText = cm.css; row.dataset.key = key; row.dataset.n = cm.likes;
+    row.innerHTML = `<div class="cav"></div><div class="tf-body"><div class="tf-head"><i class="tf-n" style="width:${cm.name.toFixed(1)}%"></i><i class="tf-d"></i><i style="width:${cm.time.toFixed(1)}%"></i></div>`
+      + `<div class="tf-text">${cm.lines.map(ws => `<div class="tf-ln">${ws.map(w => `<i class="${w.hi ? 'tf-h' : ''}" style="width:${w.w.toFixed(1)}%"></i>`).join('')}</div>`).join('')}</div></div>`
+      + `<button class="clike" type="button" aria-label="Like comment" aria-pressed="${on}">${HEART}<span>${cm.likes + on ? fmt(cm.likes + on) : ''}</span></button>`;
+    box.appendChild(row);
+    const cv = document.createElement('canvas'); cv.width = cv.height = Math.round(32 * dpr); row.firstChild.appendChild(cv);
+    const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const d = t => tf.drawAvatar(c, 32, t, cm.avatar); d(0); draws.push(d);
+  });
+  cOpen = { draws, t: 0, rate: lerp(.06, 1, sl.s * sl.s), tick: 0 };
+  $('commentSheet').classList.add('open'); $('scrim').classList.add('open');
+}
+function closeComments() { if (!cOpen) return; cOpen = null; $('commentSheet').classList.remove('open'); $('scrim').classList.remove('open'); }
+$('commentBtn').onclick = openComments;
+$('commentClose').onclick = closeComments;
+$('commentList').onclick = e => {
+  const b = e.target.closest('.clike'), row = b && b.closest('.ccom'); if (!row) return;
+  const k = row.dataset.key, on = !likedC.has(k); on ? likedC.add(k) : likedC.delete(k);
+  b.setAttribute('aria-pressed', String(on)); const n = +row.dataset.n + on; b.lastChild.textContent = n ? fmt(n) : '';
+};
+
 /* ---------- posts (module inlined by build.py) ---------- */
 function setFeedKind(kind) {
   if (!window.WaneTextFeed || kind === feedKind) return;
@@ -968,7 +1061,7 @@ function paintSheet() { for (const b of $('windSeg').children) b.setAttribute('a
 function openSheet() { paintSheet(); $('sheet').classList.add('open'); $('scrim').classList.add('open'); }
 function closeSheet() { $('sheet').classList.remove('open'); $('scrim').classList.remove('open'); }
 $('openSettings').onclick = openSheet;
-$('scrim').onclick = () => { closeSheet(); closeShare(); };
+$('scrim').onclick = () => { closeSheet(); closeShare(); closeComments(); };
 $('done').onclick = closeSheet;
 $('windSeg').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -982,7 +1075,7 @@ $('fresh').onclick = () => {
 
 document.addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input')) return;
-  if ($('sheet').classList.contains('open') || $('shareSheet').classList.contains('open')) { if (e.key === 'Escape') { closeSheet(); closeShare(); } return; }
+  if (cOpen || $('sheet').classList.contains('open') || $('shareSheet').classList.contains('open')) { if (e.key === 'Escape') { closeSheet(); closeShare(); closeComments(); } return; }
   if (e.key === 'p') return setFeedKind(feedKind === 'posts' ? 'reels' : 'posts');
   if (feedKind !== 'reels') return;
   if (['ArrowDown', 'PageDown', 'j'].includes(e.key)) { e.preventDefault(); goTo(active + 1); }
@@ -1007,6 +1100,8 @@ function frame(now) {
       const loop = lerp(24, 8, a.s);
       $('bar').style.transform = `scaleX(${(a.t % loop) / loop})`;
     }
+    // commenters' avatars move at the reel's own pace while the panel is up
+    if (cOpen && !reduce && ++cOpen.tick % 2 === 0) { cOpen.t += dt * 2 * cOpen.rate; for (const d of cOpen.draws) d(cOpen.t); }
     if (now < scrollingUntil) for (const j of [active - 1, active + 1]) { const n = slides[j]; if (n && n.ctx) { n.t += dt * SPEED; render(n); } }
   }
   requestAnimationFrame(frame);
@@ -1095,7 +1190,8 @@ window.addEventListener('load', offerPosts); setTimeout(offerPosts, 0);
    and the old levels are just points on it (4 = 1, 3 = .67, 2 = .33, 1 = 0). Nothing is bucketed: saturation, contrast, motion,
    how many shapes, how often pictures appear and how busy the text looks all slide smoothly with s.
    Styles live in textfeed.css (all classes prefixed tf-). Touches nothing at document level: no keydown, no window scroll.
-   API: WaneTextFeed.mount(el, opts), unmount(), setStim(s), setLevel(n), setDecay(d), end(reason), restart(s), stim, level, post(seed, s).
+   API: WaneTextFeed.mount(el, opts), unmount(), setStim(s), setLevel(n), setDecay(d), end(reason), restart(s), stim, level, post(seed, s),
+        comments(seed, s, n) and drawAvatar(ctx, size, t, avatar) for the reel comments panel.
    opts: stim (starting s, default 1), decay (s lost per post, default 1/24), floor (s never goes below it, default 0),
          stimAt (optional () => s; when given, each new post takes s = stimAt() and decay is ignored),
          chrome (own top bar, default false), onStim(s), onLevel(level), onSeen(post), onEnd(reason), onRestart(),
@@ -1364,6 +1460,19 @@ function makePost(seed, s) {
   return p;
 }
 
+// Placeholder comments for a reel, built from the same avatars and word bars as posts. Pure function of (seed, s, n).
+// Calmer reels get shorter, smoother comments in grey; like counts shrink with s too.
+function makeComments(seed, s, n) {
+  s = Math.round(clamp(s) * 999) / 999;
+  const r = rng(seed ^ 0x5bd1e995), C = chroma(s);
+  return Array.from({ length: n }, () => {
+    const L = look(r, s), bar = k => `hsla(${L.h + k * L.spread},${80 * C}%,${lerp(92, 72, C)}%,${lerp(.1, .36, s)})`;
+    return { s, name: between(r, 22, 46), time: between(r, 6, 11), avatar: makeAvatar(r, s), lines: makeText(r, s, 1 + Math.floor(r() * lerp(1.4, 3.2, s))),
+      likes: Math.floor(Math.pow(r(), 2.5) * lerp(6, 9000, s * s)),
+      css: `--tf-bar:${bar(0)};--tf-bar2:${bar(.5)};--tf-hi:${fg({ ...L, light: false }, .8, 0, lerp(.3, 1, s))};--tf-name:rgba(244,242,248,${lerp(.18, .75, s)})` };
+  });
+}
+
 /* ---------- mount ---------- */
 function mount(root, opts = {}) {
   const o = Object.assign({ stim: opts.level ? (opts.level - 1) / 3 : 1, decay: 1 / 24, floor: 0, chrome: false }, opts);
@@ -1561,7 +1670,7 @@ function mount(root, opts = {}) {
 // Single-instance convenience API for the host app.
 let cur = null;
 window.WaneTextFeed = {
-  LEVELS: LV, levelOf, post: makePost,
+  LEVELS: LV, levelOf, post: makePost, comments: makeComments, drawAvatar,
   mount(el, opts) { if (cur) cur.destroy(); cur = mount(el, opts); return cur; },
   unmount() { if (cur) cur.destroy(); cur = null; },
   setStim(s) { cur && cur.setStim(s); },
