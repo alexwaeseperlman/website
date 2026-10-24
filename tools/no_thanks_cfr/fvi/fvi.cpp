@@ -13,6 +13,7 @@
 // The anet version (anet.h) learns afterstate values with the pass chain as an exact min/max layer instead:
 //   ./fvi atrain <stage> <chains> <epochs>   -> a<k>.json (warm start and targets from a<k-1>.json)
 //   ./fvi acheck <stage> <positions>         anet + chain vs the exact solver
+//   ./fvi aplay <games>                      anet chain policy (every a<k>.json present) vs the live bot, 2 players
 //   ./fvi atrain0 <chains> <epochs>          stage 0 only, with held-out decision RMSE in aloss0.csv;  ./fvi agrad: gradient check
 // The live bot (LIVE, default ../nash/live.json) only picks the sample positions.
 #define main deep_main
@@ -440,7 +441,9 @@ static int atrainMain(int k, int chains, int epochs){
   vector<float> AX, AY; for (int t = 0; t < NT; t++){ AX.insert(AX.end(), X[t].begin(), X[t].end()); AY.insert(AY.end(), Y[t].begin(), Y[t].end()); }
   long n = (long)(AX.size() / F), nTest = n / 50, nTrain = n - nTest;
   double tg = chrono::duration<double>(chrono::steady_clock::now() - t0).count();
-  vector<vector<float>> G(NT, vector<float>(A.n)); vector<unique_ptr<Work>> C; for (int t = 0; t < NT; t++) C.emplace_back(A.work());
+  // training threads: a batch of 512 split over hundreds of threads would be all thread start-up, so cap it (TRAIN_THREADS)
+  const int TT = min(NT, getenv("TRAIN_THREADS") ? atoi(getenv("TRAIN_THREADS")) : 16);
+  vector<vector<float>> G(TT, vector<float>(A.n)); vector<unique_ptr<Work>> C; for (int t = 0; t < NT; t++) C.emplace_back(A.work());
   auto rmse = [&](long a, long b){ vector<double> se(NT, 0); vector<thread> th;
     for (int t = 0; t < NT; t++) th.emplace_back([&, t]{ for (long i = a + t; i < b; i += NT){ const float* s = A.forward(&AX[i * F], C[t].get()); double e = s[0] - AY[i * MAXP]; se[t] += e * e; } });
     for (auto& t : th) t.join(); double s = 0; for (double v : se) s += v; return sqrt(s / max(1L, b - a)); };
@@ -452,13 +455,13 @@ static int atrainMain(int k, int chains, int epochs){
     double lr = 1e-3 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1);
     vector<long> idx(bs); for (auto& i : idx) i = (long)(r() * nTrain);
     vector<thread> th;
-    for (int t = 0; t < NT; t++) th.emplace_back([&, t]{
+    for (int t = 0; t < TT; t++) th.emplace_back([&, t]{
       fill(G[t].begin(), G[t].end(), 0.f); float d[7];
-      for (int b = t; b < bs; b += NT){ const float* x = &AX[idx[b] * F]; const float* sh = A.forward(x, C[t].get()); int nn = (int)x[0];
+      for (int b = t; b < bs; b += TT){ const float* x = &AX[idx[b] * F]; const float* sh = A.forward(x, C[t].get()); int nn = (int)x[0];
         for (int q = 0; q < nn; q++) d[q] = (sh[q] - AY[idx[b] * MAXP + q]) / bs; A.backward(x, C[t].get(), d, G[t].data()); }
     });
     for (auto& t : th) t.join();
-    for (int t = 1; t < NT; t++) for (int i = 0; i < A.n; i++) G[0][i] += G[t][i];
+    for (int t = 1; t < TT; t++) for (int i = 0; i < A.n; i++) G[0][i] += G[t][i];
     A.adam(G[0], lr);
   }
   printf("anet stage %d: %ld afterstates (%.0fs to label), held-out RMSE %.4f, train %.4f, %.0fs total\n", k, n, tg, rmse(nTrain, n),
@@ -490,12 +493,50 @@ static int acheckMain(int k, int positions){
   return 0;
 }
 
+
+// ./fvi aplay <games>: 2 players, seat 0 plays the anet chain policy (a<k>.json for every stage present) vs the live bot,
+// stages without a net fall back to the live bot; paired deals (the live bot in seat 0 on the same deal)
+static int aplayMain(int games){
+  vector<unique_ptr<ANet>> A(24); int have = 0; for (int k = 0; k < 24; k++){ ifstream f(afile(k)); if (f.good()){ A[k].reset(loadA(afile(k))); have++; } }
+  const int NT = thread::hardware_concurrency(); atomic<int> next{ 0 }; mutex mu; double tot = 0, base = 0, dsq = 0;
+  vector<thread> th;
+  for (int t = 0; t < NT; t++) th.emplace_back([&]{
+    vector<unique_ptr<Work>> w(24); for (int k = 0; k < 24; k++) if (A[k]) w[k].reset(A[k]->work());
+    unique_ptr<Work> lw(liveNet->work()); vector<float> x(MAXF); double s1 = 0, s0 = 0, dq = 0;
+    for (int i; (i = next++) < games;){
+      double res[2];
+      for (int arm = 0; arm < 2; arm++){
+        Rng r(4242 + i * 104729); Game g; newGame(g, 2, r);
+        for (;;){
+          bool take; int k = leftOf(g);
+          if (g.chips[g.turn] == 0) take = true;
+          else if (arm == 0 && g.turn == 0 && A[k]){
+            double tv[7], pv[7]; afterShares(*A[k], w[k].get(), x.data(), g, tv); Game h = g; step(h, false); chainShares(*A[k], w[k].get(), x.data(), h, pv);
+            take = tv[0] >= pv[0];
+          }
+          else { liveNet->features(g, x.data()); take = r() < takeProb(*liveNet, liveNet->forward(x.data(), lw.get())); }
+          if (step(g, take)) break;
+        }
+        res[arm] = winShare(g, 0);
+      }
+      s1 += res[0]; s0 += res[1]; dq += (res[0] - res[1]) * (res[0] - res[1]);
+    }
+    lock_guard<mutex> lk(mu); tot += s1; base += s0; dsq += dq;
+  });
+  for (auto& t : th) t.join();
+  double d = (tot - base) / games, sd = sqrt(max(0.0, dsq / games - d * d) / games);
+  printf("anet (%d stages) in seat 0 vs live bot, 2 players, %d paired deals: %.2f%% (live bot there: %.2f%%), gain %+.2f +- %.2f\n",
+    have, games, 100 * tot / games, 100 * base / games, 100 * d, 100 * sd);
+  return 0;
+}
+
 int main(int argc, char** argv){
   string live = getenv("LIVE") ? getenv("LIVE") : "../nash/live.json"; liveNet = loadNet(live);
   string mode = argc > 1 ? argv[1] : "";
   if (mode == "train"){ int a = atoi(argv[2]), b = atoi(argv[3]), n = atoi(argv[4]), e = argc > 5 ? atoi(argv[5]) : 4;
     for (int k = a; k <= b; k++) trainStage(k, n, e); return 0; }
   if (mode == "atrain") return atrainMain(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+  if (mode == "aplay") return aplayMain(atoi(argv[2]));
   if (mode == "alabeltest") return alabelTest(atoi(argv[2]));
   if (mode == "acheck") return acheckMain(atoi(argv[2]), atoi(argv[3]));
   if (mode == "agrad") return agradMain();
