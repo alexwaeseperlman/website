@@ -16,7 +16,7 @@ export class Face {
 export class PathFace {
     free(): void;
     [Symbol.dispose](): void;
-    blur_pass(iterations: number, pencil: boolean): void;
+    blur_pass(iterations: number, pencil: boolean, graphite: boolean): void;
     dot(): number;
     edges(): Uint16Array;
     iteration(): number;
@@ -43,7 +43,7 @@ export interface InitOutput {
     readonly face_nodes: (a: number) => [number, number];
     readonly face_step: (a: number) => number;
     readonly face_widths: (a: number) => [number, number];
-    readonly pathface_blur_pass: (a: number, b: number, c: number) => void;
+    readonly pathface_blur_pass: (a: number, b: number, c: number, d: number) => void;
     readonly pathface_dot: (a: number) => number;
     readonly pathface_edges: (a: number) => [number, number];
     readonly pathface_iteration: (a: number) => number;

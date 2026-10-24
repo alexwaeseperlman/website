@@ -10,7 +10,7 @@ export const face_new: (a: number, b: number, c: number, d: number, e: number, f
 export const face_nodes: (a: number) => [number, number];
 export const face_step: (a: number) => number;
 export const face_widths: (a: number) => [number, number];
-export const pathface_blur_pass: (a: number, b: number, c: number) => void;
+export const pathface_blur_pass: (a: number, b: number, c: number, d: number) => void;
 export const pathface_dot: (a: number) => number;
 export const pathface_edges: (a: number) => [number, number];
 export const pathface_iteration: (a: number) => number;

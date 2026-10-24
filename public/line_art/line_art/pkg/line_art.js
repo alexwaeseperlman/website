@@ -91,9 +91,10 @@ export class PathFace {
     /**
      * @param {number} iterations
      * @param {boolean} pencil
+     * @param {boolean} graphite
      */
-    blur_pass(iterations, pencil) {
-        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil);
+    blur_pass(iterations, pencil, graphite) {
+        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil, graphite);
     }
     /**
      * @returns {number}

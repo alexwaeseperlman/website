@@ -113,6 +113,7 @@ impl PathFace {
             learn_ridge,
             lr_kernel: 0.05,
             pencil: false,
+            graphite: false,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
         PathFace { path, rng }
@@ -125,12 +126,13 @@ impl PathFace {
 
     // Once the path has converged, starts a second pass of `iterations` steps that draws it with a 3 px ridge
     // stroke and learns the ridge's radius while it keeps refining the nodes and the order. With pencil it learns
-    // the stroke's whole profile instead, starting from that ridge.
-    pub fn blur_pass(&mut self, iterations: usize, pencil: bool) {
-        if pencil {
+    // the stroke's whole profile instead, starting from that ridge, and with graphite draws that stroke as a pencil
+    // would: graphite catching on the paper's grain, darkening less as it piles up.
+    pub fn blur_pass(&mut self, iterations: usize, pencil: bool, graphite: bool) {
+        if pencil || graphite {
             self.path.lr_kernel = 0.15;
         }
-        self.path.blur_pass(iterations, 3.0, pencil, 8.0, 2.0, 20);
+        self.path.blur_pass(iterations, 3.0, pencil, graphite, 8.0, 2.0, 20);
     }
 
     // A pencil stroke's cross-section: its darkness, as shown, across a line at each whole pixel from its centre
