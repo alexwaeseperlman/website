@@ -2,7 +2,7 @@
 // onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration) after every
 // optimizer step, where a width is ink per unit length; post the returned message to the worker to start over.
 export function lineArt(img, onGraph, { nodes = 300, iterations = 1000 } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024f", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024g", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -24,11 +24,10 @@ export function lineArt(img, onGraph, { nodes = 300, iterations = 1000 } = {}) {
 }
 
 // Draws the latest graph the worker sent, exactly as it stands, onto a canvas whose CSS size is the image's,
-// at the screen's pixel density. A line of width w (ink per unit length) is stroked w / ALPHA px wide at ALPHA
-// opacity, each line its own stroke so crossings get darker, like the ink the optimizer assumed. Updates that
+// at the screen's pixel density. A line of width w (ink per unit length) is a solid black stroke
+// w px wide, and every node gets a dot. Updates that
 // arrive faster than the screen refreshes are drawn once, at the next frame, showing the newest.
 export function graphView(canvas, width, height) {
-  const ALPHA = 0.5;
   let latest = null, raf = 0;
 
   function draw() {
@@ -50,16 +49,18 @@ export function graphView(canvas, width, height) {
     ctx.lineCap = "round";
     for (let i = 0; i < widths.length; i++) {
       const a = edges[2 * i] * 2, b = edges[2 * i + 1] * 2;
-      // below a device pixel, thin the line by opacity instead, which antialiasing does more evenly
-      const px = widths[i] / ALPHA;
+      // solid black, as wide as its ink per unit length; below a device pixel, thin the line by opacity
+      // instead, which antialiasing does more evenly
+      const px = widths[i];
+      if (!(px > 0)) continue;
       ctx.lineWidth = Math.max(px, 1 / dpr);
-      ctx.globalAlpha = ALPHA * Math.min(1, px * dpr);
+      ctx.globalAlpha = Math.min(1, px * dpr);
       ctx.beginPath();
       ctx.moveTo(nodes[a], nodes[a + 1]);
       ctx.lineTo(nodes[b], nodes[b + 1]);
       ctx.stroke();
     }
-    // a small dot on every node
+    // a dot on every node, the same ink (pi * 1.2^2) the optimizer counts
     ctx.globalAlpha = 1;
     ctx.fillStyle = "black";
     ctx.beginPath();

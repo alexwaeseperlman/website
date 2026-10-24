@@ -3,10 +3,10 @@
 // after blurring both with a Gaussian, so thin lines can stand in for shading instead of having to hit single
 // pixels, plus a small cost per unit of ink so lines that barely help go to zero.
 //
-// With D the ink of the drawing, T the darkness of the photo, G the blur and W a per-pixel weight, the loss is
+// With D the ink of the drawing (the lines, plus a fixed dot on every node), T the darkness of the photo, G the blur and W a per-pixel weight, the loss is
 // |sqrt(W) G (D - T)|^2 + lambda * ink. Each iteration renders D, blurs, and gets E = G W G (D - T), which is
 // half the loss's derivative with respect to D. Every gradient follows from it: a line's width by summing E
-// along the line, a node's position by summing the gradient of E along each of its lines. All line widths
+// along the line, a node's position by summing the gradient of E along each of its lines and at its dot. All line widths
 // and node positions then take one Adam step, with the learning rate warming up linearly to its peak and then
 // following a cosine down to 0, and widths are clamped to [0, max_width].
 use rand::Rng;
@@ -21,6 +21,7 @@ pub struct GraphArt {
     target: Vec<f32>,
     weight: Vec<f32>,
     sigma: f32,
+    dot: f32,
     lambda: f32,
     max_width: f32,
     lr_width: f32,
@@ -59,6 +60,8 @@ pub struct Params {
     // the random start: how many lines, with widths up to start_width
     pub start_lines: usize,
     pub start_width: f32,
+    // ink in the dot drawn on each node (pi r^2 for a solid dot of radius r)
+    pub dot: f32,
 }
 
 const BETA1: f32 = 0.9;
@@ -150,6 +153,7 @@ impl GraphArt {
             target: blur(&darkness, width, height, p.sigma),
             weight,
             sigma: p.sigma,
+            dot: p.dot,
             lambda: p.lambda,
             max_width: p.max_width,
             lr_width: p.lr_width,
@@ -190,6 +194,15 @@ impl GraphArt {
                 }
             }
         }
+        // the dots on the nodes are part of the drawing too
+        for &(x, y) in &self.nodes {
+            if let Some((j, fx, fy)) = bilinear(x, y, w, h) {
+                d[j] += self.dot * (1.0 - fx) * (1.0 - fy);
+                d[j + 1] += self.dot * fx * (1.0 - fy);
+                d[j + w] += self.dot * (1.0 - fx) * fy;
+                d[j + w + 1] += self.dot * fx * fy;
+            }
+        }
         let gd = blur(&d, w, h, self.sigma);
         let mut loss = self.lambda * ink;
         let r: Vec<f32> = gd
@@ -213,6 +226,14 @@ impl GraphArt {
         let (w, h) = (self.width, self.height);
         let mut gw = vec![None; self.pairs.len()];
         let mut gn = vec![0f32; 2 * self.nodes.len()];
+        // moving a node moves its dot
+        for (v, &(x, y)) in self.nodes.iter().enumerate() {
+            if let Some((j, fx, fy)) = bilinear(x, y, w, h) {
+                let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
+                gn[2 * v] += 2.0 * self.dot * ((q - p) * (1.0 - fy) + (s - r) * fy);
+                gn[2 * v + 1] += 2.0 * self.dot * ((r - p) * (1.0 - fx) + (s - q) * fx);
+            }
+        }
         for (k, &(a, b)) in self.pairs.iter().enumerate() {
             let wk = self.widths[k];
             if wk <= 0.0 && !all {
@@ -301,9 +322,9 @@ impl GraphArt {
         true
     }
 
-    // Lines worth drawing, with their widths.
+    // Every line with any ink, with its width; the rest have width exactly 0.
     pub fn edges(&self) -> Vec<(u16, u16, f32)> {
-        self.pairs.iter().zip(&self.widths).filter(|(_, &w)| w > 0.01).map(|(&(a, b), &w)| (a, b, w)).collect()
+        self.pairs.iter().zip(&self.widths).filter(|(_, &w)| w > 0.0).map(|(&(a, b), &w)| (a, b, w)).collect()
     }
 }
 
@@ -316,7 +337,7 @@ mod tests {
     fn gradients_match_finite_differences() {
         let (w, h) = (60, 60);
         let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 30.0, (i / w) as f32 - 30.0); if x * x + y * y < 300.0 { 0.8 } else { 0.0 } }).collect();
-        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.05, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 0, start_width: 0.0 };
+        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.05, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 0, start_width: 0.0, dot: 4.5 };
         let mut rng = rand::thread_rng();
         let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
         for _ in 0..30 { g.step(); }

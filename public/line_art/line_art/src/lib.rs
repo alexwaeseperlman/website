@@ -33,6 +33,7 @@ impl Face {
             warmup: 50,
             start_lines: 3000,
             start_width: 0.3,
+            dot: 4.52,
         };
         Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng) }
     }
