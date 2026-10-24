@@ -21,6 +21,7 @@
 #include "../nash/solve.h"
 #include <map>
 #include <set>
+#include <unordered_map>
 #include "anet.h"
 
 static const char* ARCH = getenv("ARCH") ? getenv("ARCH") : "cnet3";
@@ -348,6 +349,77 @@ static void aTarget(const Game& h, int k, const ANet* prev, Work* w, float* x, f
   for (int v = 3; v <= 35; v++) if (!seen[v]){ g.deck[g.idx] = v; double o[7]; chainShares(*prev, w, x, g, o); for (int q = 0; q < h.n; q++) acc[q] += o[q]; m++; }
   for (int q = 0; q < MAXP; q++) y[q] = q < h.n ? (float)(acc[(h.turn + q) % h.n] / m) : 0.f;
 }
+
+// Targets for every afterstate along the chain of passes on g's card (stage k, the same as aTarget on each of them),
+// with the conv features cached per player/card combination and the head memoised per (outer taker, next card,
+// inner taker, chips after the take). y gets MAXP floats per node, relative to that afterstate's next mover.
+static void labelChain(const Game& g0, int k, const ANet& P, vector<Game>& after, vector<float>& y){
+  after.clear(); y.clear();
+  Game g = g0; int n = g.n, c = g.deck[g.idx];
+  for (;;){ Game h = g; step(h, true); after.push_back(h); if (g.chips[g.turn] == 0) break; step(g, false); }
+  if (k == 0){ for (auto& h : after) for (int q = 0; q < MAXP; q++) y.push_back(q < n ? (float)winShare(h, (h.turn + q) % n) : 0.f); return; }
+  const int PS = 3 * P.C2;
+  float hold[7][ACL] = {}, seen[ACL] = {};
+  for (int q = 0; q < n; q++) for (int v = 3; v <= 35; v++) if (g0.has[q * 37 + v]){ hold[q][v - 3] = 1; seen[v - 3] = 1; }
+  seen[c - 3] = 1;
+  vector<int> unseen; for (int v = 3; v <= 35; v++) if (!seen[v - 3]) unseen.push_back(v);
+  int U = (int)unseen.size(), left = 24 - g0.idx - 2;   // cards still to deal after the inner card
+  // pools[(outer taker o, card index ui, player q, q takes the inner card?)]
+  vector<float> pool((size_t)n * U * n * 2 * PS); vector<char> have((size_t)n * U * n * 2, 0);
+  auto poolOf = [&](int o, int ui, int q, int inner) -> const float* {
+    size_t id = (((size_t)o * U + ui) * n + q) * 2 + inner; float* out = &pool[id * PS];
+    if (!have[id]){ float hl[ACL], sn[ACL]; memcpy(hl, hold[q], sizeof hl); memcpy(sn, seen, sizeof sn);
+      if (q == o) hl[c - 3] = 1; int u = unseen[ui]; sn[u - 3] = 1; if (inner) hl[u - 3] = 1;
+      P.pools(hl, sn, out); have[id] = 1; }
+    return out;
+  };
+  unordered_map<uint64_t, array<float, 7>> memo;
+  for (auto& h : after){
+    int o = h.turn; double acc[7] = {};
+    for (int ui = 0; ui < U; ui++){
+      // inner chain: o moves first on card unseen[ui] with pot 0
+      int ch[7]; for (int q = 0; q < n; q++) ch[q] = h.chips[q];
+      vector<array<float, 7>> T; vector<int> mv;
+      for (int m = 0;; m++){
+        int t = (o + m) % n;
+        // the afterstate only depends on who took which card and the chips after the take
+        uint64_t key = 0; for (int q = 0; q < n; q++) key = key << 6 | (uint64_t)(ch[q] + (q == t ? m : 0));
+        key = ((key << 3 | (uint64_t)t) << 3 | (uint64_t)o) << 6 | (uint64_t)ui;
+        auto it = memo.find(key); array<float, 7> v{};
+        if (it != memo.end()) v = it->second;
+        else {
+          const float* pl[7]; int cc[7]; float s[7];
+          for (int r = 0; r < n; r++){ int q = (t + r) % n; pl[r] = poolOf(o, ui, q, q == t); cc[r] = ch[q] + (q == t ? m : 0); }
+          P.head(n, pl, cc, left, s); for (int r = 0; r < n; r++) v[(t + r) % n] = s[r];
+          memo.emplace(key, v);
+        }
+        T.push_back(v); mv.push_back(t);
+        if (ch[t] == 0) break;
+        ch[t]--;
+      }
+      array<float, 7> v = T.back();
+      for (int j = (int)T.size() - 2; j >= 0; j--) if (T[j][mv[j]] >= v[mv[j]]) v = T[j];
+      for (int q = 0; q < n; q++) acc[q] += v[q];
+    }
+    for (int q = 0; q < MAXP; q++) y.push_back(q < n ? (float)(acc[(o + q) % n] / U) : 0.f);
+  }
+}
+static int alabelTest(int k){
+  unique_ptr<ANet> P(loadA(afile(k - 1))); unique_ptr<Work> w(P->work()), lw(liveNet->work()); vector<float> x(MAXF), y(MAXP);
+  double maxd = 0; long cnt = 0; double tOld = 0, tNew = 0;
+  for (int i = 0; i < 40; i++){
+    Rng r(123 + i); Game g; sample(g, k, r, lw.get(), x.data(), 0.1);
+    auto t0 = chrono::steady_clock::now(); vector<Game> after; vector<float> ys; labelChain(g, k, *P, after, ys);
+    auto t1 = chrono::steady_clock::now();
+    for (size_t j = 0; j < after.size(); j++){ aTarget(after[j], k, P.get(), w.get(), x.data(), y.data());
+      for (int q = 0; q < MAXP; q++) maxd = max(maxd, (double)fabs(y[q] - ys[j * MAXP + q])); cnt++; }
+    auto t2 = chrono::steady_clock::now();
+    tNew += chrono::duration<double>(t1 - t0).count(); tOld += chrono::duration<double>(t2 - t1).count();
+  }
+  printf("stage %d: %ld afterstates, max label difference %.2e; old %.3fs, new %.3fs (%.1fx)\n", k, cnt, maxd, tOld, tNew, tOld / tNew);
+  return 0;
+}
+
 static int atrainMain(int k, int chains, int epochs){
   const int NT = thread::hardware_concurrency();
   unique_ptr<ANet> prev(k > 0 ? loadA(afile(k - 1)) : nullptr);
@@ -358,11 +430,10 @@ static int atrainMain(int k, int chains, int epochs){
       unique_ptr<Work> lw(liveNet->work()), pw(prev ? prev->work() : nullptr); vector<float> x(MAXF), f(AF), y(MAXP);
       for (int i; (i = next++) < chains;){
         Rng r(77 + k * 1000003 + i * 7919); Game g; sample(g, k, r, lw.get(), x.data(), 0.1);
-        for (;;){   // every node of the chain on this card
-          Game h = g; step(h, true); afeatures(h, f.data()); aTarget(h, k, prev.get(), pw.get(), x.data(), y.data());
-          X[t].insert(X[t].end(), f.begin(), f.end()); Y[t].insert(Y[t].end(), y.begin(), y.end());
-          if (g.chips[g.turn] == 0) break; step(g, false);
-        }
+        vector<Game> after; vector<float> ys;   // every node of the chain on this card
+        if (k > 0) labelChain(g, k, *prev, after, ys); else labelChain(g, 0, A, after, ys);
+        for (auto& h : after){ afeatures(h, f.data()); X[t].insert(X[t].end(), f.begin(), f.end()); }
+        Y[t].insert(Y[t].end(), ys.begin(), ys.end());
       }
     });
     for (auto& t : th) t.join(); }
@@ -370,7 +441,9 @@ static int atrainMain(int k, int chains, int epochs){
   long n = (long)(AX.size() / F), nTest = n / 50, nTrain = n - nTest;
   double tg = chrono::duration<double>(chrono::steady_clock::now() - t0).count();
   vector<vector<float>> G(NT, vector<float>(A.n)); vector<unique_ptr<Work>> C; for (int t = 0; t < NT; t++) C.emplace_back(A.work());
-  auto rmse = [&](long a, long b){ double se = 0; for (long i = a; i < b; i++){ const float* s = A.forward(&AX[i * F], C[0].get()); double e = s[0] - AY[i * MAXP]; se += e * e; } return sqrt(se / max(1L, b - a)); };
+  auto rmse = [&](long a, long b){ vector<double> se(NT, 0); vector<thread> th;
+    for (int t = 0; t < NT; t++) th.emplace_back([&, t]{ for (long i = a + t; i < b; i += NT){ const float* s = A.forward(&AX[i * F], C[t].get()); double e = s[0] - AY[i * MAXP]; se[t] += e * e; } });
+    for (auto& t : th) t.join(); double s = 0; for (double v : se) s += v; return sqrt(s / max(1L, b - a)); };
   const int bs = 512; long steps = (long)epochs * nTrain / bs; Rng r(5 + k); long every = max(1L, steps / 40);
   FILE* lf = fopen(("aloss" + to_string(k) + ".csv").c_str(), "w"); fprintf(lf, "step,examples_seen,train_rmse,heldout_rmse\n");
   for (long s = 0; s <= steps; s++){
@@ -423,6 +496,7 @@ int main(int argc, char** argv){
   if (mode == "train"){ int a = atoi(argv[2]), b = atoi(argv[3]), n = atoi(argv[4]), e = argc > 5 ? atoi(argv[5]) : 4;
     for (int k = a; k <= b; k++) trainStage(k, n, e); return 0; }
   if (mode == "atrain") return atrainMain(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+  if (mode == "alabeltest") return alabelTest(atoi(argv[2]));
   if (mode == "acheck") return acheckMain(atoi(argv[2]), atoi(argv[3]));
   if (mode == "agrad") return agradMain();
   if (mode == "atrain0") return atrain0Main(atoi(argv[2]), atoi(argv[3]));

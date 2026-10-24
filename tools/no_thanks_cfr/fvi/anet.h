@@ -26,9 +26,14 @@ static void afeatures(const Game& g, float* x){
 struct ANet : Model {
   static const int C0 = 3, K1 = 5, K2 = 3;
   int C1, C2, H, T, FL, TI; Layer cv1, cv2, L[4];
+  static const int P1 = K1 / 2, P2 = K2 / 2;
+  // The convs follow deep.cpp's fast cnet code (#24): activations position-major ([pos][channel]), a1 padded by P2
+  // zero rows at each end, weights transposed once per pass, and conv1 = the value channel's convolution (the same for
+  // every player, worked out once) plus a weight row per nonzero holds / seen bit.
   struct W : Work {
-    vector<float> in, a1, a2, flat, e, tin, h1, h2, z, s;   // per player
-    vector<int> amax, arg;                                   // conv max positions; for each i, which other player gave the max
+    vector<float> W1T, W2T, W2r, gW2r, dwin, vconv, gW1T, gb1, gb2, dvs;
+    vector<float> a1, a2, flat, e, tin, h1, h2, z, s;        // per player
+    vector<int> amax, arg, nz, nzn;                          // conv max positions; which other player gave each max; nonzero input bits
     vector<float> de, dtin, dh1, dh2, dflat, da1, da2;
   };
   ANet(uint32_t seed, int C1_ = 12, int C2_ = 12, int H_ = 32, int T_ = 64) : C1(C1_), C2(C2_), H(H_), T(T_){
@@ -44,11 +49,15 @@ struct ANet : Model {
   int nf() const override { return AF; }
   void features(const Game& g, float* x) const override { afeatures(g, x); }
   Work* work() const override { W* c = new W;
-    c->in.assign(MAXP * C0 * ACL, 0); c->a1.assign(MAXP * C1 * ACL, 0); c->a2.assign(MAXP * C2 * ACL, 0); c->flat.assign(MAXP * FL, 0);
+    c->W1T.assign(C0 * K1 * C1, 0); c->W2T.assign(K2 * C1 * C2, 0); c->W2r.assign(K2 * C1 * C2, 0); c->gW2r.assign(K2 * C1 * C2, 0);
+    c->dwin.assign(ACL * K2 * C1, 0); c->vconv.assign(ACL * C1, 0); c->gW1T.assign(C0 * K1 * C1, 0); c->gb1.assign(C1, 0); c->gb2.assign(C2, 0); c->dvs.assign(ACL * C1, 0);
+    c->nz.assign(MAXP * 2 * ACL, 0); c->nzn.assign(MAXP, 0);
+    c->a1.assign(MAXP * (ACL + 2 * P2) * C1, 0); c->a2.assign(MAXP * ACL * C2, 0); c->flat.assign(MAXP * FL, 0);
     c->e.assign(MAXP * H, 0); c->tin.assign(MAXP * TI, 0); c->h1.assign(MAXP * T, 0); c->h2.assign(MAXP * T, 0); c->z.assign(MAXP, 0); c->s.assign(MAXP, 0);
     c->amax.assign(MAXP * C2, 0); c->arg.assign(MAXP * H, 0);
-    c->de.assign(MAXP * H, 0); c->dtin.assign(TI, 0); c->dh1.assign(T, 0); c->dh2.assign(T, 0); c->dflat.assign(FL, 0); c->da1.assign(C1 * ACL, 0); c->da2.assign(C2 * ACL, 0);
+    c->de.assign(MAXP * H, 0); c->dtin.assign(TI, 0); c->dh1.assign(T, 0); c->dh2.assign(T, 0); c->dflat.assign(FL, 0); c->da1.assign((ACL + 2 * P2) * C1, 0); c->da2.assign(ACL * C2, 0);
     return c; }
+  // the plain channel-major conv, for pools()
   void conv(const Layer& l, int ci_n, int K, const float* x, float* y) const {
     const float* w = p.data() + l.w;
     for (int co = 0; co < l.o; co++){
@@ -60,33 +69,71 @@ struct ANet : Model {
       for (int pos = 0; pos < ACL; pos++) if (yr[pos] < 0) yr[pos] = 0;
     }
   }
-  void convBack(const Layer& l, int ci_n, int K, const float* x, const float* dy, float* g, float* dx) const {
-    const float* w = p.data() + l.w;
-    if (dx) memset(dx, 0, ci_n * ACL * sizeof(float));
-    for (int co = 0; co < l.o; co++){
-      const float* dr = dy + co * ACL; float bs = 0; for (int pos = 0; pos < ACL; pos++) bs += dr[pos]; g[l.b + co] += bs;
-      for (int ci = 0; ci < ci_n; ci++) for (int j = 0; j < K; j++){
-        int d = j - K / 2, lo = max(0, -d), hi = min(ACL, ACL - d); const float* xr = x + ci * ACL; float s = 0;
-        for (int pos = lo; pos < hi; pos++) s += dr[pos] * xr[pos + d];
-        g[l.w + (co * ci_n + ci) * K + j] += s;
-        if (dx){ float wv = w[(co * ci_n + ci) * K + j]; float* dxr = dx + ci * ACL; for (int pos = lo; pos < hi; pos++) dxr[pos + d] += wv * dr[pos]; }
-      }
+  // The forward pass in two halves, for labelling (no backward): a player's pooled conv features depend only on their
+  // cards and the seen cards, so they can be cached while only chips and who-moves-next change.
+  void pools(const float* holds, const float* seen, float* out) const {
+    float in[C0 * ACL], a1[64 * ACL], a2[64 * ACL];
+    for (int pos = 0; pos < ACL; pos++){ in[pos] = holds[pos]; in[ACL + pos] = seen[pos]; in[2 * ACL + pos] = (pos + 3) / 35.0f; }
+    conv(cv1, C0, K1, in, a1); conv(cv2, C1, K2, a1, a2);
+    for (int co = 0; co < C2; co++){
+      const float* r = a2 + co * ACL; float sum = 0, mx = -1, vs = 0;
+      for (int pos = 0; pos < ACL; pos++){ sum += r[pos]; vs += (pos + 3) * r[pos]; if (r[pos] > mx) mx = r[pos]; }
+      out[co] = sum / ACL; out[C2 + co] = mx; out[2 * C2 + co] = vs / 10;
     }
   }
-  // returns the win shares (softmax), in seat order from the player to move next
-  const float* forward(const float* x, Work* w) const override {
-    W& c = *(W*)w; int nn = (int)x[0], t = 1 + MAXP * AP;
+  // pl[k]: pooled features of the player k seats after the one to move next; chips likewise; s: their win shares
+  void head(int nn, const float* const* pl, const int* chips, int left, float* s) const {
+    float e[MAXP * 64], fl[128], ti[4 * 64 + 2], h1[256], h2[256];
     for (int k = 0; k < nn; k++){
-      float* in = &c.in[k * C0 * ACL]; const float* px = x + 1 + k * AP;
-      for (int pos = 0; pos < ACL; pos++){ in[pos] = px[pos]; in[ACL + pos] = x[t + pos]; in[2 * ACL + pos] = (pos + 3) / 35.0f; }
-      float* a1 = &c.a1[k * C1 * ACL]; float* a2 = &c.a2[k * C2 * ACL]; float* fl = &c.flat[k * FL];
-      conv(cv1, C0, K1, in, a1); conv(cv2, C1, K2, a1, a2);
-      for (int co = 0; co < C2; co++){
-        const float* r = a2 + co * ACL; float sum = 0, mx = -1, vs = 0; int am = 0;
-        for (int pos = 0; pos < ACL; pos++){ sum += r[pos]; vs += (pos + 3) * r[pos]; if (r[pos] > mx){ mx = r[pos]; am = pos; } }
-        fl[co] = sum / ACL; fl[C2 + co] = mx; fl[2 * C2 + co] = vs / 10; c.amax[k * C2 + co] = am;
+      for (int i = 0; i < 3 * C2; i++) fl[i] = pl[k][i];
+      fl[3 * C2] = (float)(chips[k] / 11.0); for (int q = 0; q < MAXP; q++) fl[3 * C2 + 1 + q] = q == k ? 1 : 0;
+      dense(L[0], fl, &e[k * H], true);
+    }
+    float zmax = -1e30f, z[MAXP];
+    for (int i = 0; i < nn; i++){
+      const float* en = &e[((i + 1) % nn) * H];
+      for (int h = 0; h < H; h++){
+        float sum = 0, mx = -1; for (int j = 0; j < nn; j++) if (j != i){ float v = e[j * H + h]; sum += v; if (v > mx) mx = v; }
+        ti[h] = e[i * H + h]; ti[H + h] = sum; ti[2 * H + h] = mx; ti[3 * H + h] = en[h];
       }
-      fl[3 * C2] = px[ACL]; for (int s = 0; s < MAXP; s++) fl[3 * C2 + 1 + s] = s == k ? 1 : 0;
+      ti[4 * H] = (float)(left / 23.0); ti[4 * H + 1] = (float)((nn - 2) / 5.0);
+      dense(L[1], ti, h1, true); dense(L[2], h1, h2, true); dense(L[3], h2, &z[i], false); zmax = max(zmax, z[i]);
+    }
+    float zs = 0; for (int i = 0; i < nn; i++){ s[i] = exp(z[i] - zmax); zs += s[i]; }
+    for (int i = 0; i < nn; i++) s[i] /= zs;
+  }
+  // returns the win shares (softmax), in seat order from the player to move next
+  static float val(int q){ return q >= 0 && q < ACL ? (q + 3) / 35.0f : 0; }   // the value channel at position q (0 outside)
+  const float* forward(const float* x, Work* w) const override {
+    W& c = *(W*)w; int nn = (int)x[0], t = 1 + MAXP * AP; const float* P = p.data();
+    for (int co = 0; co < C1; co++) for (int ci = 0; ci < C0; ci++) for (int j = 0; j < K1; j++) c.W1T[(ci * K1 + j) * C1 + co] = P[cv1.w + (co * C0 + ci) * K1 + j];
+    for (int co = 0; co < C2; co++) for (int ci = 0; ci < C1; ci++) for (int j = 0; j < K2; j++){ float v = P[cv2.w + (co * C1 + ci) * K2 + j];
+      c.W2T[(j * C1 + ci) * C2 + co] = v; c.W2r[co * K2 * C1 + j * C1 + ci] = v; }
+    for (int pos = 0; pos < ACL; pos++){ float* v = &c.vconv[pos * C1];
+      for (int co = 0; co < C1; co++) v[co] = P[cv1.b + co];
+      for (int j = 0; j < K1; j++){ float sv = val(pos + j - P1); if (sv == 0) continue; axpy(v, &c.W1T[(2 * K1 + j) * C1], sv, C1); } }
+    for (int k = 0; k < nn; k++){
+      const float* px = x + 1 + k * AP; float* A1 = &c.a1[k * (ACL + 2 * P2) * C1]; float* A2 = &c.a2[k * ACL * C2]; float* fl = &c.flat[k * FL];
+      int* nz = &c.nz[k * 2 * ACL]; int m = 0;   // nonzero bits as ci * ACL + q
+      for (int pos = 0; pos < ACL; pos++){ if (px[pos] != 0) nz[m++] = pos; if (x[t + pos] != 0) nz[m++] = ACL + pos; }
+      c.nzn[k] = m;
+      memcpy(A1 + P2 * C1, c.vconv.data(), ACL * C1 * sizeof(float));
+      for (int i = 0; i < m; i++){ int ci = nz[i] / ACL, q = nz[i] % ACL;
+        for (int j = 0; j < K1; j++){ int pos = q - j + P1; if (pos < 0 || pos >= ACL) continue;
+          axpy(A1 + (pos + P2) * C1, &c.W1T[(ci * K1 + j) * C1], 1, C1); } }
+      for (int i = P2 * C1; i < (ACL + P2) * C1; i++) if (A1[i] < 0) A1[i] = 0;
+      if (C1 == 12 && C2 == 12) conv2Rows<K2 * 12, 12>(A1, c.W2T.data(), P + cv2.b, A2, C1);
+      else for (int pos = 0; pos < ACL; pos++){
+        float* yr = A2 + pos * C2; for (int co = 0; co < C2; co++) yr[co] = P[cv2.b + co];
+        const float* win = A1 + pos * C1;
+        for (int e = 0; e < K2 * C1; e++) axpy(yr, &c.W2T[e * C2], win[e], C2);
+        for (int co = 0; co < C2; co++) if (yr[co] < 0) yr[co] = 0;
+      }
+      for (int co = 0; co < C2; co++){ fl[co] = 0; fl[C2 + co] = -1; fl[2 * C2 + co] = 0; c.amax[k * C2 + co] = 0; }
+      for (int pos = 0; pos < ACL; pos++){ const float* r = A2 + pos * C2;
+        for (int co = 0; co < C2; co++){ fl[co] += r[co]; fl[2 * C2 + co] += (pos + 3) * r[co]; if (r[co] > fl[C2 + co]){ fl[C2 + co] = r[co]; c.amax[k * C2 + co] = pos; } } }
+      for (int co = 0; co < C2; co++){ fl[co] /= ACL; fl[2 * C2 + co] /= 10; }
+      fl[3 * C2] = px[ACL]; for (int q = 0; q < MAXP; q++) fl[3 * C2 + 1 + q] = q == k ? 1 : 0;
       dense(L[0], fl, &c.e[k * H], true);
     }
     float zmax = -1e30f;
@@ -123,21 +170,37 @@ struct ANet : Model {
         c.de[nx * H + h] += c.dtin[3 * H + h];
       }
     }
+    const float* P = c.W2r.data();
+    fill(c.gW1T.begin(), c.gW1T.end(), 0.f); fill(c.gW2r.begin(), c.gW2r.end(), 0.f); fill(c.gb1.begin(), c.gb1.end(), 0.f); fill(c.gb2.begin(), c.gb2.end(), 0.f);
+    fill(c.dvs.begin(), c.dvs.end(), 0.f);
     for (int k = 0; k < nn; k++){
       float* de = &c.de[k * H]; for (int h = 0; h < H; h++) if (c.e[k * H + h] <= 0) de[h] = 0;
       back(L[0], &c.flat[k * FL], de, g, c.dflat.data());
-      const float* a2 = &c.a2[k * C2 * ACL]; float* da2 = c.da2.data();
-      for (int co = 0; co < C2; co++){
-        float dm = c.dflat[co] / ACL, dv = c.dflat[2 * C2 + co] / 10;
-        for (int pos = 0; pos < ACL; pos++) da2[co * ACL + pos] = dm + dv * (pos + 3);
-        da2[co * ACL + c.amax[k * C2 + co]] += c.dflat[C2 + co];
-      }
-      for (int i = 0; i < C2 * ACL; i++) if (a2[i] <= 0) da2[i] = 0;
-      const float* a1 = &c.a1[k * C1 * ACL];
-      convBack(cv2, C1, K2, a1, da2, g, c.da1.data());
-      for (int i = 0; i < C1 * ACL; i++) if (a1[i] <= 0) c.da1[i] = 0;
-      convBack(cv1, C0, K1, &c.in[k * C0 * ACL], c.da1.data(), g, nullptr);
+      const float* A1 = &c.a1[k * (ACL + 2 * P2) * C1]; const float* A2 = &c.a2[k * ACL * C2]; float* da2 = c.da2.data(); float* da1 = c.da1.data();
+      for (int pos = 0; pos < ACL; pos++) for (int co = 0; co < C2; co++) da2[pos * C2 + co] = c.dflat[co] / ACL + c.dflat[2 * C2 + co] / 10 * (pos + 3);
+      for (int co = 0; co < C2; co++) da2[c.amax[k * C2 + co] * C2 + co] += c.dflat[C2 + co];
+      for (int i = 0; i < ACL * C2; i++) if (A2[i] <= 0) da2[i] = 0;
+      const int E = K2 * C1; float* dwin = c.dwin.data();
+      for (int pos = 0; pos < ACL; pos++) for (int co = 0; co < C2; co++) c.gb2[co] += da2[pos * C2 + co];
+      if (C1 == 12 && C2 == 12) conv2Back<K2 * 12, 12>(A1, da2, P, c.gW2r.data(), dwin, C1);
+      else { memset(dwin, 0, ACL * E * sizeof(float));
+        for (int pos = 0; pos < ACL; pos++){ const float* d = da2 + pos * C2; const float* win = A1 + pos * C1;
+          for (int co = 0; co < C2; co++){ float dc = d[co]; if (dc == 0) continue; axpy(&c.gW2r[co * E], win, dc, E); axpy(dwin + pos * E, &P[co * E], dc, E); } } }
+      memset(da1, 0, (ACL + 2 * P2) * C1 * sizeof(float));
+      for (int pos = 0; pos < ACL; pos++) axpy(da1 + pos * C1, dwin + pos * E, 1, E);
+      for (int pos = 0; pos < ACL; pos++){ float* dr = da1 + (pos + P2) * C1; const float* ar = A1 + (pos + P2) * C1; float* vs = &c.dvs[pos * C1];
+        for (int co = 0; co < C1; co++){ if (ar[co] <= 0) dr[co] = 0; c.gb1[co] += dr[co]; vs[co] += dr[co]; } }
+      const int* nz = &c.nz[k * 2 * ACL];
+      for (int i = 0; i < c.nzn[k]; i++){ int ci = nz[i] / ACL, q = nz[i] % ACL;
+        for (int j = 0; j < K1; j++){ int pos = q - j + P1; if (pos < 0 || pos >= ACL) continue;
+          axpy(&c.gW1T[(ci * K1 + j) * C1], da1 + (pos + P2) * C1, 1, C1); } }
     }
+    for (int j = 0; j < K1; j++){ float* gr = &c.gW1T[(2 * K1 + j) * C1];
+      for (int pos = 0; pos < ACL; pos++){ float sv = val(pos + j - P1); if (sv == 0) continue; axpy(gr, &c.dvs[pos * C1], sv, C1); } }
+    for (int co = 0; co < C1; co++){ g[cv1.b + co] += c.gb1[co];
+      for (int ci = 0; ci < C0; ci++) for (int j = 0; j < K1; j++) g[cv1.w + (co * C0 + ci) * K1 + j] += c.gW1T[(ci * K1 + j) * C1 + co]; }
+    for (int co = 0; co < C2; co++){ g[cv2.b + co] += c.gb2[co];
+      for (int ci = 0; ci < C1; ci++) for (int j = 0; j < K2; j++) g[cv2.w + (co * C1 + ci) * K2 + j] += c.gW2r[co * K2 * C1 + j * C1 + ci]; }
   }
 };
 
