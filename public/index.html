@@ -145,6 +145,8 @@ stylesheets:
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
   import { lineArt, drawGraph } from './line_art/line_art.js';
+  // The original 700-point pixel annealer, kept for the Pre-AI only switch
+  import { lineArt as preAiLineArt } from './line_art/pre_ai/line_art.js';
   document.addEventListener('readystatechange', () => {
     const canvasContainer = document.getElementById("line-art-canvas-container");
     const canvas = document.createElement('canvas');
@@ -154,12 +156,34 @@ stylesheets:
     window.worker = null
     let message = null;
     let imageLoaded = false;
+    let workerPreAi = false;
+    let preAiLoaded = false;
     window.restartLineArt = function restartLineArt() {
       if (!imageLoaded) {
         setTimeout(restartLineArt, 100);
         return;
       }
-      if (window.worker == null) {
+      const preAi = document.documentElement.classList.contains("pre-ai");
+      if (window.worker && workerPreAi !== preAi) killLineArt();
+      workerPreAi = preAi;
+      if (window.worker == null && preAi) {
+        preAiLoaded = false;
+        [window.worker, message] = preAiLineArt(image, (data) => {
+          preAiLoaded = true;
+          canvas.width = image.width;
+          canvas.height = image.height;
+          canvas.getContext("2d").putImageData(data, 0, 0);
+        });
+        // the old worker drops messages that arrive before its wasm is up, so keep sending until it draws
+        const send = () => {
+          if (!preAiLoaded && window.worker) {
+            window.worker.postMessage(message);
+            setTimeout(send, 300);
+          }
+        };
+        setTimeout(send, 10);
+      }
+      else if (window.worker == null) {
         [window.worker, message] = lineArt(image, (nodes, edges, ink) => {
           drawGraph(canvas, image.width, image.height, nodes, edges, ink);
         });
@@ -168,6 +192,10 @@ stylesheets:
         worker.postMessage(message);
       }
     }
+    // Flipping the switch while About me is open redraws the face in that style
+    document.getElementById("pre-ai-checkbox").addEventListener("change", () => {
+      if (window.worker) restartLineArt();
+    });
     window.killLineArt = () => {
       if (window.worker) window.worker.terminate();
       window.worker = null;
