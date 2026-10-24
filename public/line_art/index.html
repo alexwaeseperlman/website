@@ -8,28 +8,34 @@
 <body>
     Image upload:
     <input type="file" id="file" />
-    Nodes: <input type="number" id="nodes" value="300" min="20" max="600" style="width: 60px" />
+    Nodes: <input type="number" id="nodes" value="1500" min="20" max="5000" style="width: 60px" />
+    <select id="kind"><option value="path">One line</option><option value="graph">Full graph</option></select>
     <br />
     <canvas id="canvas"></canvas>
     <img id="line-art-image" style="display:none;" alt="" />
 </body>
 <script type="module">
-    import { lineArt, graphView } from './line_art.js?v=20261024g';
+    import { lineArt, graphView } from './line_art.js?v=20261024p';
     let worker = null;
     const fileInput = document.getElementById("file");
     const nodesInput = document.getElementById("nodes");
+    const kindInput = document.getElementById("kind");
     const lineArtImage = document.getElementById("line-art-image");
     const canvas = document.getElementById("canvas");
     fileInput.addEventListener("change", (e) => {
         lineArtImage.src = URL.createObjectURL(e.target.files[0]);
     });
     nodesInput.addEventListener("change", () => lineArtImage.src && lineArtImage.onload());
+    kindInput.addEventListener("change", () => {
+        nodesInput.value = kindInput.value === "path" ? 1500 : 300;
+        lineArtImage.src && lineArtImage.onload();
+    });
 
     lineArtImage.onload = () => {
         if (worker) worker.terminate();
         const width = lineArtImage.naturalWidth, height = lineArtImage.naturalHeight;
         const view = graphView(canvas, width, height);
-        [worker] = lineArt(lineArtImage, (nodes, edges, widths) => view.update(nodes, edges, widths), { nodes: +nodesInput.value });
+        [worker] = lineArt(lineArtImage, (nodes, edges, widths, done, iteration, dot) => view.update(nodes, edges, widths, dot), { nodes: +nodesInput.value, kind: kindInput.value });
     };
 </script>
 

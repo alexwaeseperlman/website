@@ -67,7 +67,7 @@ pub struct Params {
 const BETA1: f32 = 0.9;
 const BETA2: f32 = 0.999;
 
-fn blur(src: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
+pub(crate) fn blur(src: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
     let r = (sigma * 3.0).ceil() as i32;
     let k: Vec<f32> = (-r..=r).map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp()).collect();
     let s: f32 = k.iter().sum();
@@ -101,9 +101,26 @@ fn blur(src: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
     out
 }
 
+// The blurred target G T and the per-pixel loss weight W, from the photo's darkness. The darkness gets an
+// unsharp mask (detail) that brings out eyes, nose and mouth against the much darker hair, then a gamma that
+// lightens skin. W is large on paper, so lines across the background cost more, and larger again where the
+// photo has detail (eyes, brows, nose, mouth), which is what reads as a likeness. Also returns the processed
+// darkness itself.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare(darkness: &[f32], width: usize, height: usize, detail: f32, gamma: f32, paper: f32, features: f32, sigma: f32) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let wide = blur(darkness, width, height, 8.0);
+    let fine: Vec<f32> = darkness.iter().zip(&wide).map(|(d, w)| d - w).collect();
+    let darkness: Vec<f32> = darkness.iter().zip(&fine).map(|(d, f)| (d + detail * f).clamp(0.0, 1.0).powf(gamma)).collect();
+    let amount = blur(&fine.iter().map(|f| f.abs()).collect::<Vec<_>>(), width, height, 3.0);
+    let dm = amount.iter().cloned().fold(1e-6f32, f32::max);
+    let light = blur(&darkness, width, height, 3.0);
+    let weight = light.iter().zip(&amount).map(|(t, d)| 1.0 + paper * (1.0 - t).powi(4) + features * d / dm).collect();
+    (blur(&darkness, width, height, sigma), weight, darkness)
+}
+
 // Bilinear weights of a point in pixel space, where pixel i covers [i, i + 1): its four pixels' indices and
 // weights, or None when it falls outside the image.
-fn bilinear(x: f32, y: f32, w: usize, h: usize) -> Option<(usize, f32, f32)> {
+pub(crate) fn bilinear(x: f32, y: f32, w: usize, h: usize) -> Option<(usize, f32, f32)> {
     let (x, y) = (x - 0.5, y - 0.5);
     if x < 0.0 || y < 0.0 || x >= (w - 1) as f32 || y >= (h - 1) as f32 {
         return None;
@@ -113,25 +130,17 @@ fn bilinear(x: f32, y: f32, w: usize, h: usize) -> Option<(usize, f32, f32)> {
 }
 
 // Points along a segment, one per unit of length (at least one), at fractions t = (i + 0.5) / n.
-fn samples(len: f32) -> usize {
+pub(crate) fn samples(len: f32) -> usize {
     len.ceil().max(1.0) as usize
 }
 
 impl GraphArt {
     // darkness: row-major, 0 = white, 1 = black
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, p: &Params, rng: &mut impl Rng) -> GraphArt {
-        let wide = blur(&darkness, width, height, 8.0);
-        let fine: Vec<f32> = darkness.iter().zip(&wide).map(|(d, w)| d - w).collect();
-        let darkness: Vec<f32> = darkness.iter().zip(&fine).map(|(d, f)| (d + p.detail * f).clamp(0.0, 1.0).powf(p.gamma)).collect();
-        let detail = blur(&fine.iter().map(|f| f.abs()).collect::<Vec<_>>(), width, height, 3.0);
-        let dm = detail.iter().cloned().fold(1e-6f32, f32::max);
         // start from noise: nodes anywhere, and a random handful of lines with random widths
         let nodes: Vec<(f32, f32)> =
             (0..p.nodes).map(|_| (0.5 + rng.gen::<f32>() * (width - 1) as f32, 0.5 + rng.gen::<f32>() * (height - 1) as f32)).collect();
-        // W is large on paper, so lines across the background cost more, and larger again where the photo has
-        // detail (eyes, brows, nose, mouth), which is what reads as a likeness
-        let light = blur(&darkness, width, height, 3.0);
-        let weight: Vec<f32> = light.iter().zip(&detail).map(|(t, d)| 1.0 + p.paper * (1.0 - t).powi(4) + p.features * d / dm).collect();
+        let (target, weight, _) = prepare(&darkness, width, height, p.detail, p.gamma, p.paper, p.features, p.sigma);
         let n = nodes.len();
         let mut pairs = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
@@ -150,7 +159,7 @@ impl GraphArt {
             nodes,
             pairs,
             widths,
-            target: blur(&darkness, width, height, p.sigma),
+            target,
             weight,
             sigma: p.sigma,
             dot: p.dot,

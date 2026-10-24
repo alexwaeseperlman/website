@@ -1,5 +1,6 @@
 mod utils;
 pub mod graph_art;
+pub mod path_art;
 
 use graph_art::{GraphArt, Params};
 use utils::set_panic_hook;
@@ -66,3 +67,80 @@ impl Face {
         self.graph.edges().iter().map(|&(_, _, w)| w).collect()
     }
 }
+
+// The same, drawn as one unbroken line: a path through every node, all its segments the same width.
+#[wasm_bindgen]
+pub struct PathFace {
+    path: path_art::PathArt,
+    rng: rand::rngs::StdRng,
+}
+
+#[wasm_bindgen]
+impl PathFace {
+    // darkness: row-major, 0 = white, 1 = black
+    #[wasm_bindgen(constructor)]
+    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize) -> PathFace {
+        use rand::SeedableRng;
+        set_panic_hook();
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let params = path_art::Params {
+            nodes,
+            sigma: 2.0,
+            iterations,
+            line: 0.7,
+            lr_node: 3.0,
+            paper: 12.0,
+            detail: 3.0,
+            gamma: 2.0,
+            features: 6.0,
+            lambda: 0.02,
+            warmup: 50,
+            temp_start: 5.0,
+            temp_end: 0.01,
+            budget: 20000,
+            coarse: 3000.0,
+            coarse_block: 10.0,
+            coarse_sigma: 5.0,
+            coarse_until: 0.75,
+            tone: 0.6,
+            dot: DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI,
+        };
+        let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
+        PathFace { path, rng }
+    }
+
+    // A round of annealing on the path's order, then one Adam step on the nodes; false once the schedule is over.
+    pub fn step(&mut self) -> bool {
+        self.path.step(&mut self.rng)
+    }
+
+    pub fn iteration(&self) -> usize {
+        self.path.iteration
+    }
+
+    pub fn loss(&self) -> f32 {
+        self.path.loss
+    }
+
+    // [x0, y0, x1, y1, ...]
+    pub fn nodes(&self) -> Vec<f32> {
+        self.path.points().iter().flat_map(|&(x, y)| [x, y]).collect()
+    }
+
+    // [a0, b0, a1, b1, ...] node indices of the path's segments, in order
+    pub fn edges(&self) -> Vec<u16> {
+        self.path.order.windows(2).flat_map(|s| [s[0] as u16, s[1] as u16]).collect()
+    }
+
+    // Width (ink per unit length) of each segment in edges()
+    pub fn widths(&self) -> Vec<f32> {
+        vec![self.path.line; self.path.order.len().saturating_sub(1)]
+    }
+
+    // Radius of the solid dot on each node, whose ink the optimizer counts
+    pub fn dot(&self) -> f32 {
+        DOT_RADIUS
+    }
+}
+
+const DOT_RADIUS: f32 = 0.6;

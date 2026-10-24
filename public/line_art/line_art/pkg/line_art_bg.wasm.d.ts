@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_face_free: (a: number, b: number) => void;
+export const __wbg_pathface_free: (a: number, b: number) => void;
 export const face_edges: (a: number) => [number, number];
 export const face_iteration: (a: number) => number;
 export const face_loss: (a: number) => number;
@@ -9,6 +10,14 @@ export const face_new: (a: number, b: number, c: number, d: number, e: number, f
 export const face_nodes: (a: number) => [number, number];
 export const face_step: (a: number) => number;
 export const face_widths: (a: number) => [number, number];
+export const pathface_dot: (a: number) => number;
+export const pathface_edges: (a: number) => [number, number];
+export const pathface_iteration: (a: number) => number;
+export const pathface_loss: (a: number) => number;
+export const pathface_new: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+export const pathface_nodes: (a: number) => [number, number];
+export const pathface_step: (a: number) => number;
+export const pathface_widths: (a: number) => [number, number];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;
 export const __wbindgen_externrefs: WebAssembly.Table;

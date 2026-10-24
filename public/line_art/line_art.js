@@ -1,8 +1,9 @@
-// Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes.
-// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration) after every
-// optimizer step, where a width is ink per unit length; post the returned message to the worker to start over.
-export function lineArt(img, onGraph, { nodes = 300, iterations = 1000 } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024g", import.meta.url), { type: "module" });
+// Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes, or with
+// kind "path", one unbroken line through all of them. onGraph gets (nodes [x, y, ...], edges [a, b, ...],
+// widths [w, ...], done, iteration, dot) after every optimizer step, where a width is ink per unit length and
+// dot is the radius of the dot on each node; post the returned message to the worker to start over.
+export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "graph" } = {}) {
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024p", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -17,8 +18,8 @@ export function lineArt(img, onGraph, { nodes = 300, iterations = 1000 } = {}) {
   for (let i = 0; i < darkness.length; i++) {
     darkness[i] = 1 - (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / (3 * 255);
   }
-  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration);
-  const message = { darkness, width, height, nodes, iterations };
+  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration, e.data.dot);
+  const message = { darkness, width, height, nodes, iterations, kind };
   worker.postMessage(message);
   return [worker, message];
 }
@@ -32,7 +33,7 @@ export function graphView(canvas, width, height) {
 
   function draw() {
     raf = 0;
-    const { nodes, edges, widths } = latest;
+    const { nodes, edges, widths, dot } = latest;
     const dpr = window.devicePixelRatio || 1;
     if (canvas.width !== Math.round(width * dpr)) {
       canvas.width = Math.round(width * dpr);
@@ -60,20 +61,20 @@ export function graphView(canvas, width, height) {
       ctx.lineTo(nodes[b], nodes[b + 1]);
       ctx.stroke();
     }
-    // a dot on every node, the same ink (pi * 1.2^2) the optimizer counts
+    // a dot on every node, the same ink (pi * dot^2) the optimizer counts
     ctx.globalAlpha = 1;
     ctx.fillStyle = "black";
     ctx.beginPath();
     for (let i = 0; i < nodes.length; i += 2) {
-      ctx.moveTo(nodes[i] + 1.2, nodes[i + 1]);
-      ctx.arc(nodes[i], nodes[i + 1], 1.2, 0, 2 * Math.PI);
+      ctx.moveTo(nodes[i] + dot, nodes[i + 1]);
+      ctx.arc(nodes[i], nodes[i + 1], dot, 0, 2 * Math.PI);
     }
     ctx.fill();
   }
 
   return {
-    update(nodes, edges, widths) {
-      latest = { nodes, edges, widths };
+    update(nodes, edges, widths, dot = 1.2) {
+      latest = { nodes, edges, widths, dot };
       if (!raf) raf = requestAnimationFrame(draw);
     },
     clear() {

@@ -76,6 +76,90 @@ export class Face {
     }
 }
 if (Symbol.dispose) Face.prototype[Symbol.dispose] = Face.prototype.free;
+
+export class PathFace {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PathFaceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_pathface_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    dot() {
+        const ret = wasm.pathface_dot(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    edges() {
+        const ret = wasm.pathface_edges(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    iteration() {
+        const ret = wasm.pathface_iteration(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    loss() {
+        const ret = wasm.pathface_loss(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {Float32Array} darkness
+     * @param {number} width
+     * @param {number} height
+     * @param {number} nodes
+     * @param {number} iterations
+     */
+    constructor(darkness, width, height, nodes, iterations) {
+        const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations);
+        this.__wbg_ptr = ret;
+        PathFaceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    nodes() {
+        const ret = wasm.pathface_nodes(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    step() {
+        const ret = wasm.pathface_step(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    widths() {
+        const ret = wasm.pathface_widths(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) PathFace.prototype[Symbol.dispose] = PathFace.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -215,6 +299,9 @@ function __wbg_get_imports() {
 const FaceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_face_free(ptr, 1));
+const PathFaceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_pathface_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

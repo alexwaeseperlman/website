@@ -13,11 +13,25 @@ export class Face {
     widths(): Float32Array;
 }
 
+export class PathFace {
+    free(): void;
+    [Symbol.dispose](): void;
+    dot(): number;
+    edges(): Uint16Array;
+    iteration(): number;
+    loss(): number;
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number);
+    nodes(): Float32Array;
+    step(): boolean;
+    widths(): Float32Array;
+}
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_face_free: (a: number, b: number) => void;
+    readonly __wbg_pathface_free: (a: number, b: number) => void;
     readonly face_edges: (a: number) => [number, number];
     readonly face_iteration: (a: number) => number;
     readonly face_loss: (a: number) => number;
@@ -25,6 +39,14 @@ export interface InitOutput {
     readonly face_nodes: (a: number) => [number, number];
     readonly face_step: (a: number) => number;
     readonly face_widths: (a: number) => [number, number];
+    readonly pathface_dot: (a: number) => number;
+    readonly pathface_edges: (a: number) => [number, number];
+    readonly pathface_iteration: (a: number) => number;
+    readonly pathface_loss: (a: number) => number;
+    readonly pathface_new: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly pathface_nodes: (a: number) => [number, number];
+    readonly pathface_step: (a: number) => number;
+    readonly pathface_widths: (a: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
