@@ -91,7 +91,8 @@ impl PathFace {
             nodes,
             sigma: 2.0,
             iterations,
-            line: 0.7,
+            // a pencil presses lightly, so its strokes stay soft and build up tone by layering
+            line: if graphite { PENCIL_LINE } else { 0.7 },
             lr_node: 12.0,
             paper: 12.0,
             detail: 3.0,
@@ -107,7 +108,7 @@ impl PathFace {
             coarse_sigma: 5.0,
             coarse_until: 0.6,
             tone: TONE,
-            dot: DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI,
+            dot: if graphite { PENCIL_DOT } else { DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI },
             airbrush,
             ridge,
             learn_ridge,
@@ -187,3 +188,6 @@ impl PathFace {
 const DOT_RADIUS: f32 = 0.6;
 // how dark the path aims to be, as a fraction of the photo
 const TONE: f32 = 0.6;
+// a pencil line's ink per unit length, and its dots' ink
+const PENCIL_LINE: f32 = 0.3;
+const PENCIL_DOT: f32 = 0.4;
