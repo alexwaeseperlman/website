@@ -462,13 +462,13 @@ static int atrainMain(int k, int chains, int epochs){
     for (int t = 0; t < NT; t++) th.emplace_back([&, t]{ for (long i = a + t; i < b; i += NT){ const float* s = A.forward(&AX[i * F], C[t].get()); double e = s[0] - AY[i * MAXP]; se[t] += e * e; } });
     for (auto& t : th) t.join(); double s = 0; for (double v : se) s += v; return sqrt(s / max(1L, b - a)); };
   // BS / LR: a bigger batch splits over more training threads (fewer, larger steps); scale LR with it
-  const int bs = getenv("BS") ? atoi(getenv("BS")) : 512; const double lr0 = getenv("LR") ? atof(getenv("LR")) : 1e-3;
+  const int bs = getenv("BS") ? atoi(getenv("BS")) : 512; const double lr0 = getenv("LR") ? atof(getenv("LR")) : 1e-3, clipN = getenv("CLIPN") ? atof(getenv("CLIPN")) : 1.0;
   long steps = (long)epochs * nTrain / bs; Rng r(5 + k); long every = max(1L, steps / 40);
   FILE* lf = fopen(("aloss" + to_string(k) + ".csv").c_str(), "w"); fprintf(lf, "step,examples_seen,train_rmse,heldout_rmse\n");
   for (long s = 0; s <= steps; s++){
     if (s % every == 0 || s == steps){ fprintf(lf, "%ld,%ld,%.5f,%.5f\n", s, s * bs, rmse(0, min(nTrain, 5000L)), rmse(nTrain, n)); fflush(lf); }
     if (s == steps) break;
-    double lr = lr0 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1);
+    double lr = lr0 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1) * min(1.0, (s + 1) / (0.02 * steps + 1));   // 2% warm-up
     vector<long> idx(bs); for (auto& i : idx) i = (long)(r() * nTrain);
     pool.run([&](int t){
       fill(G[t].begin(), G[t].end(), 0.f); float d[7];
@@ -477,6 +477,11 @@ static int atrainMain(int k, int chains, int epochs){
     });
     pool.run([&](int t){   // reduce the gradients, each thread a slice of the weights
       for (int i = (int)((long)A.n * t / TT), e = (int)((long)A.n * (t + 1) / TT); i < e; i++) for (int u = 1; u < TT; u++) G[0][i] += G[u][i]; });
+    // clip the gradient norm (CLIPN, default 1): a long stage-1 run at batch 4096 / lr 3e-3 once blew up
+    { double gn = 0; for (int q = 0; q < A.n; q++) gn += (double)G[0][q] * G[0][q]; gn = sqrt(gn);
+      if (getenv("GNLOG") && s % 200 == 0) fprintf(stderr, "step %ld grad norm %.4f\n", s, gn);
+      if (!(gn == gn)) continue;   // NaN: skip the step
+      if (gn > clipN) for (int q = 0; q < A.n; q++) G[0][q] *= (float)(clipN / gn); }
     A.adam(G[0], lr);
   }
   printf("anet stage %d: %ld afterstates (%.0fs to label), held-out RMSE %.4f, train %.4f, %.0fs total\n", k, n, tg, rmse(nTrain, n),
@@ -554,6 +559,7 @@ int main(int argc, char** argv){
     for (int k = a; k <= b; k++) trainStage(k, n, e); return 0; }
   if (mode == "atrain") return atrainMain(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
   if (mode == "appo") return appoMain(atoi(argv[2]), atoi(argv[3]));
+  if (mode == "aheat") return aheatMain(argv[2], argc > 3 ? atoi(argv[3]) : 2);
   if (mode == "achaintest") return achainTest(atoi(argv[2]));
   if (mode == "avs") return avsMain(argv[2], atoi(argv[3]));
   if (mode == "aplay") return aplayMain(atoi(argv[2]));

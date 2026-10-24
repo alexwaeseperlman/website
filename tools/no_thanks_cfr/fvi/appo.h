@@ -221,3 +221,19 @@ static int avsMain(const string& file, int deals){
   }
   return 0;
 }
+
+// ./fvi aheat <a.json> [n=2]: the first card of the game, card x chips on it (from the others passing, nobody holds a
+// card yet): the chain policy's take-now and pass values for the mover, and the live bot's P(take). CSV on stdout.
+static int aheatMain(const string& file, int n){
+  unique_ptr<ANet> A(loadA(file)); unique_ptr<Work> w(A->work()), lw(liveNet->work()); vector<float> x(MAXF); Chain ch;
+  printf("card,pot,mover_chips,take_value,pass_value,nash_take,live_ptake\n");
+  for (int v = 3; v <= 35; v++) for (int pot = 0; pot <= 30; pot++){
+    Rng r(1); Game g; newGame(g, n, r); g.deck[0] = v;
+    bool ok = true; for (int i = 0; i < pot; i++){ if (g.chips[g.turn] == 0){ ok = false; break; } step(g, false); }
+    if (!ok || g.chips[g.turn] == 0) continue;
+    int p = g.turn; chainAt(*A, w.get(), g, ch);
+    liveNet->features(g, x.data()); double lt = takeProb(*liveNet, liveNet->forward(x.data(), lw.get()));
+    printf("%d,%d,%d,%.5f,%.5f,%d,%.4f\n", v, pot, g.chips[p], ch.T0[p], ch.v1[p], ch.T0[p] >= ch.v1[p], lt);
+  }
+  return 0;
+}
