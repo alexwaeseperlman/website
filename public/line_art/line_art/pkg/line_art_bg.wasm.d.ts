@@ -7,7 +7,7 @@ export const face_new: (a: number, b: number, c: number, d: number, e: number, f
 export const face_nodes: (a: number) => [number, number];
 export const face_run: (a: number, b: number) => number;
 export const face_schedule: (a: number) => number;
-export const face_sweep: (a: number) => number;
+export const face_widths: (a: number) => [number, number];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;
 export const __wbindgen_externrefs: WebAssembly.Table;

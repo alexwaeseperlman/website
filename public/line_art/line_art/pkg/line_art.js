@@ -26,12 +26,12 @@ export class Face {
      * @param {number} height
      * @param {number} nodes
      * @param {number} sigma
-     * @param {number} ink
+     * @param {number} lambda
      */
-    constructor(darkness, width, height, nodes, sigma, ink) {
+    constructor(darkness, width, height, nodes, sigma, lambda) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.face_new(ptr0, len0, width, height, nodes, sigma, ink);
+        const ret = wasm.face_new(ptr0, len0, width, height, nodes, sigma, lambda);
         this.__wbg_ptr = ret;
         FaceFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -61,11 +61,13 @@ export class Face {
         return ret >>> 0;
     }
     /**
-     * @returns {number}
+     * @returns {Float32Array}
      */
-    sweep() {
-        const ret = wasm.face_sweep(this.__wbg_ptr);
-        return ret >>> 0;
+    widths() {
+        const ret = wasm.face_widths(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
 }
 if (Symbol.dispose) Face.prototype[Symbol.dispose] = Face.prototype.free;

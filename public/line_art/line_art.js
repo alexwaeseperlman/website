@@ -1,8 +1,8 @@
-// Starts a worker that draws `img` as a graph: straight lines between a fixed set of nodes. onGraph gets
-// (nodes [x, y, ...], edges [a, b, ...], ink, done) every frame; post the returned message to the worker
-// to start over.
-export function lineArt(img, onGraph, { nodes = 220, sigma = 2, ink = 0.15 } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024c", import.meta.url), { type: "module" });
+// Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes.
+// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done) every frame, where a width is
+// ink per unit length; post the returned message to the worker to start over.
+export function lineArt(img, onGraph, { nodes = 300, sigma = 2, lambda = 0.02 } = {}) {
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024d", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -17,19 +17,20 @@ export function lineArt(img, onGraph, { nodes = 220, sigma = 2, ink = 0.15 } = {
   for (let i = 0; i < darkness.length; i++) {
     darkness[i] = 1 - (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / (3 * 255);
   }
-  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.ink, e.data.done);
-  const message = { darkness, width, height, nodes, sigma, ink };
+  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done);
+  const message = { darkness, width, height, nodes, sigma, lambda };
   worker.postMessage(message);
   return [worker, message];
 }
 
 // Draws the graphs the worker sends onto a canvas whose CSS size is the image's, at the screen's pixel
-// density, easing between them so it glides instead of jumping: lines fade in and out and nodes slide to
-// their new places. Each line is its own stroke so crossings get darker, like the ink the optimizer assumed.
+// density, easing between them so it glides instead of jumping: line widths grow and shrink and nodes slide
+// to their new places. A line of width w (ink per unit length) is stroked w / ALPHA px wide at ALPHA opacity,
+// each line its own stroke so crossings get darker, like the ink the optimizer assumed.
 export function graphView(canvas, width, height) {
-  const EASE_MS = 180;
-  let target = null, pos = null, ink = 0, raf = 0, last = 0;
-  const shown = new Map(); // edge key -> opacity 0..1
+  const EASE_MS = 180, ALPHA = 0.5;
+  let target = null, pos = null, raf = 0, last = 0;
+  const shown = new Map(); // edge key -> width on screen
   const key = (a, b) => a * 65536 + b;
 
   function draw() {
@@ -46,11 +47,13 @@ export function graphView(canvas, width, height) {
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = "black";
-    ctx.lineWidth = 1;
     ctx.lineCap = "round";
-    for (const [k, o] of shown) {
+    for (const [k, w] of shown) {
       const a = Math.floor(k / 65536) * 2, b = (k % 65536) * 2;
-      ctx.globalAlpha = ink * o;
+      // below a device pixel, thin the line by opacity instead, which antialiasing does more evenly
+      const px = w / ALPHA;
+      ctx.lineWidth = Math.max(px, 1 / dpr);
+      ctx.globalAlpha = ALPHA * Math.min(1, px * dpr);
       ctx.beginPath();
       ctx.moveTo(pos[a], pos[a + 1]);
       ctx.lineTo(pos[b], pos[b + 1]);
@@ -66,11 +69,11 @@ export function graphView(canvas, width, height) {
       const d = target.nodes[i] - pos[i];
       if (Math.abs(d) > 0.02) { pos[i] += d * f; moving = true; } else pos[i] = target.nodes[i];
     }
-    for (const [k, o] of shown) {
-      const want = target.on.has(k) ? 1 : 0;
-      const next = o + (want - o) * f;
-      if (Math.abs(want - next) > 0.01) { shown.set(k, next); moving = true; }
-      else if (want) shown.set(k, 1);
+    for (const [k, w] of shown) {
+      const want = target.widths.get(k) || 0;
+      const next = w + (want - w) * f;
+      if (Math.abs(want - next) > 0.003) { shown.set(k, next); moving = true; }
+      else if (want) shown.set(k, want);
       else shown.delete(k);
     }
     draw();
@@ -79,12 +82,11 @@ export function graphView(canvas, width, height) {
   }
 
   return {
-    update(nodes, edges, inkValue) {
-      ink = inkValue;
-      target = { nodes, on: new Set() };
+    update(nodes, edges, widths) {
+      target = { nodes, widths: new Map() };
       for (let i = 0; i < edges.length; i += 2) {
         const k = key(edges[i], edges[i + 1]);
-        target.on.add(k);
+        target.widths.set(k, widths[i / 2]);
         if (!shown.has(k)) shown.set(k, 0);
       }
       if (!pos || pos.length !== nodes.length) pos = Float32Array.from(nodes);

@@ -8,13 +8,13 @@
 <body>
     Image upload:
     <input type="file" id="file" />
-    Nodes: <input type="number" id="nodes" value="220" min="20" max="600" style="width: 60px" />
+    Nodes: <input type="number" id="nodes" value="300" min="20" max="600" style="width: 60px" />
     <br />
     <canvas id="canvas"></canvas>
     <img id="line-art-image" style="display:none;" alt="" />
 </body>
 <script type="module">
-    import { lineArt, graphView } from './line_art.js?v=20261024c';
+    import { lineArt, graphView } from './line_art.js?v=20261024d';
     let worker = null;
     const fileInput = document.getElementById("file");
     const nodesInput = document.getElementById("nodes");
@@ -29,7 +29,7 @@
         if (worker) worker.terminate();
         const width = lineArtImage.naturalWidth, height = lineArtImage.naturalHeight;
         const view = graphView(canvas, width, height);
-        [worker] = lineArt(lineArtImage, (nodes, edges, ink) => view.update(nodes, edges, ink), { nodes: +nodesInput.value });
+        [worker] = lineArt(lineArtImage, (nodes, edges, widths) => view.update(nodes, edges, widths), { nodes: +nodesInput.value });
     };
 </script>
 

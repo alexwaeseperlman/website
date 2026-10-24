@@ -5,11 +5,11 @@ export class Face {
     free(): void;
     [Symbol.dispose](): void;
     edges(): Uint16Array;
-    constructor(darkness: Float32Array, width: number, height: number, nodes: number, sigma: number, ink: number);
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, sigma: number, lambda: number);
     nodes(): Float32Array;
     run(proposals: number): number;
     schedule(): number;
-    sweep(): number;
+    widths(): Float32Array;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -22,7 +22,7 @@ export interface InitOutput {
     readonly face_nodes: (a: number) => [number, number];
     readonly face_run: (a: number, b: number) => number;
     readonly face_schedule: (a: number) => number;
-    readonly face_sweep: (a: number) => number;
+    readonly face_widths: (a: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
