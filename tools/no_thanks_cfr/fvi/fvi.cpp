@@ -545,12 +545,16 @@ static int aplayMain(int games){
   return 0;
 }
 
+#include "appo.h"
+
 int main(int argc, char** argv){
   string live = getenv("LIVE") ? getenv("LIVE") : "../nash/live.json"; liveNet = loadNet(live);
   string mode = argc > 1 ? argv[1] : "";
   if (mode == "train"){ int a = atoi(argv[2]), b = atoi(argv[3]), n = atoi(argv[4]), e = argc > 5 ? atoi(argv[5]) : 4;
     for (int k = a; k <= b; k++) trainStage(k, n, e); return 0; }
   if (mode == "atrain") return atrainMain(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+  if (mode == "appo") return appoMain(atoi(argv[2]), atoi(argv[3]));
+  if (mode == "avs") return avsMain(argv[2], atoi(argv[3]));
   if (mode == "aplay") return aplayMain(atoi(argv[2]));
   if (mode == "alabeltest") return alabelTest(atoi(argv[2]));
   if (mode == "acheck") return acheckMain(atoi(argv[2]), atoi(argv[3]));
