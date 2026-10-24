@@ -19,7 +19,7 @@ impl Face {
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, sigma: f32, ink: f32) -> Face {
         set_panic_hook();
         let mut rng = rand::thread_rng();
-        let params = Params { nodes, sigma, ink, start_temperature: 1.0, sweeps: 10.0, paper: 8.0, detail: 3.0, shift_rate: 0.03, gamma: 2.0 };
+        let params = Params { nodes, sigma, ink, start_temperature: 1.0, sweeps: 10.0, paper: 12.0, detail: 3.0, shift_rate: 0.015, gamma: 2.0, features: 6.0 };
         Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng), rng }
     }
 

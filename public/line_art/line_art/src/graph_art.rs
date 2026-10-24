@@ -47,6 +47,8 @@ pub struct Params {
     pub detail: f32,
     // > 1 lightens skin and other midtones so lines avoid crossing the face
     pub gamma: f32,
+    // extra loss weight on detailed areas
+    pub features: f32,
     // share of proposals that move a node rather than flip a line
     pub shift_rate: f32,
 }
@@ -98,9 +100,10 @@ impl GraphArt {
         let sm = soft.iter().cloned().fold(1e-6f32, f32::max);
         let density: Vec<f32> = soft.iter().zip(&detail).map(|(s, d)| s / sm + 2.0 * d / dm).collect();
         let nodes = place_nodes(&density, width, height, p.nodes, rng);
-        // The loss is |sqrt(W) G (D - T)|^2 with W large on paper, so stray lines across the background cost more.
+        // The loss is |sqrt(W) G (D - T)|^2 with W large on paper, so stray lines across the background cost more,
         let light = blur(&darkness, width, height, 3.0);
-        let weight: Vec<f32> = light.iter().map(|t| 1.0 + p.paper * (1.0 - t).powi(4)).collect();
+        // and larger again where the photo has detail (eyes, brows, nose, mouth), which is what reads as a likeness
+        let weight: Vec<f32> = light.iter().zip(&detail).map(|(t, d)| 1.0 + p.paper * (1.0 - t).powi(4) + p.features * d / dm).collect();
         let n = nodes.len();
         let mut pairs = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
@@ -389,7 +392,7 @@ mod tests {
     fn node_gradient_matches_finite_difference() {
         let (w, h) = (80, 80);
         let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 40.0, (i / w) as f32 - 40.0); if x * x + y * y < 600.0 { 0.8 } else { 0.0 } }).collect();
-        let p = Params { nodes: 30, sigma: 2.0, ink: 0.3, start_temperature: 0.0, sweeps: 1.0, paper: 4.0, detail: 0.0, gamma: 1.0, shift_rate: 0.0 };
+        let p = Params { nodes: 30, sigma: 2.0, ink: 0.3, start_temperature: 0.0, sweeps: 1.0, paper: 4.0, detail: 0.0, gamma: 1.0, shift_rate: 0.0, features: 0.0 };
         let mut rng = rand::thread_rng();
         let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
         for _ in 0..g.on.len() * 2 { g.step(&mut rng); }
