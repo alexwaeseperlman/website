@@ -91,10 +91,9 @@ export class PathFace {
     /**
      * @param {number} iterations
      * @param {boolean} pencil
-     * @param {boolean} graphite
      */
-    blur_pass(iterations, pencil, graphite) {
-        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil, graphite);
+    blur_pass(iterations, pencil) {
+        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil);
     }
     /**
      * @returns {number}
@@ -135,11 +134,12 @@ export class PathFace {
      * @param {boolean} airbrush
      * @param {number} ridge
      * @param {boolean} learn_ridge
+     * @param {boolean} graphite
      */
-    constructor(darkness, width, height, nodes, iterations, airbrush, ridge, learn_ridge) {
+    constructor(darkness, width, height, nodes, iterations, airbrush, ridge, learn_ridge, graphite) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush, ridge, learn_ridge);
+        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush, ridge, learn_ridge, graphite);
         this.__wbg_ptr = ret;
         PathFaceFinalization.register(this, this.__wbg_ptr, this);
         return this;
