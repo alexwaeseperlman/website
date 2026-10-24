@@ -6,7 +6,7 @@
 // (soft strokes only) is the drawing's darkness per pixel, and kernel (learned only) the 5x5 stroke kernel;
 // post the returned message to the worker to start over.
 export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "graph" } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024t", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024u", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");

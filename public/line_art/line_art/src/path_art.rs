@@ -33,8 +33,11 @@ pub struct PathArt {
     // > 0 when the stroke kernel is learned: how hard it is pulled toward the identity (a sharp line)
     learn: f32,
     lr_kernel: f32,
+    // a learned kernel is the sigmoid of these, so every weight stays between 0 and 1; Adam moments and steps
+    logits: Vec<f32>,
     m_k: Vec<f32>,
     v_k: Vec<f32>,
+    kernel_steps: usize,
     lambda: f32,
     // ink per unit length of every segment, which is its width in pixels
     pub line: f32,
@@ -99,8 +102,9 @@ pub struct Params {
     // > 0: an airbrush stroke whose darkness falls off linearly to 0 at this many pixels from its centre,
     // instead of a Gaussian
     pub ridge: f32,
-    // > 0: learn a LEARNED x LEARNED stroke kernel along with the nodes, starting from and pulled toward the
-    // identity with this weight; lr_kernel is its peak Adam learning rate
+    // > 0: learn a LEARNED x LEARNED stroke kernel along with the nodes in the second half of the run, starting
+    // from and pulled toward the identity with this weight; each weight is the sigmoid of a learned logit, and
+    // lr_kernel is the logits' peak Adam learning rate
     pub learn: f32,
     pub lr_kernel: f32,
 }
@@ -109,6 +113,16 @@ const BETA1: f32 = 0.9;
 const BETA2: f32 = 0.999;
 // a learned stroke kernel's size
 const LEARNED: usize = 5;
+// the logits a learned kernel starts from: +/- this, close to the identity
+const START_LOGIT: f32 = 6.0;
+
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+fn start_logits() -> Vec<f32> {
+    (0..LEARNED * LEARNED).map(|i| if i == LEARNED * LEARNED / 2 { START_LOGIT } else { -START_LOGIT }).collect()
+}
 // The coarse grid's margin, in blocks, so that nodes at the image's edge still feel the coarse loss
 const COARSE_PAD: f32 = 2.0;
 // A line longer than this many sigmas counts as long
@@ -204,10 +218,7 @@ impl PathArt {
             sigma: p.sigma,
             kernel: k.iter().map(|v| v / s).collect(),
             stroke: if p.learn > 0.0 {
-                // starts as the identity: a sharp line
-                let mut k = vec![0.0; LEARNED * LEARNED];
-                k[LEARNED * LEARNED / 2] = 1.0;
-                Some(k)
+                Some(start_logits().iter().map(|&l| sigmoid(l)).collect())
             } else if p.ridge > 0.0 {
                 Some(ridge_kernel(p.ridge))
             } else {
@@ -215,8 +226,10 @@ impl PathArt {
             },
             learn: p.learn,
             lr_kernel: p.lr_kernel,
+            logits: start_logits(),
             m_k: vec![0.0; LEARNED * LEARNED],
             v_k: vec![0.0; LEARNED * LEARNED],
+            kernel_steps: 0,
             lambda: p.lambda,
             line: p.line,
             dot: p.dot,
@@ -653,7 +666,8 @@ impl PathArt {
         // early on, and fades out by coarse_until of the way through
         let coarse = self.coarse_weight * (1.0 - progress / self.coarse_until).max(0.0).powi(2);
         let gn = self.gradient(coarse);
-        let gk = if self.learn > 0.0 { Some(self.kernel_gradient()) } else { None };
+        // the kernel stays a sharp line while the path finds its shape, and is learned in the second half
+        let gk = if self.learn > 0.0 && 2 * self.iteration >= self.iterations { Some(self.kernel_gradient()) } else { None };
         self.iteration += 1;
         let t = self.iteration as f32;
         // linear warmup to the peak learning rate, then a cosine down to 0 at the last step
@@ -678,11 +692,20 @@ impl PathArt {
             self.nodes[v] = ((x - lr * u[0]).clamp(x0, x1), (y - lr * u[1]).clamp(y0, y1));
         }
         if let (Some(gk), Some(k)) = (gk, self.stroke.as_mut()) {
-            let lr = self.lr_kernel * schedule;
+            // its own Adam, on the logits, with a cosine from the peak learning rate at halfway down to 0
+            self.kernel_steps += 1;
+            let half = self.iterations / 2;
+            let progress = (self.iteration - half) as f32 / (self.iterations - half).max(1) as f32;
+            let lr = self.lr_kernel * 0.5 * (1.0 + (std::f32::consts::PI * progress).cos());
+            let t = self.kernel_steps as f32;
+            let (c1, c2) = (1.0 - BETA1.powf(t), 1.0 - BETA2.powf(t));
             for i in 0..k.len() {
-                self.m_k[i] = BETA1 * self.m_k[i] + (1.0 - BETA1) * gk[i];
-                self.v_k[i] = BETA2 * self.v_k[i] + (1.0 - BETA2) * gk[i] * gk[i];
-                k[i] -= lr * (self.m_k[i] / c1) / ((self.v_k[i] / c2).sqrt() + 1e-8);
+                // through the sigmoid
+                let g = gk[i] * k[i] * (1.0 - k[i]);
+                self.m_k[i] = BETA1 * self.m_k[i] + (1.0 - BETA1) * g;
+                self.v_k[i] = BETA2 * self.v_k[i] + (1.0 - BETA2) * g * g;
+                self.logits[i] -= lr * (self.m_k[i] / c1) / ((self.v_k[i] / c2).sqrt() + 1e-8);
+                k[i] = sigmoid(self.logits[i]);
             }
         }
         self.forward();
@@ -776,6 +799,7 @@ mod tests {
         let k: Vec<f32> = (0..LEARNED * LEARNED)
             .map(|i| { let (x, y) = ((i % LEARNED) as f32 - c - 0.3, (i / LEARNED) as f32 - c + 0.2); (-(x * x + y * y) / 2.0).exp() * 0.2 })
             .collect();
+        g.logits = k.iter().map(|v| (v / (1.0 - v)).ln()).collect();
         g.stroke = Some(k);
         g.forward();
         g

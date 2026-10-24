@@ -1,6 +1,6 @@
 // The ?v= queries keep a browser from pairing this with a cached copy of the old line art JS or wasm, which
 // sat at the same paths. Bump the version (here, in line_art.js and in ../index.html) whenever pkg/ is rebuilt.
-import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261024t';
+import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261024u';
 
 // Fits a graph drawing to the image it is sent, one step at a time, posting the graph after every step as
 // {nodes, edges, widths, dot, iteration, done}: the full graph (Face), or with kind "path" one unbroken line
@@ -9,7 +9,7 @@ import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261024t';
 // kernel); these messages also carry image, the drawing's
 // darkness per pixel exactly as the optimizer scores it. A new message starts over; the job counter stops the
 // old loop.
-const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261024t', import.meta.url) });
+const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261024u', import.meta.url) });
 let job = 0;
 
 onmessage = async (e) => {
