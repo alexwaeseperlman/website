@@ -29,6 +29,7 @@ The page reads them through `public.train_dash()` (`tools/supabase/train_dash.sq
 | Run | Rows the page reads |
 | --- | --- |
 | PPO (`deep ppo`) | `ppo/log.txt` (stdout; `iter N/M: … edge vs opponents +x%, entropy x, value mse x, clipped x%, Ns` lines), `ppo/deep-ppo-…-<iter>.json`, `ppo-info`, `ppo-exit` |
+| anet PPO (`fvi appo`) | `appo/log.txt` (as PPO, `edge vs live` and an optional `beta x,` field are fine), `appo/avs.txt` (`fvi avs` output, each block preceded by a line `iter N` so tests plot against iterations: `iter 50: 3 players, 1 copy + 2 live, 20000 deals: 17.51% +- 0.27 (fair 33.3%)`), `appo-info`, `appo-exit` |
 | Nash FVI (`fvi/run_all.sh`) | `fvi/log.txt` (run_all's log.txt), `fvi/aloss<k>.csv` (`step,examples_seen,train_rmse,heldout_rmse`), `fvi/a<k>.json`, `fvi-info`, `fvi-run-tail` |
 
 Every run uses one prefix `<job>` (same as `job` in the boxes row): rows `<job>/…`, `<job>-info`, `<job>-exit`. Each
