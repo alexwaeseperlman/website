@@ -122,6 +122,12 @@ impl PathFace {
         self.path.step(&mut self.rng)
     }
 
+    // Once the path has converged, starts a second pass of `iterations` steps that draws it with a 3 px ridge
+    // stroke and learns the ridge's radius while it keeps refining the nodes and the order.
+    pub fn blur_pass(&mut self, iterations: usize) {
+        self.path.blur_pass(iterations, 3.0, 8.0, 2.0, 20);
+    }
+
     pub fn iteration(&self) -> usize {
         self.path.iteration
     }

@@ -89,6 +89,12 @@ export class PathFace {
         wasm.__wbg_pathface_free(ptr, 0);
     }
     /**
+     * @param {number} iterations
+     */
+    blur_pass(iterations) {
+        wasm.pathface_blur_pass(this.__wbg_ptr, iterations);
+    }
+    /**
      * @returns {number}
      */
     dot() {

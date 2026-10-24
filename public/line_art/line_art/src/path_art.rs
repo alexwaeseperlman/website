@@ -159,7 +159,8 @@ impl PathArt {
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, p: &Params, rng: &mut impl Rng) -> PathArt {
         // Work on the photo with a margin of paper around it, so that ink near the edge is all counted and blurred
         // like anywhere else; otherwise lines could hide ink by hugging the edge. Nodes stay on the photo.
-        let margin = (3.0 * p.sigma).max(if p.learn_ridge { RIDGE_MAX } else { p.ridge }).ceil() as usize + 2;
+        // (room for the widest learned ridge, which a later blur pass may switch to)
+        let margin = (3.0 * p.sigma).max(RIDGE_MAX).max(p.ridge).ceil() as usize + 2;
         let (inner_w, inner_h) = (width, height);
         let (width, height) = (inner_w + 2 * margin, inner_h + 2 * margin);
         let mut padded = vec![0f32; width * height];
@@ -646,6 +647,28 @@ impl PathArt {
         }
         self.tension(&mut gn);
         gn
+    }
+
+    // Starts a second pass from where this one ended: the line becomes a ridge stroke starting at radius `ridge`,
+    // compared with the unblurred photo as with the airbrush, and its radius is learned along with the nodes and
+    // the order over `iterations` more steps, on a fresh schedule.
+    pub fn blur_pass(&mut self, iterations: usize, ridge: f32, lr_node: f32, temp_start: f32, warmup: usize) {
+        self.airbrush = true;
+        self.target = self.photo.clone();
+        self.learn_ridge = true;
+        self.set_ridge(ridge);
+        self.iteration = 0;
+        self.iterations = iterations;
+        self.warmup = warmup;
+        self.lr_node = lr_node;
+        self.temp_start = temp_start;
+        self.coarse_weight = 0.0;
+        self.m_n.iter_mut().for_each(|m| *m = 0.0);
+        self.v_n.iter_mut().for_each(|v| *v = 0.0);
+        self.m_r = 0.0;
+        self.v_r = 0.0;
+        self.splat_area = (2 * self.radius() as usize + 2).pow(2);
+        self.forward();
     }
 
     // One round of annealing on the order, then one Adam step on the nodes. Returns false once the schedule
