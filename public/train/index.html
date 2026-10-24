@@ -110,8 +110,14 @@ async function load() {
 }
 
 // ---------- parsing ----------
-const runOf = n => /^fvi[-/]/.test(n) ? 'fvi' : /^ppo[-/]/.test(n) ? 'ppo' : (n === 'log' || n === 'info' || n === 'setup' || /^deep-ppo/.test(n)) ? 'ppo-old' : null;
-const RUNS = { fvi: 'Nash FVI', ppo: 'PPO' };
+// A run's rows are <job>/... and <job>-... (job as in the boxes row). fvi gets the stage view; any other job is read
+// as PPO-style `iter N/M:` lines in <job>/log.txt.
+const runOf = n => {
+  if (n === 'log' || n === 'info' || n === 'setup' || /^deep-ppo/.test(n)) return 'ppo-old';
+  const m = n.match(/^([a-z0-9_]+)[-/]/); return m ? m[1] : null;
+};
+const RUNS = { fvi: 'Nash FVI', ppo: 'PPO', appo: 'anet PPO' };
+const label = k => RUNS[k] || k.toUpperCase();
 
 function csv(body) {
   const ls = (body || '').trim().split('\n').filter(Boolean);
@@ -148,16 +154,16 @@ function parseFvi(rs) {
   return { by, log, list, done, cur };
 }
 
-function parsePpo(rs) {
+function parsePpo(rs, k) {
   const by = Object.fromEntries(rs.map(r => [r.name, r]));
-  const log = (by['ppo/log.txt'] || by.log || {}).body || '';
+  const log = (by[k + '/log.txt'] || by.log || {}).body || '';
   const it = [];
   for (const l of log.split('\n')) {
     const m = l.match(/^iter (\d+)\/\d+: (\d+) decisions, edge vs opponents ([+-]?[\d.]+)%, entropy ([\d.]+), value mse ([\d.]+), clipped ([\d.]+)%, (\d+)s/);
     if (m) it.push({ i: +m[1], dec: +m[2], edge: +m[3], ent: +m[4], mse: +m[5], clip: +m[6], s: +m[7] });
   }
-  const ckpts = rs.filter(r => /deep-ppo.*-\d+\.json$/.test(r.name));
-  const exit = (by['ppo-exit'] || {}).body;
+  const ckpts = rs.filter(r => /-\d+\.json$/.test(r.name));
+  const exit = (by[k + '-exit'] || {}).body;
   return { by, log, it, ckpts, exit };
 }
 
@@ -254,7 +260,8 @@ function render() {
   const groups = {};
   for (const r of rows) { const k = runOf(r.name); if (k) (groups[k] = groups[k] || []).push(r); }
   if (!groups.ppo && groups['ppo-old']) groups.ppo = groups['ppo-old']; // a run from before the ppo/ prefix
-  const keys = Object.keys(RUNS).filter(k => groups[k]);
+  delete groups['ppo-old'];
+  const keys = [...Object.keys(RUNS), ...Object.keys(groups).sort()].filter((k, i, a) => groups[k] && a.indexOf(k) === i);
   if (!keys.length) {
     $('status').className = 'pill'; $('status').textContent = fetchErr ? 'offline' : 'no run';
     $('tabs').innerHTML = '';
@@ -263,14 +270,14 @@ function render() {
   }
   const latest = keys.slice().sort((a, b) => Math.max(...groups[b].map(r => +r.t)) - Math.max(...groups[a].map(r => +r.t)))[0];
   if (!groups[tab]) tab = latest;
-  $('tabs').innerHTML = keys.map(k => `<button class="${k === tab ? 'on' : ''}" data-k="${k}">${RUNS[k]}</button>`).join('');
+  $('tabs').innerHTML = keys.map(k => `<button class="${k === tab ? 'on' : ''}" data-k="${esc(k)}">${esc(label(k))}</button>`).join('');
   $('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.k; store('train.tab', tab); render(); });
   rate = rateFor(tab);
   let c = clock(groups[tab], tab);
   if (c.dph) { rate = c.dph; c = clock(groups[tab], tab); }
   if (document.activeElement !== $('rate')) $('rate').value = rate;
   [$('status').className, $('status').textContent] = ['pill ' + pill(c)[0], pill(c)[1]];
-  (tab === 'fvi' ? viewFvi : viewPpo)(groups[tab], c);
+  (tab === 'fvi' ? viewFvi : viewPpo)(groups[tab], c, tab);
   $('view').insertAdjacentHTML('beforeend', boxesCard());
 }
 // Re-label the status pill between fetches without rebuilding the charts (keeps hover tooltips alive).
@@ -285,7 +292,7 @@ function boxesCard() {
   return `<div class="card" style="margin-top:12px"><h2>Machines · ${up.length} running${up.length ? `, $${up.reduce((a, b) => a + (b.dph || 0), 0).toFixed(2)}/hr` : ''}</h2><div class="tablewrap"><table>
     <tr><th>Box</th><th>Job</th><th>Threads</th><th>$/hr</th><th>Status</th><th>Up</th><th>Cost</th></tr>
     ${all.map(b => { const s = b.since ? +new Date(b.since) : null, e = b.status === 'running' ? Date.now() : b.until ? +new Date(b.until) : null;
-      return `<tr><td>${esc(b.id)}</td><td>${esc(RUNS[b.job] || b.job || '')}</td><td>${b.threads || '–'}</td><td>${b.dph != null ? (+b.dph).toFixed(2) : '–'}</td>
+      return `<tr><td>${esc(b.id)}</td><td>${esc(b.job ? label(b.job) : '')}</td><td>${b.threads || '–'}</td><td>${b.dph != null ? (+b.dph).toFixed(2) : '–'}</td>
       <td style="color:var(--${b.status === 'running' ? 'good' : 'ink3'})">${b.status === 'running' ? '● running' : esc(b.status || '')}</td>
       <td>${s ? t(b.since) + '–' + (b.status === 'running' ? 'now' : t(b.until)) : b.until ? 'until ' + t(b.until) : '–'}</td>
       <td>${s && e && b.dph ? '$' + ((e - s) / 3.6e6 * b.dph).toFixed(2) : '–'}</td></tr>`; }).join('')}
@@ -341,8 +348,8 @@ function viewFvi(rs, c) {
     { xMin: 0, xMax: STAGES - 1, xStep: 4, xName: 'stage ', yFmt: v => v + 'm', zero: true, label: 'minutes per stage' });
 }
 
-function viewPpo(rs, c) {
-  const p = parsePpo(rs), it = p.it, last = it[it.length - 1];
+function viewPpo(rs, c, k) {
+  const p = parsePpo(rs, k), it = p.it, last = it[it.length - 1];
   const rate_ = it.length > 1 ? (it[it.length - 1].s - it[0].s) / (it.length - 1) : null;
   const roll = (k, w = 10) => it.map((x, i) => { const a = it.slice(Math.max(0, i - w + 1), i + 1); return [x.i, a.reduce((s, y) => s + y[k], 0) / a.length]; });
   $('view').innerHTML = `<div class="tiles">
