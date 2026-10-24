@@ -11,7 +11,8 @@ g++ -O3 -march=native -ffast-math -std=c++17 -pthread "$here/fvi.cpp" -o "$here/
 mkdir -p "$OUT"; cd "$OUT"; export LIVE="$here/../nash/live.json"
 for k in $(seq 0 23); do
   if [ -f a$k.json ]; then echo "stage $k already done" | tee -a log.txt; continue; fi
-  E=$EPOCHS; [ $k = 0 ] && E=$((EPOCHS * 5))   # stage 0 starts from scratch
+  # stage 0 starts from scratch; stage 1 (first averaging over the next card) fits slowly from stage 0's weights
+  E=$EPOCHS; [ $k -le 1 ] && E=$((EPOCHS * 5)); [ $k = 2 ] && E=$((EPOCHS * 2))
   "$here/fvi" atrain $k $CHAINS $E | tee -a log.txt
   if [ $k -le 3 ]; then "$here/fvi" acheck $k 1000 | tee -a log.txt; fi
   if [ $((k % 4)) = 3 ] || [ $k = 23 ]; then "$here/fvi" aplay ${PLAY:-20000} | tee -a log.txt; fi
