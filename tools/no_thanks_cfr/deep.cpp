@@ -215,10 +215,59 @@ static void cfeatures(const Game& g, float* x){
 // learned separately), it reads the conv features at the card in play and two either side, plus their mean and max
 // over the whole line; the same detectors then work wherever the card falls.
 // cnet3 (sk): cnet2 plus the raw holds/seen bits for the three cards either side of the card in play.
+// y[0..n) += v * w[0..n); compiled for the common widths so the loop is fully unrolled into vector instructions
+template<int N> static inline void axpyN(float* __restrict y, const float* __restrict w, float v){ for (int i = 0; i < N; i++) y[i] += v * w[i]; }
+static inline void axpy(float* __restrict y, const float* __restrict w, float v, int n){
+  switch (n){ case 8: axpyN<8>(y, w, v); return; case 12: axpyN<12>(y, w, v); return; case 24: axpyN<24>(y, w, v); return; case 36: axpyN<36>(y, w, v); return; }
+  for (int i = 0; i < n; i++) y[i] += v * w[i];
+}
+// conv2 at every position, then ReLU: y[pos][co] = b[co] + sum over e of win[e] * W2T[e][co], win = a1's rows pos..pos+K-1.
+// NI = K * (input channels); compiled for cnet2/cnet3's 12 x 12 so the accumulators stay in registers.
+// Positions go in blocks of 11 (33 = 3 x 11) so there are 11 independent sums in flight instead of one long chain.
+template<int NI, int NO> static void conv2Rows(const float* __restrict a1, const float* __restrict w, const float* __restrict b, float* __restrict y, int ci){
+  constexpr int B = 11; static_assert(CL % B == 0, "block");
+  for (int p0 = 0; p0 < CL; p0 += B){
+    float acc[B][NO]; for (int q = 0; q < B; q++) for (int co = 0; co < NO; co++) acc[q][co] = b[co];
+    for (int e = 0; e < NI; e++){ const float* wr = w + e * NO;
+      for (int q = 0; q < B; q++){ float v = a1[(p0 + q) * ci + e]; for (int co = 0; co < NO; co++) acc[q][co] += v * wr[co]; } }
+    for (int q = 0; q < B; q++) for (int co = 0; co < NO; co++) y[(p0 + q) * NO + co] = acc[q][co] > 0 ? acc[q][co] : 0;
+  }
+}
+// per channel: the mean and the max over positions of y[pos][co], and where the max is (the first one)
+template<int NC> static void meanMax(const float* __restrict y, float* __restrict sum, float* __restrict mx, int* __restrict am, int nc = NC){
+  const int C = NC ? NC : nc;
+  for (int co = 0; co < C; co++){ sum[co] = 0; mx[co] = -1; am[co] = 0; }
+  for (int pos = 0; pos < CL; pos++){ const float* r = y + pos * C;
+    for (int co = 0; co < C; co++){ sum[co] += r[co]; bool up = r[co] > mx[co]; mx[co] = up ? r[co] : mx[co]; am[co] = up ? pos : am[co]; } }
+  for (int co = 0; co < C; co++) sum[co] /= CL;
+}
+// conv2's backward pass: gw[co][e] += sum over pos of d[pos][co] * win_pos[e], and dwin[pos][e] = sum over co of
+// d[pos][co] * w[co][e] (w and gw in [co][e] order). Blocked in fours so several independent sums run at once.
+template<int NI, int NO> static void conv2Back(const float* __restrict a1, const float* __restrict d, const float* __restrict w, float* __restrict gw, float* __restrict dwin, int ci){
+  static_assert(NO % 4 == 0, "block");
+  for (int c0 = 0; c0 < NO; c0 += 4){
+    float acc[4][NI]; for (int q = 0; q < 4; q++) for (int e = 0; e < NI; e++) acc[q][e] = 0;
+    for (int pos = 0; pos < CL; pos++){ const float* win = a1 + pos * ci;
+      for (int q = 0; q < 4; q++){ float v = d[pos * NO + c0 + q]; for (int e = 0; e < NI; e++) acc[q][e] += v * win[e]; } }
+    for (int q = 0; q < 4; q++) for (int e = 0; e < NI; e++) gw[(c0 + q) * NI + e] += acc[q][e];
+  }
+  int p0 = 0;
+  for (; p0 + 3 <= CL; p0 += 3){   // 33 = 11 x 3
+    float acc[3][NI]; for (int q = 0; q < 3; q++) for (int e = 0; e < NI; e++) acc[q][e] = 0;
+    for (int co = 0; co < NO; co++){ const float* wr = w + co * NI;
+      for (int q = 0; q < 3; q++){ float v = d[(p0 + q) * NO + co]; for (int e = 0; e < NI; e++) acc[q][e] += v * wr[e]; } }
+    for (int q = 0; q < 3; q++) for (int e = 0; e < NI; e++) dwin[(p0 + q) * NI + e] = acc[q][e];
+  }
+}
 struct CNet : Model {
-  static const int C0 = 4, K1 = 5, K2 = 3, RW = 2, SW = 3;
+  static const int C0 = 4, K1 = 5, K2 = 3, RW = 2, SW = 3, P1 = K1 / 2, P2 = K2 / 2;
   bool ro, sk; int C1, C2, H, T, FL; Layer cv1, cv2, L[4];
-  struct W : Work { vector<float> in, a1, a2, flat, e, tin, t1, t2, o, d2, d1, dtin, de, dflat, da1, da2; vector<int> arg, amax, cpos; };
+  // Activations are stored position-major ([pos][channel]); a1 has P2 zero rows at each end so conv2's window for a
+  // position is one contiguous run. The conv weights are transposed into that order (W1T[ci][j][co], W2T[j][ci][co], and W2r[co][j][ci] for the backward pass)
+  // once per forward pass. conv1's inputs are sparse 0/1 bits plus the value channel, which is the same for every
+  // player, so conv1 is the value channel's convolution (worked out once) plus a few added weight rows per player.
+  struct W : Work { vector<float> W1T, W2T, W2r, gW2r, dwin, vconv, a1, a2, flat, e, tin, t1, t2, o, d2, d1, dtin, de, dflat, da1, da2, gW1T, gb1, gb2, dvs;
+    vector<int> arg, amax, cpos, nz, nzn; };
   CNet(int out_, uint32_t seed, bool ro_ = false, int C1_ = 8, int C2_ = 8, int H_ = 32, int T_ = 64, bool sk_ = false) : ro(ro_), sk(sk_), C1(C1_), C2(C2_), H(H_), T(T_){
     out = out_; arch = sk ? "cnet3" : ro ? "cnet2" : "cnet"; FL = (ro ? (2 * RW + 3) * C2 : C2 * CL) + (sk ? 2 * (2 * SW + 1) : 0) + 1 + MAXP;
     int off = 0;
@@ -231,55 +280,50 @@ struct CNet : Model {
   }
   int nf() const override { return CF; }
   void features(const Game& g, float* x) const override { cfeatures(g, x); }
-  Work* work() const override { W* c = new W; c->in.assign(MAXP * C0 * CL, 0); c->a1.assign(MAXP * C1 * CL, 0); c->flat.assign(MAXP * FL, 0);
+  Work* work() const override { W* c = new W;
+    c->W1T.assign(C0 * K1 * C1, 0); c->W2T.assign(K2 * C1 * C2, 0); c->W2r.assign(K2 * C1 * C2, 0); c->gW2r.assign(K2 * C1 * C2, 0); c->dwin.assign(CL * K2 * C1, 0); c->vconv.assign(CL * C1, 0);
+    c->a1.assign(MAXP * (CL + 2 * P2) * C1, 0); c->a2.assign(MAXP * CL * C2, 0); c->flat.assign(MAXP * FL, 0);
     c->e.assign(MAXP * H, 0); c->tin.assign(4 * H + 3, 0); c->t1.assign(T, 0); c->t2.assign(T, 0); c->o.assign(out, 0); c->arg.assign(H, 0);
-    c->d2.assign(T, 0); c->d1.assign(T, 0); c->dtin.assign(4 * H + 3, 0); c->de.assign(H, 0); c->dflat.assign(FL, 0); c->da1.assign(C1 * CL, 0);
-    c->a2.assign(MAXP * C2 * CL, 0); c->da2.assign(C2 * CL, 0); c->amax.assign(MAXP * C2, 0); c->cpos.assign(1, 0); return c; }
-  // y[co][pos] = b[co] + sum over ci, j of w[co][ci][j] * x[ci][pos + j - K/2], zero padded
-  void conv(const Layer& l, int ci_n, int K, const float* x, float* y, bool relu) const {
-    const float* w = p.data() + l.w;
-    for (int co = 0; co < l.o; co++){
-      float* yr = y + co * CL; for (int pos = 0; pos < CL; pos++) yr[pos] = p[l.b + co];
-      for (int ci = 0; ci < ci_n; ci++) for (int j = 0; j < K; j++){
-        float wv = w[(co * ci_n + ci) * K + j]; const float* xr = x + ci * CL; int d = j - K / 2;
-        int lo = max(0, -d), hi = min(CL, CL - d); for (int pos = lo; pos < hi; pos++) yr[pos] += wv * xr[pos + d];
-      }
-      if (relu) for (int pos = 0; pos < CL; pos++) if (yr[pos] < 0) yr[pos] = 0;
-    }
-  }
-  void convBack(const Layer& l, int ci_n, int K, const float* x, const float* dy, float* g, float* dx) const {
-    const float* w = p.data() + l.w;
-    if (dx) memset(dx, 0, ci_n * CL * sizeof(float));
-    for (int co = 0; co < l.o; co++){
-      const float* dr = dy + co * CL; float bs = 0; for (int pos = 0; pos < CL; pos++) bs += dr[pos]; g[l.b + co] += bs;
-      for (int ci = 0; ci < ci_n; ci++) for (int j = 0; j < K; j++){
-        int d = j - K / 2, lo = max(0, -d), hi = min(CL, CL - d); const float* xr = x + ci * CL; float s = 0;
-        for (int pos = lo; pos < hi; pos++) s += dr[pos] * xr[pos + d];
-        g[l.w + (co * ci_n + ci) * K + j] += s;
-        if (dx){ float wv = w[(co * ci_n + ci) * K + j]; float* dxr = dx + ci * CL; for (int pos = lo; pos < hi; pos++) dxr[pos + d] += wv * dr[pos]; }
-      }
-    }
-  }
+    c->d2.assign(T, 0); c->d1.assign(T, 0); c->dtin.assign(4 * H + 3, 0); c->de.assign(H, 0); c->dflat.assign(FL, 0);
+    c->da1.assign((CL + 2 * P2) * C1, 0); c->da2.assign(CL * C2, 0); c->gW1T.assign(C0 * K1 * C1, 0); 
+    c->gb1.assign(C1, 0); c->gb2.assign(C2, 0); c->dvs.assign(CL * C1, 0);
+    c->amax.assign(MAXP * C2, 0); c->cpos.assign(1, 0); c->nz.assign(MAXP * 3 * CL, 0); c->nzn.assign(MAXP, 0); return c; }
+  static float val(int q){ return q >= 0 && q < CL ? (q + 3) / 35.0f : 0; }   // the value channel at position q (0 outside)
   const float* forward(const float* x, Work* w) const override {
-    W& c = *(W*)w; int nn = (int)x[0], t = 1 + MAXP * CPL;
+    W& c = *(W*)w; int nn = (int)x[0], t = 1 + MAXP * CPL; const float* P = p.data();
+    for (int co = 0; co < C1; co++) for (int ci = 0; ci < C0; ci++) for (int j = 0; j < K1; j++) c.W1T[(ci * K1 + j) * C1 + co] = P[cv1.w + (co * C0 + ci) * K1 + j];
+    for (int co = 0; co < C2; co++) for (int ci = 0; ci < C1; ci++) for (int j = 0; j < K2; j++){ float v = P[cv2.w + (co * C1 + ci) * K2 + j];
+      c.W2T[(j * C1 + ci) * C2 + co] = v; c.W2r[co * K2 * C1 + j * C1 + ci] = v; }
+    for (int pos = 0; pos < CL; pos++){ float* v = &c.vconv[pos * C1];
+      for (int co = 0; co < C1; co++) v[co] = P[cv1.b + co];
+      for (int j = 0; j < K1; j++){ float s = val(pos + j - P1); if (s == 0) continue; axpy(v, &c.W1T[(3 * K1 + j) * C1], s, C1); } }
+    int cp = 0; for (int pos = 0; pos < CL; pos++) if (x[t + CL + pos] > 0) cp = pos;
+    c.cpos[0] = cp;
     for (int k = 0; k < nn; k++){
-      float* in = &c.in[k * C0 * CL]; const float* px = x + 1 + k * CPL;
-      for (int pos = 0; pos < CL; pos++){ in[pos] = px[pos]; in[CL + pos] = x[t + pos]; in[2 * CL + pos] = x[t + CL + pos]; in[3 * CL + pos] = (pos + 3) / 35.0f; }
-      float* a1 = &c.a1[k * C1 * CL]; float* a2 = &c.a2[k * C2 * CL]; float* fl = &c.flat[k * FL];
-      conv(cv1, C0, K1, in, a1, true); conv(cv2, C1, K2, a1, a2, true);
-      if (!ro) memcpy(fl, a2, C2 * CL * sizeof(float));
+      const float* px = x + 1 + k * CPL; float* A1 = &c.a1[k * (CL + 2 * P2) * C1]; float* A2 = &c.a2[k * CL * C2]; float* fl = &c.flat[k * FL];
+      int* nz = &c.nz[k * 3 * CL]; int m = 0;   // nonzero bits as ci * CL + q (the bits are 0 / 1)
+      for (int pos = 0; pos < CL; pos++){ if (px[pos] != 0) nz[m++] = pos; if (x[t + pos] != 0) nz[m++] = CL + pos; if (x[t + CL + pos] != 0) nz[m++] = 2 * CL + pos; }
+      c.nzn[k] = m;
+      memcpy(A1 + P2 * C1, c.vconv.data(), CL * C1 * sizeof(float));
+      for (int i = 0; i < m; i++){ int ci = nz[i] / CL, q = nz[i] % CL;
+        for (int j = 0; j < K1; j++){ int pos = q - j + P1; if (pos < 0 || pos >= CL) continue;
+          axpy(A1 + (pos + P2) * C1, &c.W1T[(ci * K1 + j) * C1], 1, C1); } }
+      for (int i = P2 * C1; i < (CL + P2) * C1; i++) if (A1[i] < 0) A1[i] = 0;
+      if (C1 == 12 && C2 == 12) conv2Rows<K2 * 12, 12>(A1, c.W2T.data(), P + cv2.b, A2, C1);
+      else for (int pos = 0; pos < CL; pos++){
+        float* yr = A2 + pos * C2; for (int co = 0; co < C2; co++) yr[co] = P[cv2.b + co];
+        const float* win = A1 + pos * C1;
+        for (int e = 0; e < K2 * C1; e++) axpy(yr, &c.W2T[e * C2], win[e], C2);
+        for (int co = 0; co < C2; co++) if (yr[co] < 0) yr[co] = 0;
+      }
+      if (!ro){ for (int co = 0; co < C2; co++) for (int pos = 0; pos < CL; pos++) fl[co * CL + pos] = A2[pos * C2 + co]; }
       else {
-        int cp = 0; for (int pos = 0; pos < CL; pos++) if (x[t + CL + pos] > 0) cp = pos;
-        c.cpos[0] = cp;
-        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; fl[(d + RW) * C2 + co] = pos >= 0 && pos < CL ? a2[co * CL + pos] : 0; }
-        for (int co = 0; co < C2; co++){
-          const float* r = a2 + co * CL; float sum = 0, mx = -1; int am = 0;
-          for (int pos = 0; pos < CL; pos++){ sum += r[pos]; if (r[pos] > mx){ mx = r[pos]; am = pos; } }
-          fl[(2 * RW + 1) * C2 + co] = sum / CL; fl[(2 * RW + 2) * C2 + co] = mx; c.amax[k * C2 + co] = am;
-        }
+        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; fl[(d + RW) * C2 + co] = pos >= 0 && pos < CL ? A2[pos * C2 + co] : 0; }
+        float* sum = fl + (2 * RW + 1) * C2; float* mx = fl + (2 * RW + 2) * C2; int* am = &c.amax[k * C2];
+        if (C2 == 12) meanMax<12>(A2, sum, mx, am); else meanMax<0>(A2, sum, mx, am, C2);
         // raw has / seen bits next to the current card, so adjacency doesn't have to go through the conv
-        if (sk) for (int d = -SW; d <= SW; d++) for (int ch = 0; ch < 2; ch++){ int pos = cp + d;
-          fl[(2 * RW + 3) * C2 + (d + SW) * 2 + ch] = pos >= 0 && pos < CL ? in[ch * CL + pos] : 0; }
+        if (sk) for (int d = -SW; d <= SW; d++){ int pos = cp + d; bool in = pos >= 0 && pos < CL;
+          fl[(2 * RW + 3) * C2 + (d + SW) * 2] = in ? px[pos] : 0; fl[(2 * RW + 3) * C2 + (d + SW) * 2 + 1] = in ? x[t + pos] : 0; }
       }
       memcpy(fl + FL - 1 - MAXP, px + CL, (1 + MAXP) * sizeof(float));
       dense(L[0], fl, &c.e[k * H], true);
@@ -294,27 +338,48 @@ struct CNet : Model {
     back(L[3], c.t2.data(), dout, g, c.d2.data()); for (int k = 0; k < T; k++) if (c.t2[k] <= 0) c.d2[k] = 0;
     back(L[2], c.t1.data(), c.d2.data(), g, c.d1.data()); for (int k = 0; k < T; k++) if (c.t1[k] <= 0) c.d1[k] = 0;
     back(L[1], c.tin.data(), c.d1.data(), g, c.dtin.data());
+    const float* P = c.W2r.data();
+    fill(c.gW1T.begin(), c.gW1T.end(), 0.f); fill(c.gW2r.begin(), c.gW2r.end(), 0.f); fill(c.gb1.begin(), c.gb1.end(), 0.f); fill(c.gb2.begin(), c.gb2.end(), 0.f);
+    fill(c.dvs.begin(), c.dvs.end(), 0.f);
     for (int k = 0; k < nn; k++){
       unpoolPlayers(c.dtin.data(), k, H, c.arg.data(), c.de.data());
       for (int h = 0; h < H; h++) if (c.e[k * H + h] <= 0) c.de[h] = 0;
-      const float* fl = &c.flat[k * FL];
-      back(L[0], fl, c.de.data(), g, c.dflat.data());
-      const float* a2 = &c.a2[k * C2 * CL]; float* da2 = c.da2.data();
-      if (!ro) memcpy(da2, c.dflat.data(), C2 * CL * sizeof(float));
+      back(L[0], &c.flat[k * FL], c.de.data(), g, c.dflat.data());
+      const float* A1 = &c.a1[k * (CL + 2 * P2) * C1]; const float* A2 = &c.a2[k * CL * C2]; float* da2 = c.da2.data(); float* da1 = c.da1.data();
+      if (!ro){ for (int co = 0; co < C2; co++) for (int pos = 0; pos < CL; pos++) da2[pos * C2 + co] = c.dflat[co * CL + pos]; }
       else {
-        memset(da2, 0, C2 * CL * sizeof(float)); int cp = c.cpos[0];
-        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; if (pos >= 0 && pos < CL) da2[co * CL + pos] += c.dflat[(d + RW) * C2 + co]; }
+        memset(da2, 0, CL * C2 * sizeof(float)); int cp = c.cpos[0];
+        for (int d = -RW; d <= RW; d++) for (int co = 0; co < C2; co++){ int pos = cp + d; if (pos >= 0 && pos < CL) da2[pos * C2 + co] += c.dflat[(d + RW) * C2 + co]; }
         for (int co = 0; co < C2; co++){
-          float dm = c.dflat[(2 * RW + 1) * C2 + co] / CL; for (int pos = 0; pos < CL; pos++) da2[co * CL + pos] += dm;
-          da2[co * CL + c.amax[k * C2 + co]] += c.dflat[(2 * RW + 2) * C2 + co];
+          float dm = c.dflat[(2 * RW + 1) * C2 + co] / CL; for (int pos = 0; pos < CL; pos++) da2[pos * C2 + co] += dm;
+          da2[c.amax[k * C2 + co] * C2 + co] += c.dflat[(2 * RW + 2) * C2 + co];
         }
       }
-      for (int i = 0; i < C2 * CL; i++) if (a2[i] <= 0) da2[i] = 0;
-      const float* a1 = &c.a1[k * C1 * CL];
-      convBack(cv2, C1, K2, a1, da2, g, c.da1.data());
-      for (int i = 0; i < C1 * CL; i++) if (a1[i] <= 0) c.da1[i] = 0;
-      convBack(cv1, C0, K1, &c.in[k * C0 * CL], c.da1.data(), g, nullptr);
+      for (int i = 0; i < CL * C2; i++) if (A2[i] <= 0) da2[i] = 0;
+      // conv2: weight grads, and d loss / d a1 into the padded da1
+      // (each position's window gradient goes to its own row of dwin first, so positions don't wait on each other)
+      const int E = K2 * C1; float* dwin = c.dwin.data();
+      for (int pos = 0; pos < CL; pos++) for (int co = 0; co < C2; co++) c.gb2[co] += da2[pos * C2 + co];
+      if (C1 == 12 && C2 == 12) conv2Back<K2 * 12, 12>(A1, da2, P, c.gW2r.data(), dwin, C1);
+      else { memset(dwin, 0, CL * E * sizeof(float));
+        for (int pos = 0; pos < CL; pos++){ const float* d = da2 + pos * C2; const float* win = A1 + pos * C1;
+          for (int co = 0; co < C2; co++){ float dc = d[co]; if (dc == 0) continue; axpy(&c.gW2r[co * E], win, dc, E); axpy(dwin + pos * E, &P[co * E], dc, E); } } }
+      memset(da1, 0, (CL + 2 * P2) * C1 * sizeof(float));
+      for (int pos = 0; pos < CL; pos++) axpy(da1 + pos * C1, dwin + pos * E, 1, E);
+      // conv1: only the weight grads; the value channel's part is summed over players and done once below
+      for (int pos = 0; pos < CL; pos++){ float* dr = da1 + (pos + P2) * C1; const float* ar = A1 + (pos + P2) * C1; float* vs = &c.dvs[pos * C1];
+        for (int co = 0; co < C1; co++){ if (ar[co] <= 0) dr[co] = 0; c.gb1[co] += dr[co]; vs[co] += dr[co]; } }
+      const int* nz = &c.nz[k * 3 * CL];
+      for (int i = 0; i < c.nzn[k]; i++){ int ci = nz[i] / CL, q = nz[i] % CL;
+        for (int j = 0; j < K1; j++){ int pos = q - j + P1; if (pos < 0 || pos >= CL) continue;
+          axpy(&c.gW1T[(ci * K1 + j) * C1], da1 + (pos + P2) * C1, 1, C1); } }
     }
+    for (int j = 0; j < K1; j++){ float* gr = &c.gW1T[(3 * K1 + j) * C1];
+      for (int pos = 0; pos < CL; pos++){ float s = val(pos + j - P1); if (s == 0) continue; axpy(gr, &c.dvs[pos * C1], s, C1); } }
+    for (int co = 0; co < C1; co++){ g[cv1.b + co] += c.gb1[co];
+      for (int ci = 0; ci < C0; ci++) for (int j = 0; j < K1; j++) g[cv1.w + (co * C0 + ci) * K1 + j] += c.gW1T[(ci * K1 + j) * C1 + co]; }
+    for (int co = 0; co < C2; co++){ g[cv2.b + co] += c.gb2[co];
+      for (int ci = 0; ci < C1; ci++) for (int j = 0; j < K2; j++) g[cv2.w + (co * C1 + ci) * K2 + j] += c.gW2r[co * K2 * C1 + j * C1 + ci]; }
   }
 };
 static Model* makeModel(const string& arch, int out, uint32_t seed){
@@ -681,6 +746,17 @@ static int dumpMain(int argc, char** argv){
 // win share at the end of the game. Each seat is the learner, or with probability POOLP an opponent: OPP (default the
 // live nets) half the time, else an earlier snapshot of the learner (one every SNAP iterations). Writes deep-ppo-<arch>[-TAG].json;
 // resumes from deep-ppo-<name>-ckpt.json. Env: LR (3e-4), EPOCHS (4), CLIP (0.2), ENT (0.01), LAMBDA (0.95), INIT=w.json (start from a net).
+// nw workers that stay up between jobs (the caller is worker 0), so the many small minibatch steps don't each start threads
+struct WorkerPool {
+  int nw; vector<thread> th; function<void(int)> job; atomic<int> gen{ 0 }, left{ 0 }; atomic<bool> stop{ false };
+  explicit WorkerPool(int n) : nw(n){
+    for (int w = 1; w < nw; w++) th.emplace_back([this, w]{ int seen = 0;
+      for (;;){ while (gen.load(memory_order_acquire) == seen && !stop) this_thread::yield();
+        if (stop) return; seen++; job(w); left.fetch_sub(1, memory_order_acq_rel); } });
+  }
+  void run(function<void(int)> f){ job = move(f); left = nw - 1; gen.fetch_add(1, memory_order_acq_rel); job(0); while (left.load(memory_order_acquire)) this_thread::yield(); }
+  ~WorkerPool(){ stop = true; for (auto& t : th) t.join(); }
+};
 struct Sample { int a; float lp, v, adv, ret; };
 static int ppoMain(int argc, char** argv){
   auto env = [](const char* k, double d){ return getenv(k) ? atof(getenv(k)) : d; };
@@ -746,12 +822,12 @@ static int ppoMain(int argc, char** argv){
     long N = (long)S.size(); double am = 0, av = 0; for (auto& s : S) am += s.adv; am /= N; for (auto& s : S) av += (s.adv - am) * (s.adv - am); av = sqrt(av / N) + 1e-8;
     for (auto& s : S) s.adv = (float)((s.adv - am) / av);
     vector<long> order(N); for (long i = 0; i < N; i++) order[i] = i;
-    double sumH = 0, sumV = 0, sumClip = 0; long cntS = 0;
+    double sumH = 0, sumV = 0, sumClip = 0; long cntS = 0; WorkerPool workers(nw);
     for (int e = 0; e < epochs; e++){
       for (long i = N - 1; i > 0; i--){ long j = (long)floor(rnd() * (i + 1)); swap(order[i], order[j]); }
       for (long b0 = 0; b0 + bs <= N; b0 += bs){
-        vector<double> tH(nw, 0), tV(nw, 0), tC(nw, 0); vector<thread> tt;
-        for (int w = 0; w < nw; w++) tt.emplace_back([&, w]{
+        vector<double> tH(nw, 0), tV(nw, 0), tC(nw, 0);
+        workers.run([&](int w){
           fill(G[w].begin(), G[w].end(), 0.f); float dout[2];
           for (long b = b0 + w; b < b0 + bs; b += nw){
             long j = order[b]; const Sample& s = S[j]; const float* x = &X[j * F]; const float* y = net.forward(x, C[w].get());
@@ -765,7 +841,6 @@ static int ppoMain(int argc, char** argv){
             tH[w] += -(p * log(p + 1e-8) + (1 - p) * log(1 - p + 1e-8)); tV[w] += (y[1] - s.ret) * (y[1] - s.ret); tC[w] += clipped;
           }
         });
-        for (auto& x : tt) x.join();
         for (int w = 1; w < nw; w++) for (int k = 0; k < net.n; k++) G[0][k] += G[w][k];
         double gn = 0; for (int k = 0; k < net.n; k++) gn += G[0][k] * G[0][k]; gn = sqrt(gn);
         if (gn > 1) for (int k = 0; k < net.n; k++) G[0][k] /= gn;
