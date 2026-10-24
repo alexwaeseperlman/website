@@ -80,10 +80,10 @@ impl PathFace {
     // darkness: row-major, 0 = white, 1 = black
     #[wasm_bindgen(constructor)]
     // airbrush: a soft stroke instead of a sharp line, with a Gaussian profile, or with ridge > 0 one that falls
-    // off linearly to 0 at ridge pixels from its centre, or with learn > 0 a 5x5 stroke kernel learned along
-    // with the nodes, starting from a sharp line and pulled back toward it with weight learn
+    // off linearly to 0 at ridge pixels from its centre; learn_ridge learns that radius along with the nodes,
+    // starting from ridge
     #[allow(clippy::too_many_arguments)]
-    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool, ridge: f32, learn: f32) -> PathFace {
+    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool, ridge: f32, learn_ridge: bool) -> PathFace {
         use rand::SeedableRng;
         set_panic_hook();
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -110,8 +110,8 @@ impl PathFace {
             dot: DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI,
             airbrush,
             ridge,
-            learn,
-            lr_kernel: 0.2,
+            learn_ridge,
+            lr_kernel: 0.05,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
         PathFace { path, rng }
@@ -151,9 +151,9 @@ impl PathFace {
         self.path.shown().iter().map(|v| v / TONE).collect()
     }
 
-    // The stroke's 2D kernel, row-major (empty for a sharp line or a Gaussian)
-    pub fn kernel(&self) -> Vec<f32> {
-        self.path.stroke_kernel().map(|k| k.to_vec()).unwrap_or_default()
+    // The ridge's radius in pixels (0 for a sharp line or a Gaussian)
+    pub fn ridge(&self) -> f32 {
+        self.path.ridge_radius
     }
 
     // Radius of the solid dot on each node, whose ink the optimizer counts

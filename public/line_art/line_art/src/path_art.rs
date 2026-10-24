@@ -30,14 +30,14 @@ pub struct PathArt {
     kernel: Vec<f32>,
     // a 2D stroke kernel, (2 radius + 1) on a side, used instead of the Gaussian: the ridge, or a learned one
     stroke: Option<Vec<f32>>,
-    // > 0 when the stroke kernel is learned: how hard it is pulled toward the identity (a sharp line)
-    learn: f32,
+    // with a learned ridge, its radius, the peak Adam learning rate for its log, and that log's Adam moments
+    learn_ridge: bool,
+    pub ridge_radius: f32,
     lr_kernel: f32,
-    // a learned kernel is the sigmoid of these, so every weight stays between 0 and 1; Adam moments and steps
-    logits: Vec<f32>,
-    m_k: Vec<f32>,
-    v_k: Vec<f32>,
-    kernel_steps: usize,
+    m_r: f32,
+    v_r: f32,
+    // the splat window's area at the start
+    splat_area: usize,
     lambda: f32,
     // ink per unit length of every segment, which is its width in pixels
     pub line: f32,
@@ -102,27 +102,17 @@ pub struct Params {
     // > 0: an airbrush stroke whose darkness falls off linearly to 0 at this many pixels from its centre,
     // instead of a Gaussian
     pub ridge: f32,
-    // > 0: learn a LEARNED x LEARNED stroke kernel along with the nodes in the second half of the run, starting
-    // from and pulled toward the identity with this weight; each weight is the sigmoid of a learned logit, and
-    // lr_kernel is the logits' peak Adam learning rate
-    pub learn: f32,
+    // learn the ridge's radius along with the nodes, starting from `ridge`; lr_kernel is the peak Adam learning
+    // rate for the log of the radius
+    pub learn_ridge: bool,
     pub lr_kernel: f32,
 }
 
 const BETA1: f32 = 0.9;
 const BETA2: f32 = 0.999;
-// a learned stroke kernel's size
-const LEARNED: usize = 5;
-// the logits a learned kernel starts from: +/- this, close to the identity
-const START_LOGIT: f32 = 6.0;
-
-fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
-}
-
-fn start_logits() -> Vec<f32> {
-    (0..LEARNED * LEARNED).map(|i| if i == LEARNED * LEARNED / 2 { START_LOGIT } else { -START_LOGIT }).collect()
-}
+// the range a learned ridge radius is kept to, in pixels
+const RIDGE_MIN: f32 = 0.75;
+const RIDGE_MAX: f32 = 10.0;
 // The coarse grid's margin, in blocks, so that nodes at the image's edge still feel the coarse loss
 const COARSE_PAD: f32 = 2.0;
 // A line longer than this many sigmas counts as long
@@ -130,9 +120,8 @@ const LONG: f32 = 8.0;
 
 // The 2D kernel whose blur of a straight line falls off linearly, from its centre to 0 at radius r: the inverse
 // Abel transform of that profile, arccosh(r / d) / (pi r) at distance d, averaged over each pixel because it is
-// infinite at the centre, and normalized. (2 ceil(r) + 1) on a side, row-major.
-fn ridge_kernel(r: f32) -> Vec<f32> {
-    let n = r.ceil() as i32;
+// infinite at the centre, and normalized. (2 n + 1) on a side, row-major.
+fn ridge_kernel(r: f32, n: i32) -> Vec<f32> {
     const SUB: i32 = 16;
     let mut k = vec![];
     for y in -n..=n {
@@ -154,6 +143,12 @@ fn ridge_kernel(r: f32) -> Vec<f32> {
     k.iter().map(|v| v / s).collect()
 }
 
+// Half the side of a ridge kernel of radius r: just enough, or one more when the radius is learned so the
+// derivative sees the pixels it would grow into
+fn ridge_size(r: f32, learned: bool) -> i32 {
+    r.ceil() as i32 + learned as i32
+}
+
 // The coarse grid's size, margins included
 fn coarse_size(width: usize, height: usize, block: f32) -> (usize, usize) {
     ((width as f32 / block).ceil() as usize + 2 * COARSE_PAD as usize + 1, (height as f32 / block).ceil() as usize + 2 * COARSE_PAD as usize + 1)
@@ -164,7 +159,7 @@ impl PathArt {
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, p: &Params, rng: &mut impl Rng) -> PathArt {
         // Work on the photo with a margin of paper around it, so that ink near the edge is all counted and blurred
         // like anywhere else; otherwise lines could hide ink by hugging the edge. Nodes stay on the photo.
-        let margin = (3.0 * p.sigma).max(p.ridge).max(LEARNED as f32).ceil() as usize + 2;
+        let margin = (3.0 * p.sigma).max(if p.learn_ridge { RIDGE_MAX } else { p.ridge }).ceil() as usize + 2;
         let (inner_w, inner_h) = (width, height);
         let (width, height) = (inner_w + 2 * margin, inner_h + 2 * margin);
         let mut padded = vec![0f32; width * height];
@@ -217,19 +212,13 @@ impl PathArt {
             weight,
             sigma: p.sigma,
             kernel: k.iter().map(|v| v / s).collect(),
-            stroke: if p.learn > 0.0 {
-                Some(start_logits().iter().map(|&l| sigmoid(l)).collect())
-            } else if p.ridge > 0.0 {
-                Some(ridge_kernel(p.ridge))
-            } else {
-                None
-            },
-            learn: p.learn,
+            stroke: if p.ridge > 0.0 { Some(ridge_kernel(p.ridge, ridge_size(p.ridge, p.learn_ridge))) } else { None },
+            learn_ridge: p.learn_ridge,
+            ridge_radius: p.ridge,
             lr_kernel: p.lr_kernel,
-            logits: start_logits(),
-            m_k: vec![0.0; LEARNED * LEARNED],
-            v_k: vec![0.0; LEARNED * LEARNED],
-            kernel_steps: 0,
+            m_r: 0.0,
+            v_r: 0.0,
+            splat_area: 1,
             lambda: p.lambda,
             line: p.line,
             dot: p.dot,
@@ -255,6 +244,7 @@ impl PathArt {
             coarse_until: p.coarse_until,
             coarse_weight: p.coarse,
         };
+        g.splat_area = (2 * g.radius() as usize + 2).pow(2);
         g.forward();
         g
     }
@@ -271,11 +261,6 @@ impl PathArt {
         let m = self.margin as usize;
         let (w, h) = (self.width - 2 * m, self.height - 2 * m);
         (0..w * h).map(|i| d[(i / w + m) * self.width + i % w + m]).collect()
-    }
-
-    // The stroke kernel, if it is 2D, row-major
-    pub fn stroke_kernel(&self) -> Option<&[f32]> {
-        self.stroke.as_deref()
     }
 
     // Mean squared difference between the drawing as shown and the darkness it aims for, per photo pixel.
@@ -327,39 +312,55 @@ impl PathArt {
     fn forward(&mut self) {
         let (d, ink) = self.render();
         self.residual = self.conv(&d, false).iter().zip(&self.target).map(|(g, t)| g - t).collect();
-        self.loss = self.lambda * ink + self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r * r).sum::<f32>() + self.penalty();
+        self.loss = self.lambda * ink + self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r * r).sum::<f32>();
     }
 
-    // learn * |K - I|^2, for a learned kernel K
-    fn penalty(&self) -> f32 {
-        match &self.stroke {
-            Some(k) if self.learn > 0.0 => {
-                self.learn * k.iter().enumerate().map(|(i, v)| (v - (i == k.len() / 2) as u8 as f32).powi(2)).sum::<f32>()
-            }
-            _ => 0.0,
-        }
+    // Gradient of the loss with respect to a learned ridge's radius, through every kernel entry; the kernel's
+    // own derivative comes from a central difference, as it is only known as a pixel-averaged integral.
+    fn radius_gradient(&self) -> f32 {
+        let gk = self.kernel_gradient();
+        let (r, n) = (self.ridge_radius, self.radius());
+        let d = 0.02;
+        let (up, down) = (ridge_kernel(r + d, n), ridge_kernel(r - d, n));
+        gk.iter().zip(up.iter().zip(&down)).map(|(g, (u, l))| g * (u - l) / (2.0 * d)).sum()
     }
 
-    // Gradient of the loss with respect to each entry of a learned kernel: 2 sum_p (W r)(p) D(p - u) for the
-    // entry at offset u, plus the pull toward the identity.
+    // Sets a learned ridge's radius, with room in the kernel for it to grow a little.
+    fn set_ridge(&mut self, r: f32) {
+        self.ridge_radius = r;
+        self.stroke = Some(ridge_kernel(r, ridge_size(r, true)));
+    }
+
+    // Gradient of the loss with respect to each entry of the 2D stroke kernel: 2 sum_p (W r)(p) D(p - u) for the
+    // entry at offset u.
     fn kernel_gradient(&self) -> Vec<f32> {
         let (w, h) = (self.width as i32, self.height as i32);
-        let k = self.stroke.as_ref().unwrap();
         let r = self.radius();
         let n = 2 * r + 1;
         let (d, _) = self.render();
         let wr: Vec<f32> = self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r).collect();
-        let mut g = vec![0f32; k.len()];
+        let mut g = vec![0f32; (n * n) as usize];
+        // one entry at a time, as dot products of shifted rows, which vectorizes
+        let wu = w as usize;
         for dy in -r..=r {
             for dx in -r..=r {
+                let (x0, x1) = ((-dx).max(0) as usize, (w - dx).min(w) as usize);
                 let mut a = 0.0;
-                for y in 0.max(dy)..h.min(h + dy) {
-                    for x in 0.max(dx)..w.min(w + dx) {
-                        a += wr[(y * w + x) as usize] * d[((y - dy) * w + x - dx) as usize];
+                for y in (-dy).max(0) as usize..(h - dy).min(h) as usize {
+                    let (yy, xx0) = ((y as i32 + dy) as usize, (x0 as i32 + dx) as usize);
+                    let (p, q) = (&d[y * wu + x0..y * wu + x1], &wr[yy * wu + xx0..yy * wu + xx0 + (x1 - x0)]);
+                    // eight running sums, so the sum need not be in order and can vectorize
+                    let mut acc = [0f32; 8];
+                    let (pc, qc) = (p.chunks_exact(8), q.chunks_exact(8));
+                    let tail: f32 = pc.remainder().iter().zip(qc.remainder()).map(|(a, b)| a * b).sum();
+                    for (pp, qq) in pc.zip(qc) {
+                        for l in 0..8 {
+                            acc[l] += pp[l] * qq[l];
+                        }
                     }
+                    a += acc.iter().sum::<f32>() + tail;
                 }
-                let i = ((dy + r) * n + dx + r) as usize;
-                g[i] = 2.0 * a + 2.0 * self.learn * (k[i] - (i == k.len() / 2) as u8 as f32);
+                g[((dy + r) * n + dx + r) as usize] = 2.0 * a;
             }
         }
         g
@@ -401,24 +402,17 @@ impl PathArt {
         let r = self.radius();
         let n = 2 * r + 1;
         let mut out = vec![0f32; w * h];
-        for y in 0..h as i32 {
-            for x in 0..w as i32 {
-                let v = src[y as usize * w + x as usize];
-                if v == 0.0 {
-                    continue;
-                }
-                for dy in -r..=r {
-                    let yy = y + dy;
-                    if yy < 0 || yy >= h as i32 {
-                        continue;
-                    }
-                    let ky = if adjoint { r - dy } else { dy + r };
-                    let row = &k[(ky * n) as usize..((ky + 1) * n) as usize];
-                    for dx in -r..=r {
-                        let xx = x + dx;
-                        if xx >= 0 && xx < w as i32 {
-                            out[yy as usize * w + xx as usize] += v * row[(if adjoint { r - dx } else { dx + r }) as usize];
-                        }
+        // one kernel weight at a time, as a shifted copy of whole rows, which vectorizes
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let (ky, kx) = if adjoint { (r - dy, r - dx) } else { (dy + r, dx + r) };
+                let kv = k[(ky * n + kx) as usize];
+                let (x0, x1) = ((-dx).max(0) as usize, (w as i32 - dx).min(w as i32) as usize);
+                for y in (-dy).max(0) as usize..(h as i32 - dy).min(h as i32) as usize {
+                    let (yy, xx0) = ((y as i32 + dy) as usize, (x0 as i32 + dx) as usize);
+                    let from = &src[y * w + x0..y * w + x1];
+                    for (o, v) in out[yy * w + xx0..yy * w + xx0 + (x1 - x0)].iter_mut().zip(from) {
+                        *o += kv * v;
                     }
                 }
             }
@@ -426,7 +420,8 @@ impl PathArt {
         out
     }
 
-    // Adds sign * G (the line a-b) into scratch. Returns how many samples that took.
+    // Adds sign * G (the line a-b) into scratch. Returns how much work that took: samples, scaled by the
+    // kernel's area against the one it started with, so a learned ridge that grows doesn't slow the annealing.
     fn splat(&mut self, a: u32, b: u32, sign: f32) -> usize {
         let (w, h) = (self.width, self.height);
         let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
@@ -488,7 +483,7 @@ impl PathArt {
                 }
             }
         }
-        n
+        n * m * m / self.splat_area
     }
 
     // E = G W (G D - T), half the loss's derivative with respect to D
@@ -666,8 +661,7 @@ impl PathArt {
         // early on, and fades out by coarse_until of the way through
         let coarse = self.coarse_weight * (1.0 - progress / self.coarse_until).max(0.0).powi(2);
         let gn = self.gradient(coarse);
-        // the kernel stays a sharp line while the path finds its shape, and is learned in the second half
-        let gk = if self.learn > 0.0 && 2 * self.iteration >= self.iterations { Some(self.kernel_gradient()) } else { None };
+        let gr = if self.learn_ridge { Some(self.radius_gradient()) } else { None };
         self.iteration += 1;
         let t = self.iteration as f32;
         // linear warmup to the peak learning rate, then a cosine down to 0 at the last step
@@ -691,22 +685,13 @@ impl PathArt {
             let (x, y) = self.nodes[v];
             self.nodes[v] = ((x - lr * u[0]).clamp(x0, x1), (y - lr * u[1]).clamp(y0, y1));
         }
-        if let (Some(gk), Some(k)) = (gk, self.stroke.as_mut()) {
-            // its own Adam, on the logits, with a cosine from the peak learning rate at halfway down to 0
-            self.kernel_steps += 1;
-            let half = self.iterations / 2;
-            let progress = (self.iteration - half) as f32 / (self.iterations - half).max(1) as f32;
-            let lr = self.lr_kernel * 0.5 * (1.0 + (std::f32::consts::PI * progress).cos());
-            let t = self.kernel_steps as f32;
-            let (c1, c2) = (1.0 - BETA1.powf(t), 1.0 - BETA2.powf(t));
-            for i in 0..k.len() {
-                // through the sigmoid
-                let g = gk[i] * k[i] * (1.0 - k[i]);
-                self.m_k[i] = BETA1 * self.m_k[i] + (1.0 - BETA1) * g;
-                self.v_k[i] = BETA2 * self.v_k[i] + (1.0 - BETA2) * g * g;
-                self.logits[i] -= lr * (self.m_k[i] / c1) / ((self.v_k[i] / c2).sqrt() + 1e-8);
-                k[i] = sigmoid(self.logits[i]);
-            }
+        if let Some(gr) = gr {
+            // Adam on the log of the radius, on the same schedule as the nodes
+            let g = gr * self.ridge_radius;
+            self.m_r = BETA1 * self.m_r + (1.0 - BETA1) * g;
+            self.v_r = BETA2 * self.v_r + (1.0 - BETA2) * g * g;
+            let step = self.lr_kernel * schedule * (self.m_r / c1) / ((self.v_r / c2).sqrt() + 1e-8);
+            self.set_ridge((self.ridge_radius.ln() - step).exp().clamp(RIDGE_MIN, RIDGE_MAX));
         }
         self.forward();
         true
@@ -783,7 +768,7 @@ mod tests {
     }
 
     fn params() -> Params {
-        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn: 0.0, lr_kernel: 0.0 }
+        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.0 }
     }
 
     // the same, as a ridge-shaped airbrush stroke
@@ -791,18 +776,9 @@ mod tests {
         Params { airbrush: true, ridge: 2.5, ..params() }
     }
 
-    // the same, with a learned stroke kernel, set to something lopsided so its adjoint is tested
+    // the same, with a learned radius
     fn learned(rng: &mut impl Rng) -> PathArt {
-        let mut g = PathArt::new(disc(), 60, 60, &Params { airbrush: true, learn: 0.5, lr_kernel: 0.01, ..params() }, rng);
-        // a smooth bump, nudged off centre
-        let c = (LEARNED / 2) as f32;
-        let k: Vec<f32> = (0..LEARNED * LEARNED)
-            .map(|i| { let (x, y) = ((i % LEARNED) as f32 - c - 0.3, (i / LEARNED) as f32 - c + 0.2); (-(x * x + y * y) / 2.0).exp() * 0.2 })
-            .collect();
-        g.logits = k.iter().map(|v| (v / (1.0 - v)).ln()).collect();
-        g.stroke = Some(k);
-        g.forward();
-        g
+        PathArt::new(disc(), 60, 60, &Params { learn_ridge: true, lr_kernel: 0.05, ..ridge() }, rng)
     }
 
     // The loss the annealing keeps track of move by move should match a fresh render.
@@ -814,16 +790,16 @@ mod tests {
         tracks(learned(&mut rng));
     }
 
-    // The learned kernel's gradient should match finite differences of the loss.
+    // The kernel's and the learned radius's gradients should match finite differences of the loss.
     #[test]
-    fn kernel_gradient_matches_finite_differences() {
+    fn kernel_gradients_match_finite_differences() {
         let mut rng = rand::thread_rng();
         let mut g = learned(&mut rng);
         for _ in 0..10 { g.step(&mut rng); }
         let gk = g.kernel_gradient();
         // the loss is quadratic in the kernel, so a central difference is exact at any step
         let eps = 0.05;
-        for i in 0..LEARNED * LEARNED {
+        for i in 0..gk.len() {
             let k0 = g.stroke.as_ref().unwrap()[i];
             g.stroke.as_mut().unwrap()[i] = k0 + eps; g.forward(); let up = g.loss;
             g.stroke.as_mut().unwrap()[i] = k0 - eps; g.forward(); let down = g.loss;
@@ -831,6 +807,11 @@ mod tests {
             let fd = (up - down) / (2.0 * eps);
             assert!((fd - gk[i]).abs() <= 0.02 * fd.abs().max(gk[i].abs()) + 0.05, "entry {}: analytic {} vs numeric {}", i, gk[i], fd);
         }
+        let gr = g.radius_gradient();
+        let (r, n) = (g.ridge_radius, g.radius());
+        let at = |g: &mut PathArt, r: f32| { g.stroke = Some(ridge_kernel(r, n)); g.forward(); g.loss };
+        let fd = (at(&mut g, r + 0.02) - at(&mut g, r - 0.02)) / 0.04;
+        assert!((fd - gr).abs() <= 0.05 * fd.abs().max(gr.abs()) + 0.05, "radius: analytic {} vs numeric {}", gr, fd);
     }
 
     fn tracks(mut g: PathArt) {

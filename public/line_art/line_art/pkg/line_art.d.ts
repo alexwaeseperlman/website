@@ -19,10 +19,10 @@ export class PathFace {
     dot(): number;
     edges(): Uint16Array;
     iteration(): number;
-    kernel(): Float32Array;
     loss(): number;
-    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number, airbrush: boolean, ridge: number, learn: number);
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number, airbrush: boolean, ridge: number, learn_ridge: boolean);
     nodes(): Float32Array;
+    ridge(): number;
     shown(): Float32Array;
     step(): boolean;
     widths(): Float32Array;
@@ -44,10 +44,10 @@ export interface InitOutput {
     readonly pathface_dot: (a: number) => number;
     readonly pathface_edges: (a: number) => [number, number];
     readonly pathface_iteration: (a: number) => number;
-    readonly pathface_kernel: (a: number) => [number, number];
     readonly pathface_loss: (a: number) => number;
     readonly pathface_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly pathface_nodes: (a: number) => [number, number];
+    readonly pathface_ridge: (a: number) => number;
     readonly pathface_shown: (a: number) => [number, number];
     readonly pathface_step: (a: number) => number;
     readonly pathface_widths: (a: number) => [number, number];
