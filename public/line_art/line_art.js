@@ -1,11 +1,12 @@
 // Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes, or with
-// kind "path", one unbroken line through all of them, or with kind "airbrush" (Gaussian) or "ridge" (linear
-// falloff) that line as a soft stroke.
-// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration, dot, image) after every
-// optimizer step, where a width is ink per unit length, dot is the radius of the dot on each node and image
-// (soft strokes only) is the drawing's darkness per pixel; post the returned message to the worker to start over.
+// kind "path", one unbroken line through all of them, or with kind "airbrush" (Gaussian), "ridge" (linear
+// falloff) or "learned" (a learned 5x5 kernel) that line as a soft stroke.
+// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration, dot, image, kernel) after
+// every optimizer step, where a width is ink per unit length, dot is the radius of the dot on each node and image
+// (soft strokes only) is the drawing's darkness per pixel, and kernel (learned only) the 5x5 stroke kernel;
+// post the returned message to the worker to start over.
 export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "graph" } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024s", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024t", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -20,7 +21,7 @@ export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "
   for (let i = 0; i < darkness.length; i++) {
     darkness[i] = 1 - (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / (3 * 255);
   }
-  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration, e.data.dot, e.data.image);
+  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration, e.data.dot, e.data.image, e.data.kernel);
   const message = { darkness, width, height, nodes, iterations, kind };
   worker.postMessage(message);
   return [worker, message];

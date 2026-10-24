@@ -7,7 +7,7 @@ fn main() {
     let (w, h): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     let bytes = std::fs::read(&a[1]).unwrap();
     let dark: Vec<f32> = bytes.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-    let mut p = Params { nodes: 1500, sigma: 2.0, iterations: 1000, line: 0.7, lr_node: 12.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, warmup: 50, temp_start: 5.0, temp_end: 0.01, budget: 20000, coarse: 8400.0, coarse_block: 10.0, coarse_sigma: 5.0, coarse_until: 0.6, tone: 0.6, dot: 0.36 * std::f32::consts::PI, airbrush: false, ridge: 0.0 };
+    let mut p = Params { nodes: 1500, sigma: 2.0, iterations: 1000, line: 0.7, lr_node: 12.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, warmup: 50, temp_start: 5.0, temp_end: 0.01, budget: 20000, coarse: 8400.0, coarse_block: 10.0, coarse_sigma: 5.0, coarse_until: 0.6, tone: 0.6, dot: 0.36 * std::f32::consts::PI, airbrush: false, ridge: 0.0, learn: 0.0, lr_kernel: 0.0 };
     let mut snap = vec![];
     for kv in &a[5..] {
         let (k, v) = kv.split_once('=').unwrap();
@@ -33,6 +33,8 @@ fn main() {
             "dot" => p.dot = v,
             "airbrush" => p.airbrush = v > 0.0,
             "ridge" => p.ridge = v,
+            "learn" => p.learn = v,
+            "lr_kernel" => p.lr_kernel = v,
             "coarse_block" => p.coarse_block = v,
             "coarse_sigma" => p.coarse_sigma = v,
             "snap" => snap.push(v as usize),
@@ -60,5 +62,11 @@ fn main() {
     let shown: Vec<u8> = g.shown().iter().flat_map(|v| v.to_le_bytes()).collect();
     std::fs::write(format!("{}.shown.f32", a[4]), shown).unwrap();
     eprintln!("pixel error {:.5}", g.pixel_error());
+    if let Some(k) = g.stroke_kernel() {
+        let n = (k.len() as f32).sqrt() as usize;
+        for row in k.chunks(n) {
+            eprintln!("{}", row.iter().map(|v| format!("{:7.3}", v)).collect::<Vec<_>>().join(" "));
+        }
+    }
     eprintln!("{} iterations, loss {:.0} -> {:.0}, {:?}", g.iterations, first, g.loss, t.elapsed());
 }
