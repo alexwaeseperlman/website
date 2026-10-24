@@ -92,7 +92,8 @@ const store = (k, v) => { try { if (v === undefined) return localStorage.getItem
 
 const params = new URLSearchParams(location.search);
 let rate = 1.06; // per tab, since each run has its own box
-const rateFor = k => parseFloat(params.get('rate') || store('train.rate.' + k) || '1.06');
+const RATE = { fvi: 1.06, ppo: 0.59 }; // $/hr of the box each run is on (Vast, 2026-10-24)
+const rateFor = k => parseFloat(params.get('rate') || store('train.rate.' + k) || RATE[k] || 1.06);
 $('rate').onchange = () => { const r = parseFloat($('rate').value); if (r >= 0) { rate = r; store('train.rate.' + tab, r); render(); } };
 
 let rows = [], tab = params.get('run') || store('train.tab') || null, lastFetch = null, fetchErr = null;
