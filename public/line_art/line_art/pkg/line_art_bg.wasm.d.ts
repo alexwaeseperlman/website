@@ -3,10 +3,11 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_face_free: (a: number, b: number) => void;
 export const face_edges: (a: number) => [number, number];
-export const face_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+export const face_iteration: (a: number) => number;
+export const face_loss: (a: number) => number;
+export const face_new: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
 export const face_nodes: (a: number) => [number, number];
-export const face_run: (a: number, b: number) => number;
-export const face_schedule: (a: number) => number;
+export const face_step: (a: number) => number;
 export const face_widths: (a: number) => [number, number];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;

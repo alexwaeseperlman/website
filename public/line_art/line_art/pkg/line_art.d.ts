@@ -5,10 +5,11 @@ export class Face {
     free(): void;
     [Symbol.dispose](): void;
     edges(): Uint16Array;
-    constructor(darkness: Float32Array, width: number, height: number, nodes: number, sigma: number, lambda: number);
+    iteration(): number;
+    loss(): number;
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number);
     nodes(): Float32Array;
-    run(proposals: number): number;
-    schedule(): number;
+    step(): boolean;
     widths(): Float32Array;
 }
 
@@ -18,10 +19,11 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_face_free: (a: number, b: number) => void;
     readonly face_edges: (a: number) => [number, number];
-    readonly face_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly face_iteration: (a: number) => number;
+    readonly face_loss: (a: number) => number;
+    readonly face_new: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly face_nodes: (a: number) => [number, number];
-    readonly face_run: (a: number, b: number) => number;
-    readonly face_schedule: (a: number) => number;
+    readonly face_step: (a: number) => number;
     readonly face_widths: (a: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

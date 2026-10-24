@@ -21,17 +21,30 @@ export class Face {
         return v1;
     }
     /**
+     * @returns {number}
+     */
+    iteration() {
+        const ret = wasm.face_iteration(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    loss() {
+        const ret = wasm.face_loss(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @param {Float32Array} darkness
      * @param {number} width
      * @param {number} height
      * @param {number} nodes
-     * @param {number} sigma
-     * @param {number} lambda
+     * @param {number} iterations
      */
-    constructor(darkness, width, height, nodes, sigma, lambda) {
+    constructor(darkness, width, height, nodes, iterations) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.face_new(ptr0, len0, width, height, nodes, sigma, lambda);
+        const ret = wasm.face_new(ptr0, len0, width, height, nodes, iterations);
         this.__wbg_ptr = ret;
         FaceFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -46,19 +59,11 @@ export class Face {
         return v1;
     }
     /**
-     * @param {number} proposals
-     * @returns {number}
+     * @returns {boolean}
      */
-    run(proposals) {
-        const ret = wasm.face_run(this.__wbg_ptr, proposals);
-        return ret >>> 0;
-    }
-    /**
-     * @returns {number}
-     */
-    schedule() {
-        const ret = wasm.face_schedule(this.__wbg_ptr);
-        return ret >>> 0;
+    step() {
+        const ret = wasm.face_step(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * @returns {Float32Array}
