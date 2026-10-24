@@ -2,7 +2,7 @@
 // (nodes [x, y, ...], edges [a, b, ...], ink, done) every frame; post the returned message to the worker
 // to start over.
 export function lineArt(img, onGraph, { nodes = 170, sigma = 2, ink = 0.3 } = {}) {
-  const worker = new Worker("/line_art/wasm-worker.js", { type: "module" });
+  const worker = new Worker("/line_art/wasm-worker.js?v=20261024b", { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");

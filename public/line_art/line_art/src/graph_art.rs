@@ -9,6 +9,8 @@
 use rand::seq::SliceRandom;
 use rand::Rng;
 
+const PROFILE_RES: f32 = 32.0;
+
 pub struct GraphArt {
     width: usize,
     height: usize,
@@ -17,7 +19,6 @@ pub struct GraphArt {
     pub on: Vec<bool>,
     e: Vec<f32>,
     weight: Vec<f32>,
-    kernel: Vec<f32>,
     radius: i32,
     ink: f32,
     self_per_sample: f32,
@@ -26,8 +27,12 @@ pub struct GraphArt {
     order: Vec<u32>,
     cur: usize,
     shift_rate: f32,
-    reach: f32,
+    steps: Vec<f32>,
+    // exp(-d^2 / 2 sigma2^2) for d = 0, 1/PROFILE_RES, ... up to the stamp radius
+    profile: Vec<f32>,
+    sigma2: f32,
     pub schedule: usize,
+    steps_taken: usize,
 }
 
 pub struct Params {
@@ -104,15 +109,7 @@ impl GraphArt {
             }
         }
         let s2 = p.sigma * std::f32::consts::SQRT_2;
-        let radius = (s2 * 3.0).ceil() as i32;
-        let mut kernel = Vec::new();
-        for dy in -radius..=radius {
-            for dx in -radius..=radius {
-                kernel.push((-((dx * dx + dy * dy) as f32) / (2.0 * s2 * s2)).exp());
-            }
-        }
-        let ks: f32 = kernel.iter().sum();
-        kernel.iter_mut().for_each(|v| *v /= ks);
+        let radius = (s2 * 2.5).ceil() as i32;
         // E = G W G (D - T), starting from an empty drawing
         let gt = blur(&darkness, width, height, p.sigma);
         let wgt: Vec<f32> = gt.iter().zip(&weight).map(|(g, w)| -g * w).collect();
@@ -131,7 +128,6 @@ impl GraphArt {
             pairs,
             e,
             weight: blur(&weight, width, height, p.sigma),
-            kernel,
             radius,
             ink: p.ink,
             self_per_sample,
@@ -140,8 +136,11 @@ impl GraphArt {
             order,
             cur: 0,
             shift_rate: p.shift_rate,
-            reach: 12.0,
+            steps: vec![2.0; n],
+            sigma2: s2,
+            profile: (0..=(radius as f32 * PROFILE_RES) as usize + 1).map(|i| { let d = i as f32 / PROFILE_RES; (-d * d / (2.0 * s2 * s2)).exp() }).collect(),
             schedule: total as usize,
+            steps_taken: 0,
         }
     }
 
@@ -174,26 +173,43 @@ impl GraphArt {
         2.0 * sign * self.ink * dot + wsum * self.self_per_sample
     }
 
-    // Adds (sign 1) or removes (sign -1) a line's ink from E.
-    fn stamp(&mut self, pts: &[usize], sign: f32) {
-        let (w, h, r) = (self.width as i32, self.height as i32, self.radius);
-        let side = (2 * r + 1) as usize;
-        for &i in pts {
-            // G W G l, taking W as constant across one kernel (it is a heavily blurred map)
-            let amt = sign * self.ink * self.weight[i];
-            let (x, y) = ((i % self.width) as i32, (i / self.width) as i32);
-            for dy in -r..=r {
-                let yy = y + dy;
-                if yy < 0 || yy >= h {
+    // Adds (sign 1) or removes (sign -1) the line from a to b in E. G W G l is taken in closed form: across the
+    // line, the line integral of a Gaussian is a 1D Gaussian of the distance; along it, erf terms fade the ends.
+    // That only touches a band of pixels around the line instead of a full kernel per pixel of it. W is taken
+    // as constant across the band (it is a heavily blurred map).
+    fn stamp(&mut self, a: (f32, f32), b: (f32, f32), sign: f32) {
+        let (s, r) = (self.sigma2, self.radius as f32);
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+        let (ux, uy) = (dx / len, dy / len);
+        let amp = sign * self.ink / ((2.0 * std::f32::consts::PI).sqrt() * s);
+        let inv = 1.0 / (std::f32::consts::SQRT_2 * s);
+        // walk the major axis, and for each step the minor-axis pixels within r of the line
+        let steep = dy.abs() > dx.abs();
+        let (a_maj, a_min, d_maj, d_min, n_maj, n_min) =
+            if steep { (a.1, a.0, dy, dx, self.height, self.width) } else { (a.0, a.1, dx, dy, self.width, self.height) };
+        let slope = if d_maj != 0.0 { d_min / d_maj } else { 0.0 };
+        let hw = r * (1.0 + slope * slope).sqrt() + 1.0;
+        let m0 = ((a_maj.min(a_maj + d_maj) - r).floor() as i32).max(0);
+        let m1 = ((a_maj.max(a_maj + d_maj) + r).ceil() as i32).min(n_maj as i32 - 1);
+        for m in m0..=m1 {
+            let mc = m as f32 + 0.5;
+            let t = if d_maj != 0.0 { ((mc - a_maj) / d_maj).clamp(0.0, 1.0) } else { 0.0 };
+            let c = a_min + d_min * t;
+            let k0 = ((c - hw).floor() as i32).max(0);
+            let k1 = ((c + hw).ceil() as i32).min(n_min as i32 - 1);
+            for k in k0..=k1 {
+                let (px, py) = if steep { (k as f32 + 0.5, mc) } else { (mc, k as f32 + 0.5) };
+                let (rx, ry) = (px - a.0, py - a.1);
+                let perp = rx * uy - ry * ux;
+                if perp.abs() > r {
                     continue;
                 }
-                let row = &self.kernel[(dy + r) as usize * side..];
-                for dx in -r..=r {
-                    let xx = x + dx;
-                    if xx >= 0 && xx < w {
-                        self.e[yy as usize * self.width + xx as usize] += amt * row[(dx + r) as usize];
-                    }
-                }
+                let along = rx * ux + ry * uy;
+                let ends = if along > r && along < len - r { 1.0 } else { 0.5 * (erf(along * inv) - erf((along - len) * inv)) };
+                let i = if steep { m as usize * self.width + k as usize } else { k as usize * self.width + m as usize };
+                let profile = self.profile[(perp.abs() * PROFILE_RES) as usize];
+                self.e[i] += amp * profile * ends * self.weight[i];
             }
         }
     }
@@ -222,50 +238,113 @@ impl GraphArt {
             return false;
         }
         self.on[k] = !self.on[k];
-        self.stamp(&pts, sign);
+        let (i, j) = self.pairs[k];
+        self.stamp(self.nodes[i as usize], self.nodes[j as usize], sign);
         true
     }
 
-    // Nudge one node, dragging its lines with it. With few nodes this is what lets lines line up with an
-    // eye or the jaw instead of whatever the random placement allowed.
+    // E at a point between pixel centres, and its gradient, by bilinear interpolation.
+    fn e_at(&self, x: f32, y: f32) -> (f32, f32, f32) {
+        let x = x.clamp(0.0, (self.width - 2) as f32);
+        let y = y.clamp(0.0, (self.height - 2) as f32);
+        let (x0, y0) = (x as usize, y as usize);
+        let (fx, fy) = (x - x0 as f32, y - y0 as f32);
+        let i = y0 * self.width + x0;
+        let (a, b, c, d) = (self.e[i], self.e[i + 1], self.e[i + self.width], self.e[i + self.width + 1]);
+        let top = a + (b - a) * fx;
+        let bottom = c + (d - c) * fx;
+        let gx = (b - a) * (1.0 - fy) + (d - c) * fy;
+        (top + (bottom - top) * fy, gx, bottom - top)
+    }
+
+    // Gradient of the loss with respect to node v's position, through every line attached to it. A line from u
+    // to v puts ink * len * mean(E) into the loss's linear term; moving v drags each point at fraction t of the
+    // way by t, and stretches the line, which adds E at its length and to the self term.
+    fn node_gradient(&self, v: usize, ends: &[usize]) -> (f32, f32) {
+        let (vx, vy) = self.nodes[v];
+        let (mut gx, mut gy) = (0.0, 0.0);
+        for &u in ends {
+            let (ux, uy) = self.nodes[u];
+            let (dx, dy) = (vx - ux, vy - uy);
+            let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+            let n = len.ceil().max(1.0) as usize;
+            let (mut mean, mut tx, mut ty) = (0.0, 0.0, 0.0);
+            for i in 0..n {
+                let t = (i as f32 + 0.5) / n as f32;
+                let (e, ex, ey) = self.e_at(ux + dx * t, uy + dy * t);
+                mean += e;
+                tx += ex * t;
+                ty += ey * t;
+            }
+            mean /= n as f32;
+            let w = self.weight[vy as usize * self.width + vx as usize];
+            let stretch = 2.0 * self.ink * mean + w * self.self_per_sample;
+            gx += 2.0 * self.ink * len * tx / n as f32 + stretch * dx / len;
+            gy += 2.0 * self.ink * len * ty / n as f32 + stretch * dy / len;
+        }
+        (gx, gy)
+    }
+
+    // Change in loss from moving a line's end from `from` (pixels `old`) to pixels `new`. Removing then adding
+    // with the same E would charge the new line for overlapping the old one it replaces, so add back that
+    // overlap: each new pixel's blurred ink against the old line, taken as an infinite line at its distance.
+    fn moved_cost(&self, (ax, ay): (f32, f32), (bx, by): (f32, f32), old: &[usize], new: &[usize]) -> f32 {
+        let (dx, dy) = (bx - ax, by - ay);
+        let l2 = (dx * dx + dy * dy).max(1e-6);
+        let mut overlap = 0.0;
+        for &i in new {
+            let (px, py) = ((i % self.width) as f32 + 0.5, (i / self.width) as f32 + 0.5);
+            let t = (((px - ax) * dx + (py - ay) * dy) / l2).clamp(0.0, 1.0);
+            let d2 = (px - ax - dx * t).powi(2) + (py - ay - dy * t).powi(2);
+            overlap += self.weight[i] * (-d2 / (2.0 * self.sigma2 * self.sigma2)).exp();
+        }
+        self.cost(old, -1.0) + self.cost(new, 1.0) - 2.0 * self.self_per_sample * overlap
+    }
+
+    // Gradient descent on one node, dragging its lines with it. With few nodes this is what lets lines line up
+    // with an eye or the jaw instead of whatever the random placement allowed. Each node keeps its own step
+    // length, grown after a step that lowers the loss and halved after one that doesn't.
     fn shift(&mut self, rng: &mut impl Rng) -> bool {
         let v = rng.gen_range(0..self.nodes.len());
-        let (x, y) = self.nodes[v];
-        let r = self.reach;
-        let to = (
-            (x + (rng.gen::<f32>() * 2.0 - 1.0) * r).clamp(0.0, self.width as f32 - 1.0),
-            (y + (rng.gen::<f32>() * 2.0 - 1.0) * r).clamp(0.0, self.height as f32 - 1.0),
-        );
         let ends: Vec<usize> = (0..self.nodes.len()).filter(|&u| u != v && self.on[self.pair(u, v)]).collect();
         if ends.is_empty() {
-            self.nodes[v] = to;
-            return true;
-        }
-        let old: Vec<Vec<usize>> = ends.iter().map(|&u| self.samples(self.nodes[u], (x, y))).collect();
-        let new: Vec<Vec<usize>> = ends.iter().map(|&u| self.samples(self.nodes[u], to)).collect();
-        // Lines that share this node interact near it; the estimate ignores that, the update below doesn't.
-        let mut d = 0.0;
-        for (o, n) in old.iter().zip(&new) {
-            d += self.cost(o, -1.0) + self.cost(n, 1.0);
-        }
-        if !self.accept(d, rng) {
             return false;
         }
-        for o in &old {
-            self.stamp(o, -1.0);
+        let (gx, gy) = self.node_gradient(v, &ends);
+        let g = (gx * gx + gy * gy).sqrt();
+        if g < 1e-9 {
+            return false;
         }
-        for n in &new {
-            self.stamp(n, 1.0);
+        let (x, y) = self.nodes[v];
+        let step = self.steps[v];
+        let to = (
+            (x - gx / g * step).clamp(0.0, self.width as f32 - 1.0),
+            (y - gy / g * step).clamp(0.0, self.height as f32 - 1.0),
+        );
+        let old: Vec<Vec<usize>> = ends.iter().map(|&u| self.samples(self.nodes[u], (x, y))).collect();
+        let new: Vec<Vec<usize>> = ends.iter().map(|&u| self.samples(self.nodes[u], to)).collect();
+        let d: f32 = ends.iter().zip(old.iter().zip(&new)).map(|(&u, (o, n))| self.moved_cost(self.nodes[u], (x, y), o, n)).sum();
+        if d >= 0.0 {
+            self.steps[v] = (step * 0.5).max(0.25);
+            return false;
+        }
+        self.steps[v] = (step * 1.2).min(8.0);
+        for &u in &ends {
+            self.stamp(self.nodes[u], (x, y), -1.0);
+            self.stamp(self.nodes[u], to, 1.0);
         }
         self.nodes[v] = to;
         true
     }
 
-    // One proposal, accepted if it lowers the loss or by the Metropolis rule. Returns whether the drawing changed.
+    // One proposal: a line flip (annealed) or a gradient step on a node. Returns whether the drawing changed.
+    // Node steps stop with the cooling schedule: they always find some sliver of improvement, and the finish
+    // is a pure descent on the lines that ends once a whole pass changes nothing.
     pub fn step(&mut self, rng: &mut impl Rng) -> bool {
-        let changed = if rng.gen::<f32>() < self.shift_rate { self.shift(rng) } else { self.flip(rng) };
+        self.steps_taken += 1;
+        let shifting = self.steps_taken < self.schedule && rng.gen::<f32>() < self.shift_rate;
+        let changed = if shifting { self.shift(rng) } else { self.flip(rng) };
         self.temperature *= self.cooling;
-        self.reach = (self.reach * self.cooling.powf(0.25)).max(1.0);
         changed
     }
 
@@ -299,4 +378,42 @@ fn place_nodes(soft: &[f32], w: usize, h: usize, count: usize, rng: &mut impl Rn
         nodes.push((x, y));
     }
     nodes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The analytic node gradient should match a finite difference of the loss change the optimizer checks.
+    #[test]
+    fn node_gradient_matches_finite_difference() {
+        let (w, h) = (80, 80);
+        let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 40.0, (i / w) as f32 - 40.0); if x * x + y * y < 600.0 { 0.8 } else { 0.0 } }).collect();
+        let p = Params { nodes: 30, sigma: 2.0, ink: 0.3, start_temperature: 0.0, sweeps: 1.0, paper: 4.0, detail: 0.0, gamma: 1.0, shift_rate: 0.0 };
+        let mut rng = rand::thread_rng();
+        let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
+        for _ in 0..g.on.len() * 2 { g.step(&mut rng); }
+        let (mut agree, mut total) = (0, 0);
+        for v in 0..g.nodes.len() {
+            let ends: Vec<usize> = (0..g.nodes.len()).filter(|&u| u != v && g.on[g.pair(u, v)]).collect();
+            let (x, y) = g.nodes[v];
+            if ends.is_empty() || x < 5.0 || y < 5.0 || x > 74.0 || y > 74.0 { continue; }
+            let (gx, gy) = g.node_gradient(v, &ends);
+            let gn = (gx * gx + gy * gy).sqrt();
+            if gn < 1e-4 { continue; }
+            let h = 1.5;
+            let to = (x - gx / gn * h, y - gy / gn * h);
+            let d: f32 = ends.iter().map(|&u| g.moved_cost(g.nodes[u], (x, y), &g.samples(g.nodes[u], (x, y)), &g.samples(g.nodes[u], to))).sum();
+            total += 1;
+            if d < 0.0 { agree += 1; }
+        }
+        assert!(total > 5 && agree * 10 >= total * 7, "{} of {} steps against the gradient lowered the loss", agree, total);
+    }
+}
+
+// Abramowitz and Stegun 7.1.26, good to about 1e-7.
+fn erf(x: f32) -> f32 {
+    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
+    let y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * (-x * x).exp();
+    if x < 0.0 { -y } else { y }
 }
