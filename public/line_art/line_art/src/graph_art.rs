@@ -17,6 +17,8 @@ pub struct GraphArt {
     pub nodes: Vec<(f32, f32)>,
     pairs: Vec<(u16, u16)>,
     pub widths: Vec<f32>,
+    // the parameters Adam actually fits: widths = exp(log_widths), so no line is ever exactly 0
+    log_widths: Vec<f32>,
     // G T, the blurred target
     target: Vec<f32>,
     weight: Vec<f32>,
@@ -24,6 +26,7 @@ pub struct GraphArt {
     dot: f32,
     lambda: f32,
     max_width: f32,
+    min_width: f32,
     lr_width: f32,
     lr_node: f32,
     // Adam moments for the widths, then for the node coordinates
@@ -41,7 +44,7 @@ pub struct Params {
     pub nodes: usize,
     pub sigma: f32,
     pub iterations: usize,
-    // peak Adam learning rates: width units per step, and pixels per step
+    // peak Adam learning rates: log width per step, and pixels per step
     pub lr_width: f32,
     pub lr_node: f32,
     // how much harder ink on white paper is penalized than ink on the subject
@@ -55,6 +58,8 @@ pub struct Params {
     // cost per unit of ink: higher means fewer, bolder lines
     pub lambda: f32,
     pub max_width: f32,
+    // widths never go below this, so every line keeps a little pull on its nodes
+    pub min_width: f32,
     // steps of linear learning-rate warmup before the cosine decay
     pub warmup: usize,
     // the random start: how many lines, with widths up to start_width
@@ -64,6 +69,9 @@ pub struct Params {
     pub dot: f32,
 }
 
+// Lines fainter than this are left out of the drawing the loss sees (all of them together hold a tiny amount
+// of ink), and only have their gradients checked every 8th step (lazy Adam).
+const FAINT: f32 = 1e-3;
 const BETA1: f32 = 0.9;
 const BETA2: f32 = 0.999;
 
@@ -140,22 +148,28 @@ impl GraphArt {
             }
         }
         let k = pairs.len();
-        let mut widths = vec![0.0; k];
+        // most lines start invisibly faint, a random few start visible; log-uniform either way
+        let (floor, faint) = (p.min_width.ln(), (p.min_width * 100.0).ln());
+        let mut log_widths: Vec<f32> = (0..k).map(|_| floor + rng.gen::<f32>() * (faint - floor)).collect();
+        let (lo, hi) = ((0.01f32).ln(), p.start_width.ln());
         for _ in 0..p.start_lines {
-            widths[rng.gen_range(0..k)] = rng.gen::<f32>() * p.start_width;
+            log_widths[rng.gen_range(0..k)] = lo + rng.gen::<f32>() * (hi - lo);
         }
+        let widths = log_widths.iter().map(|u| u.exp()).collect();
         GraphArt {
             width,
             height,
             nodes,
             pairs,
             widths,
+            log_widths,
             target: blur(&darkness, width, height, p.sigma),
             weight,
             sigma: p.sigma,
             dot: p.dot,
             lambda: p.lambda,
             max_width: p.max_width,
+            min_width: p.min_width,
             lr_width: p.lr_width,
             lr_node: p.lr_node,
             m_w: vec![0.0; k],
@@ -176,7 +190,7 @@ impl GraphArt {
         let mut ink = 0.0;
         for (k, &(a, b)) in self.pairs.iter().enumerate() {
             let wk = self.widths[k];
-            if wk <= 0.0 {
+            if wk < FAINT {
                 continue;
             }
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
@@ -219,7 +233,7 @@ impl GraphArt {
     }
 
     // Gradients of the loss: one per line width (None for a line skipped this time), and (x, y) per node.
-    // Lines with no ink only need to know whether adding some would help, so unless `all` is set they are
+    // Faint lines only need to know whether adding some would help, so unless `all` is set they are
     // skipped, and when they are checked it is at every other pixel; E is blurred twice, so smooth at that
     // scale. They are most of the pairs, so this is most of the time saved.
     fn backward(&self, e: &[f32], all: bool) -> (Vec<Option<f32>>, Vec<f32>) {
@@ -236,13 +250,14 @@ impl GraphArt {
         }
         for (k, &(a, b)) in self.pairs.iter().enumerate() {
             let wk = self.widths[k];
-            if wk <= 0.0 && !all {
+            let live = wk >= FAINT;
+            if !live && !all {
                 continue;
             }
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
             let (dx, dy) = (bx - ax, by - ay);
             let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-            let n = if wk > 0.0 { samples(len) } else { samples(len / 2.0) };
+            let n = if live { samples(len) } else { samples(len / 2.0) };
             // sum of E, and of t * grad E and (1 - t) * grad E, along the line
             let (mut se, mut gbx, mut gby, mut gax, mut gay) = (0.0, 0.0, 0.0, 0.0, 0.0);
             for i in 0..n {
@@ -250,30 +265,26 @@ impl GraphArt {
                 if let Some((j, fx, fy)) = bilinear(ax + dx * t, ay + dy * t, w, h) {
                     let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
                     se += p * (1.0 - fx) * (1.0 - fy) + q * fx * (1.0 - fy) + r * (1.0 - fx) * fy + s * fx * fy;
-                    if wk > 0.0 {
-                        let ex = (q - p) * (1.0 - fy) + (s - r) * fy;
-                        let ey = (r - p) * (1.0 - fx) + (s - q) * fx;
-                        gbx += ex * t;
-                        gby += ey * t;
-                        gax += ex * (1.0 - t);
-                        gay += ey * (1.0 - t);
-                    }
+                    let ex = (q - p) * (1.0 - fy) + (s - r) * fy;
+                    let ey = (r - p) * (1.0 - fx) + (s - q) * fx;
+                    gbx += ex * t;
+                    gby += ey * t;
+                    gax += ex * (1.0 - t);
+                    gay += ey * (1.0 - t);
                 }
             }
             // each sample carries wk * len / n of ink
             let per = len / n as f32;
             gw[k] = Some(2.0 * per * se + self.lambda * len);
-            if wk > 0.0 {
-                let mass = wk * per;
-                // stretching the line: more ink at every sample, and more ink cost
-                let stretch = 2.0 * wk / n as f32 * se + self.lambda * wk;
-                let (ux, uy) = (dx / len, dy / len);
-                let (a, b) = (a as usize, b as usize);
-                gn[2 * b] += 2.0 * mass * gbx + stretch * ux;
-                gn[2 * b + 1] += 2.0 * mass * gby + stretch * uy;
-                gn[2 * a] += 2.0 * mass * gax - stretch * ux;
-                gn[2 * a + 1] += 2.0 * mass * gay - stretch * uy;
-            }
+            let mass = wk * per;
+            // stretching the line: more ink at every sample, and more ink cost
+            let stretch = 2.0 * wk / n as f32 * se + self.lambda * wk;
+            let (ux, uy) = (dx / len, dy / len);
+            let (a, b) = (a as usize, b as usize);
+            gn[2 * b] += 2.0 * mass * gbx + stretch * ux;
+            gn[2 * b + 1] += 2.0 * mass * gby + stretch * uy;
+            gn[2 * a] += 2.0 * mass * gax - stretch * ux;
+            gn[2 * a + 1] += 2.0 * mass * gay - stretch * uy;
         }
         (gw, gn)
     }
@@ -299,17 +310,20 @@ impl GraphArt {
         let adam = |g: f32, m: &mut f32, v: &mut f32| {
             *m = BETA1 * *m + (1.0 - BETA1) * g;
             *v = BETA2 * *v + (1.0 - BETA2) * g * g;
-            (*m / c1) / ((*v / c2).sqrt() + 1e-8)
+            (*m / c1) / ((*v / c2).sqrt() + 1e-20)
         };
         let lr = self.lr_width * schedule;
+        let (floor, ceil) = (self.min_width.ln(), self.max_width.ln());
         for k in 0..self.widths.len() {
             // a skipped line keeps its moments and width until it is next checked (lazy Adam)
             let g = match gw[k] {
                 Some(g) => g,
                 None => continue,
             };
-            let u = adam(g, &mut self.m_w[k], &mut self.v_w[k]);
-            self.widths[k] = (self.widths[k] - lr * u).clamp(0.0, self.max_width);
+            // d loss / d log w = w * d loss / d w
+            let u = adam(self.widths[k] * g, &mut self.m_w[k], &mut self.v_w[k]);
+            self.log_widths[k] = (self.log_widths[k] - lr * u).clamp(floor, ceil);
+            self.widths[k] = self.log_widths[k].exp();
         }
         let lr = self.lr_node * schedule;
         let (xmax, ymax) = (self.width as f32 - 0.5, self.height as f32 - 0.5);
@@ -322,9 +336,9 @@ impl GraphArt {
         true
     }
 
-    // Every line with any ink, with its width; the rest have width exactly 0.
+    // Every line, with its width.
     pub fn edges(&self) -> Vec<(u16, u16, f32)> {
-        self.pairs.iter().zip(&self.widths).filter(|(_, &w)| w > 0.0).map(|(&(a, b), &w)| (a, b, w)).collect()
+        self.pairs.iter().zip(&self.widths).map(|(&(a, b), &w)| (a, b, w)).collect()
     }
 }
 
@@ -337,7 +351,7 @@ mod tests {
     fn gradients_match_finite_differences() {
         let (w, h) = (60, 60);
         let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 30.0, (i / w) as f32 - 30.0); if x * x + y * y < 300.0 { 0.8 } else { 0.0 } }).collect();
-        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.05, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 0, start_width: 0.0, dot: 4.5 };
+        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.2, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 30, start_width: 0.5, dot: 4.5, min_width: 1e-6 };
         let mut rng = rand::thread_rng();
         let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
         for _ in 0..30 { g.step(); }
@@ -366,7 +380,7 @@ mod tests {
                 let k = g.pairs.iter().position(|&p| p == (a as u16, b as u16)).unwrap();
                 let (ux, uy) = g.nodes[u];
                 let len = ((x - ux).powi(2) + (y - uy).powi(2)).sqrt();
-                g.widths[k] > 0.0 && (len - len.round()).abs() < 2.0 * eps
+                g.widths[k] >= FAINT && (len - len.round()).abs() < 2.0 * eps
             });
             if near_step { continue; }
             for c in 0..2 {

@@ -22,7 +22,7 @@ impl Face {
             nodes,
             sigma: 2.0,
             iterations,
-            lr_width: 0.02,
+            lr_width: 0.1,
             lr_node: 1.0,
             paper: 12.0,
             detail: 3.0,
@@ -34,6 +34,7 @@ impl Face {
             start_lines: 3000,
             start_width: 0.3,
             dot: 4.52,
+            min_width: 1e-6,
         };
         Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng) }
     }
