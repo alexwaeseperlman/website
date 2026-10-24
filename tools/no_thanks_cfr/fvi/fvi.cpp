@@ -447,12 +447,14 @@ static int atrainMain(int k, int chains, int epochs){
   auto rmse = [&](long a, long b){ vector<double> se(NT, 0); vector<thread> th;
     for (int t = 0; t < NT; t++) th.emplace_back([&, t]{ for (long i = a + t; i < b; i += NT){ const float* s = A.forward(&AX[i * F], C[t].get()); double e = s[0] - AY[i * MAXP]; se[t] += e * e; } });
     for (auto& t : th) t.join(); double s = 0; for (double v : se) s += v; return sqrt(s / max(1L, b - a)); };
-  const int bs = 512; long steps = (long)epochs * nTrain / bs; Rng r(5 + k); long every = max(1L, steps / 40);
+  // BS / LR: a bigger batch splits over more training threads (fewer, larger steps); scale LR with it
+  const int bs = getenv("BS") ? atoi(getenv("BS")) : 512; const double lr0 = getenv("LR") ? atof(getenv("LR")) : 1e-3;
+  long steps = (long)epochs * nTrain / bs; Rng r(5 + k); long every = max(1L, steps / 40);
   FILE* lf = fopen(("aloss" + to_string(k) + ".csv").c_str(), "w"); fprintf(lf, "step,examples_seen,train_rmse,heldout_rmse\n");
   for (long s = 0; s <= steps; s++){
     if (s % every == 0 || s == steps){ fprintf(lf, "%ld,%ld,%.5f,%.5f\n", s, s * bs, rmse(0, min(nTrain, 5000L)), rmse(nTrain, n)); fflush(lf); }
     if (s == steps) break;
-    double lr = 1e-3 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1);
+    double lr = lr0 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1);
     vector<long> idx(bs); for (auto& i : idx) i = (long)(r() * nTrain);
     vector<thread> th;
     for (int t = 0; t < TT; t++) th.emplace_back([&, t]{
@@ -460,8 +462,10 @@ static int atrainMain(int k, int chains, int epochs){
       for (int b = t; b < bs; b += TT){ const float* x = &AX[idx[b] * F]; const float* sh = A.forward(x, C[t].get()); int nn = (int)x[0];
         for (int q = 0; q < nn; q++) d[q] = (sh[q] - AY[idx[b] * MAXP + q]) / bs; A.backward(x, C[t].get(), d, G[t].data()); }
     });
+    for (auto& t : th) t.join(); th.clear();
+    for (int t = 0; t < TT; t++) th.emplace_back([&, t]{   // reduce the gradients, each thread a slice of the weights
+      for (int i = (int)((long)A.n * t / TT), e = (int)((long)A.n * (t + 1) / TT); i < e; i++) for (int u = 1; u < TT; u++) G[0][i] += G[u][i]; });
     for (auto& t : th) t.join();
-    for (int t = 1; t < TT; t++) for (int i = 0; i < A.n; i++) G[0][i] += G[t][i];
     A.adam(G[0], lr);
   }
   printf("anet stage %d: %ld afterstates (%.0fs to label), held-out RMSE %.4f, train %.4f, %.0fs total\n", k, n, tg, rmse(nTrain, n),
