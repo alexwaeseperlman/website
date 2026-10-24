@@ -7,7 +7,7 @@ fn main() {
     let (w, h): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     let bytes = std::fs::read(&a[1]).unwrap();
     let dark: Vec<f32> = bytes.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-    let mut p = Params { nodes: 1500, sigma: 2.0, iterations: 1000, line: 1.0, lr_node: 1.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, warmup: 50, temp_start: 5.0, temp_end: 0.01, budget: 60000, coarse: 1.0, coarse_block: 10.0, coarse_sigma: 3.0, coarse_until: 0.5, tone: 1.0, dot: 4.5 };
+    let mut p = Params { nodes: 1500, sigma: 2.0, iterations: 1000, line: 0.7, lr_node: 12.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, warmup: 50, temp_start: 5.0, temp_end: 0.01, budget: 20000, coarse: 8400.0, coarse_block: 10.0, coarse_sigma: 5.0, coarse_until: 0.6, tone: 0.6, dot: 0.36 * std::f32::consts::PI };
     let mut snap = vec![];
     for kv in &a[5..] {
         let (k, v) = kv.split_once('=').unwrap();
