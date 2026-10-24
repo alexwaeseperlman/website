@@ -2,36 +2,35 @@
 <html>
 
 <head>
-    <title>Home</title>
+    <title>Line art</title>
 </head>
 
 <body>
     Image upload:
     <input type="file" id="file" />
+    Nodes: <input type="number" id="nodes" value="170" min="20" max="600" style="width: 60px" />
+    <br />
     <canvas id="canvas"></canvas>
     <img id="line-art-image" style="display:none;" alt="" />
 </body>
 <script type="module">
-    import { lineArt } from './line-art.js';
-    let [worker, shapedImage] = [null, null];
+    import { lineArt, drawGraph } from './line_art.js';
+    let worker = null;
     const fileInput = document.getElementById("file");
+    const nodesInput = document.getElementById("nodes");
     const lineArtImage = document.getElementById("line-art-image");
     const canvas = document.getElementById("canvas");
     fileInput.addEventListener("change", (e) => {
-        const data = [];
-        const file = e.target.files[0];
-        lineArtImage.src = URL.createObjectURL(file);
+        lineArtImage.src = URL.createObjectURL(e.target.files[0]);
     });
+    nodesInput.addEventListener("change", () => lineArtImage.src && lineArtImage.onload());
 
     lineArtImage.onload = () => {
-        if (worker) worker.terminate()
-        console.log('starting')
-        canvas.width = lineArtImage.width;
-        canvas.height = lineArtImage.height;
-        [worker, shapedImage] = lineArt(lineArtImage, (data) => {
-            console.log('rec')
-            canvas.getContext("2d").putImageData(data, 0, 0);
-        });
+        if (worker) worker.terminate();
+        const width = lineArtImage.naturalWidth, height = lineArtImage.naturalHeight;
+        [worker] = lineArt(lineArtImage, (nodes, edges, ink) => {
+            drawGraph(canvas, width, height, nodes, edges, ink);
+        }, { nodes: +nodesInput.value });
     };
 </script>
 

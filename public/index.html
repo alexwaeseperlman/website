@@ -6,6 +6,12 @@ stylesheets:
   - /flip-card.css
 ---
 
+    <label id="pre-ai-toggle">
+      <input type="checkbox" id="pre-ai-checkbox" />
+      <span class="pre-ai-switch"></span>
+      <span>Pre-AI only</span>
+    </label>
+
 <div class="menu-link" id="about-me">
       <a class="menu-link-label">About me</a>
       <div class="content">
@@ -43,22 +49,22 @@ stylesheets:
           <p>
             <a href="figgie_equity/index.html">Figgie equity calculator</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="tax_calculator/index.html">Tax calculator</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="map/index.html">Map projector</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="turns/">Turns</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="burns/">Burns</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="no_thanks/">No Thanks!</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="scroll/">scroll</a>
           </p>
         </div>
@@ -121,10 +127,25 @@ stylesheets:
         <img src="x.svg" />
       </a>
     </div>
-<script src="line_art/line_art.js" type="module"></script>
+<script>
+  (() => {
+    const checkbox = document.getElementById("pre-ai-checkbox");
+    checkbox.checked = document.documentElement.classList.contains("pre-ai");
+    checkbox.addEventListener("change", () => {
+      document.documentElement.classList.toggle("pre-ai", checkbox.checked);
+      try {
+        localStorage.setItem("preAiOnly", checkbox.checked ? "1" : "0");
+      } catch (e) {}
+      // Refit the open menu section to its new height
+      if (window.onresize) window.onresize();
+    });
+  })();
+</script>
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
-  import { lineArt } from './line_art/line_art.js';
+  import { lineArt, drawGraph } from './line_art/line_art.js?v=20261024b';
+  // The original 700-point pixel annealer, kept for the Pre-AI only switch
+  import { lineArt as preAiLineArt } from './line_art/pre_ai/line_art.js';
   document.addEventListener('readystatechange', () => {
     const canvasContainer = document.getElementById("line-art-canvas-container");
     const canvas = document.createElement('canvas');
@@ -132,52 +153,62 @@ stylesheets:
 
     const image = document.getElementById("line-art-image");
     window.worker = null
-    let shapedImage = null;
-    let lineArtLoaded = false;
+    let message = null;
     let imageLoaded = false;
+    let workerPreAi = false;
+    let preAiLoaded = false;
     window.restartLineArt = function restartLineArt() {
-      console.log('restart', worker)
-      if (window.worker == null) {
-        if (!imageLoaded) {
-          setTimeout(() => {
-            restartLineArt();
-          }, 100)
-          return;
-        }
-        lineArtLoaded = false;
-        [window.worker, shapedImage] = lineArt(image, (data) => {
-          lineArtLoaded = true;
+      if (!imageLoaded) {
+        setTimeout(restartLineArt, 100);
+        return;
+      }
+      const preAi = document.documentElement.classList.contains("pre-ai");
+      if (window.worker && workerPreAi !== preAi) killLineArt();
+      workerPreAi = preAi;
+      if (window.worker == null && preAi) {
+        preAiLoaded = false;
+        [window.worker, message] = preAiLineArt(image, (data) => {
+          preAiLoaded = true;
+          canvas.width = image.width;
+          canvas.height = image.height;
           canvas.getContext("2d").putImageData(data, 0, 0);
         });
-        setTimeout(() => {
-          forcePostMessage(shapedImage);
-        }, 10);
+        // the old worker drops messages that arrive before its wasm is up, so keep sending until it draws
+        const send = () => {
+          if (!preAiLoaded && window.worker) {
+            window.worker.postMessage(message);
+            setTimeout(send, 300);
+          }
+        };
+        setTimeout(send, 10);
+      }
+      else if (window.worker == null) {
+        [window.worker, message] = lineArt(image, (nodes, edges, ink) => {
+          drawGraph(canvas, image.width, image.height, nodes, edges, ink);
+        });
       }
       else {
-        worker.postMessage(shapedImage);
+        worker.postMessage(message);
       }
     }
-    function forcePostMessage(msg) {
-      if (!lineArtLoaded) {
-        window.worker.postMessage(msg);
-        console.log('retry')
-        setTimeout(() => {
-          forcePostMessage(msg);
-        }, 300)
-      }
-    }
+    // Flipping the switch while About me is open redraws the face in that style
+    document.getElementById("pre-ai-checkbox").addEventListener("change", () => {
+      if (window.worker) restartLineArt();
+    });
     window.killLineArt = () => {
       if (window.worker) window.worker.terminate();
       window.worker = null;
       let ctx = canvas.getContext('2d')
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     image.onload = () => {
-      console.log('load')
       imageLoaded = true;
       canvas.width = image.width;
       canvas.height = image.height;
+      canvas.style.width = image.width + 'px';
+      canvas.style.height = image.height + 'px';
     }
     if (image.complete) {
       image.onload();

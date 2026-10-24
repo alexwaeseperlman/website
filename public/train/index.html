@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Training monitor</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --card: #fcfcfb; --line: #e3e2de; --grid: #ecebe7;
+  --ink: #0b0b0b; --ink2: #52514e; --ink3: #84837e;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --good: #008300; --warn: #c98500; --bad: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111110; --card: #1a1a19; --line: #2e2e2c; --grid: #262624;
+    --ink: #f0efec; --ink2: #c3c2b7; --ink3: #8d8c85;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good: #2fa52f; --warn: #c98500; --bad: #e66767;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 18px 16px 48px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 14px; margin: 0 0 8px; color: var(--ink2); font-weight: 600; }
+.top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.top .sp { flex: 1; }
+.pill { font-size: 12px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink2); white-space: nowrap; }
+.pill.live { color: var(--good); border-color: currentColor; }
+.pill.stale { color: var(--warn); border-color: currentColor; }
+.tabs { display: flex; gap: 6px; }
+.tabs button { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink2); cursor: pointer; }
+.tabs button.on { color: var(--ink); border-color: var(--ink3); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tile, .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tile .k { font-size: 12px; color: var(--ink3); }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .s { font-size: 12px; color: var(--ink2); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 12px; margin-bottom: 12px; }
+.card { min-width: 0; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); margin: -2px 0 6px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--ink3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; z-index: 2; }
+.empty { color: var(--ink3); font-size: 13px; padding: 30px 0; text-align: center; }
+.stages { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin: 8px 0 4px; }
+.stages div { height: 16px; border-radius: 3px; background: var(--grid); }
+.stages div.done { background: var(--s1); }
+.stages div.cur { background: var(--s1); opacity: .45; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .2; } }
+.scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink3); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink3); font-weight: 500; font-size: 12px; }
+.tablewrap { overflow-x: auto; }
+pre { margin: 0; font-size: 11.5px; line-height: 1.4; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--ink2); }
+.foot { font-size: 12px; color: var(--ink3); margin-top: 10px; }
+.foot input { width: 56px; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); }
+.err { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Training monitor</h1>
+    <span class="pill" id="status">loading</span>
+    <span class="sp"></span>
+    <div class="tabs" id="tabs"></div>
+  </div>
+  <div id="view"><div class="empty">Loading…</div></div>
+  <div class="foot">
+    Refreshes every 20 s · last fetch <span id="fetched">never</span> ·
+    machine rate $<input id="rate" inputmode="decimal">/hr
+  </div>
+</main>
+<script>
+// Live view of the training uploads in Turns' Supabase project (rows of nothanks_train_upload, read through
+// train_dash(); see tools/supabase/train_dash.sql). Two parsers: the FVI (Nash) backward induction run
+// (rows named fvi/*, fvi-*) and PPO (rows ppo/*, ppo-*; older runs used bare log, info, deep-ppo-*).
+const SB = { url: 'https://wgysofnocxigucqocxed.supabase.co', key: 'sb_publishable_m9npQPFI2rwsFo40wY9FMg_rKHZxf80' };
+const STAGES = 24, POLL = 20000, STALE_MIN = 12;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+
+const params = new URLSearchParams(location.search);
+let rate = 1.06; // per tab, since each run has its own box
+const RATE = { fvi: 1.06, ppo: 0.59 }; // $/hr of the box each run is on (Vast, 2026-10-24)
+const rateFor = k => parseFloat(params.get('rate') || store('train.rate.' + k) || RATE[k] || 1.06);
+$('rate').onchange = () => { const r = parseFloat($('rate').value); if (r >= 0) { rate = r; store('train.rate.' + tab, r); render(); } };
+
+let rows = [], tab = params.get('run') || store('train.tab') || null, lastFetch = null, fetchErr = null;
+
+async function load() {
+  try {
+    const r = await fetch(SB.url + '/rest/v1/rpc/train_dash', { method: 'POST',
+      headers: { apikey: SB.key, Authorization: 'Bearer ' + SB.key, 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    rows = (await r.json()).map(x => ({ ...x, t: new Date(x.at) }));
+    lastFetch = new Date(); fetchErr = null;
+  } catch (e) { fetchErr = e.message; }
+  render();
+}
+
+// ---------- parsing ----------
+// A run's rows are <job>/... and <job>-... (job as in the boxes row). fvi gets the stage view; any other job is read
+// as PPO-style `iter N/M:` lines in <job>/log.txt.
+const runOf = n => {
+  if (n === 'log' || n === 'info' || n === 'setup' || /^deep-ppo/.test(n)) return 'ppo-old';
+  const m = n.match(/^([a-z0-9_]+)[-/]/); return m ? m[1] : null;
+};
+const RUNS = { fvi: 'Nash FVI', ppo: 'PPO', appo: 'anet PPO' };
+const label = k => RUNS[k] || k.toUpperCase();
+
+function csv(body) {
+  const ls = (body || '').trim().split('\n').filter(Boolean);
+  if (ls.length < 2) return [];
+  return ls.slice(1).map(l => l.split(',').map(Number)).filter(a => a.every(Number.isFinite));
+}
+
+function parseFvi(rs) {
+  const by = Object.fromEntries(rs.map(r => [r.name, r]));
+  const log = (by['fvi/log.txt'] || {}).body || '';
+  const st = {};
+  const S = k => st[k] || (st[k] = { k });
+  for (const l of log.split('\n')) {
+    let m;
+    if ((m = l.match(/^anet stage (\d+): (\d+) afterstates \((\d+)s to label\), held-out RMSE ([\d.]+), train ([\d.]+), (\d+)s total/)))
+      Object.assign(S(+m[1]), { n: +m[2], label: +m[3], held: +m[4], train: +m[5], secs: +m[6], done: true });
+    else if ((m = l.match(/^anet stage 0: (\d+) afterstates, (\d+) held-out decisions: decision RMSE ([\d.]+).*?afterstate train RMSE ([\d.]+), (\d+)s/)))
+      Object.assign(S(0), { n: +m[1], held: +m[3], train: +m[4], secs: +m[5], done: true });
+    else if ((m = l.match(/^anet stage (\d+), (\d+) positions: RMSE vs exact ([\d.]+); picks the minimax move in ([\d.]+)%/)))
+      Object.assign(S(+m[1]), { exact: +m[3], agree: +m[4] });
+    else if ((m = l.match(/^anet \((\d+) stages\) in seat 0 vs live bot, 2 players, (\d+) paired deals: ([\d.]+)% \(live bot there: ([\d.]+)%\), gain ([+-]?[\d.]+) \+- ([\d.]+)/)))
+      Object.assign(S(+m[1] - 1), { play: { win: +m[3], live: +m[4], gain: +m[5], se: +m[6] } });
+    else if ((m = l.match(/^stage (\d+) already done/))) S(+m[1]).done = true;
+  }
+  for (const r of rs) {
+    let m;
+    if ((m = r.name.match(/^fvi\/aloss(\d+)\.csv$/))) { const s = S(+m[1]); s.curve = csv(r.body); s.curveAt = r.t; }
+    if ((m = r.name.match(/^fvi\/a(\d+)\.json$/))) S(+m[1]).done = true;
+  }
+  const list = Object.values(st).sort((a, b) => a.k - b.k);
+  const done = list.filter(s => s.done);
+  const started = list.filter(s => s.curve && !s.done);
+  const cur = started.length ? started[started.length - 1] : null;
+  return { by, log, list, done, cur };
+}
+
+function parsePpo(rs, k) {
+  const by = Object.fromEntries(rs.map(r => [r.name, r]));
+  const log = (by[k + '/log.txt'] || by.log || {}).body || '';
+  const it = [];
+  for (const l of log.split('\n')) {
+    // deep ppo: "edge vs opponents"; anet ppo (fvi appo): "edge vs live" plus "beta x"
+    const m = l.match(/^iter (\d+)\/\d+: (\d+) decisions, edge vs (\w+) ([+-]?[\d.]+)%, entropy ([\d.]+), value mse ([\d.]+), clipped ([\d.]+)%,(?: beta ([\d.]+),)? (\d+)s/);
+    if (m) it.push({ i: +m[1], dec: +m[2], vs: m[3], edge: +m[4], ent: +m[5], mse: +m[6], clip: +m[7], beta: m[8] != null ? +m[8] : null, s: +m[9] });
+  }
+  // <job>/avs.txt: head-to-head tests vs the live bot, e.g. "iter 50: 3 players, 1 copy + 2 live, 20000 deals: 17.51% +- 0.27
+  // (fair 33.3%)". A line "iter N" (alone or as a prefix) sets the iteration; without one, tests are numbered in order.
+  const avs = {}; let at = null, n = 0;
+  for (const l of ((by[k + '/avs.txt'] || {}).body || '').split('\n')) {
+    const h = l.match(/^\s*iter (\d+)/); if (h) at = +h[1];
+    const m = l.match(/(\d+) players, (\d+) cop(?:y|ies) \+ (\d+) live, (\d+) deals: ([\d.]+)% \+- ([\d.]+) \(fair ([\d.]+)%\)/);
+    if (!m) continue;
+    const key = `${m[1]}p: ${m[2]} ${+m[2] === 1 ? 'copy' : 'copies'} + ${m[3]} live`;
+    (avs[key] = avs[key] || { key, fair: +m[7], pts: [] }).pts.push({ i: at != null ? at : ++n, win: +m[5], se: +m[6], deals: +m[4] });
+  }
+  const ckpts = rs.filter(r => /-\d+\.json$/.test(r.name));
+  const exit = (by[k + '-exit'] || {}).body;
+  return { by, log, it, ckpts, exit, avs: Object.values(avs), avsIter: at != null };
+}
+
+// ---------- charts ----------
+// series: [{name, color, pts:[[x,y]...], dash?}]; opts: {logY, xFmt, yFmt, xLabel, err:[[x,y,e]...]}
+function chart(el, series, o = {}) {
+  const W = 460, H = 210, L = 46, R = 10, T = 10, B = 28;
+  const all = series.flatMap(s => s.pts);
+  if (!all.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+  const fy = o.logY ? (v => Math.log10(Math.max(v, 1e-9))) : (v => v);
+  let xs = all.map(p => p[0]), ys = all.map(p => fy(p[1]));
+  if (o.err) for (const [, y, e] of o.err) ys.push(fy(y - e), fy(y + e));
+  if (o.zero) ys.push(0);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (o.xMin != null) x0 = Math.min(x0, o.xMin); if (o.xMax != null) x1 = Math.max(x1, o.xMax);
+  if (x1 === x0) { x0 -= 1; x1 += 1; }
+  if (y1 === y0) { y0 -= o.logY ? .5 : Math.abs(y0) * .1 || 1; y1 += o.logY ? .5 : Math.abs(y1) * .1 || 1; }
+  const pad = (y1 - y0) * .06; y0 -= pad; y1 += pad;
+  const X = x => L + (x - x0) / (x1 - x0) * (W - L - R), Y = y => T + (1 - (fy(y) - y0) / (y1 - y0)) * (H - T - B);
+  const yFmt = o.yFmt || (v => +v.toPrecision(3)), xFmt = o.xFmt || (v => +v.toPrecision(3));
+  let g = '';
+  // y ticks
+  let yt = [];
+  if (o.logY) { for (let e = Math.floor(y0); e <= Math.ceil(y1); e++) for (const m of [1, 2, 5]) { const v = Math.log10(m) + e; if (v >= y0 && v <= y1) yt.push(10 ** v); } if (yt.length > 6) yt = yt.filter((v, i) => Math.abs(Math.log10(v) % 1) < 1e-9 || i % 2 === 0); }
+  else { const st = nice((y1 - y0) / 4); for (let v = Math.ceil(y0 / st) * st; v <= y1; v += st) yt.push(+v.toFixed(10)); }
+  for (const v of yt) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${esc(yFmt(v))}</text>`;
+  if (o.zero && 0 > y0 && 0 < y1) g += `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--ink3)" stroke-dasharray="3 3"/>`;
+  const xst = o.xStep || Math.max(nice((x1 - x0) / 4), o.xInt ? 1 : 0);
+  for (let v = Math.ceil(x0 / xst) * xst; v <= x1 + 1e-9; v += xst) g += `<text x="${X(v)}" y="${H - 8}" text-anchor="middle">${esc(xFmt(v))}</text>`;
+  g += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--line)"/>`;
+  if (o.err) for (const [x, y, e] of o.err) g += `<line x1="${X(x)}" x2="${X(x)}" y1="${Y(y - e)}" y2="${Y(y + e)}" stroke="${series[0].color}" stroke-width="2" stroke-linecap="round" opacity=".45"/>`;
+  for (const s of series) {
+    if (s.pts.length > 1 && !s.dots) g += `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${s.dash ? 'stroke-dasharray="4 3"' : ''} points="${s.pts.map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}"/>`;
+    if (s.pts.length <= 30 || s.dots) for (const p of s.pts) g += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="4" fill="${s.color}" stroke="var(--card)" stroke-width="2"/>`;
+  }
+  g += `<line class="xh" y1="${T}" y2="${H - B}" stroke="var(--ink3)" stroke-width="1" style="display:none"/>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || '')}">${g}<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg><div class="tip"></div>`;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), xh = el.querySelector('.xh');
+  const xsAll = [...new Set(xs)].sort((a, b) => a - b);
+  const move = ev => {
+    const b = svg.getBoundingClientRect(), px = (ev.clientX - b.left) / b.width * W;
+    if (px < L - 8 || px > W - R + 8) return leave();
+    const xv = x0 + (px - L) / (W - L - R) * (x1 - x0);
+    let best = xsAll[0]; for (const x of xsAll) if (Math.abs(x - xv) < Math.abs(best - xv)) best = x;
+    xh.setAttribute('x1', X(best)); xh.setAttribute('x2', X(best)); xh.style.display = '';
+    let h = `<b>${esc((o.xName || '') + xFmt(best))}</b>`;
+    for (const s of series) { const p = s.pts.find(p => p[0] === best); if (p) h += `<br><span style="color:${s.color}">●</span> ${esc(s.name)}: ${esc(s.tip ? s.tip(p) : yFmt(p[1]))}`; }
+    tip.innerHTML = h; tip.style.display = 'block';
+    const left = X(best) / W * b.width; tip.style.left = Math.min(Math.max(left - tip.offsetWidth / 2, 0), b.width - tip.offsetWidth) + 'px'; tip.style.top = '-6px';
+  };
+  const leave = () => { tip.style.display = 'none'; xh.style.display = 'none'; };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerleave', leave);
+}
+function nice(r) { const e = 10 ** Math.floor(Math.log10(r || 1)), f = r / e; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * e; }
+const legend = items => `<div class="legend">${items.map(([n, c, d]) => `<span><i style="background:${c}${d ? ';opacity:.6' : ''}"></i>${esc(n)}</span>`).join('')}</div>`;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// ---------- formatting ----------
+const dur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h}h ${String(m).padStart(2, '0')}m` : m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`; };
+const ago = t => dur((Date.now() - t) / 1000) + ' ago';
+const big = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
+const tile = (k, v, s = '') => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+
+// The Vast thread keeps a row "boxes": [{id, job, threads, dph, status: running|destroyed, since, until}].
+function boxesOf(job) {
+  let all = [];
+  try { all = JSON.parse((rows.find(r => r.name === 'boxes') || {}).body || '[]'); } catch (e) {}
+  return Array.isArray(all) ? all.filter(b => b && b.job === job) : [];
+}
+function clock(rs, job) {
+  const t0 = Math.min(...rs.map(r => +r.t)), t1 = Math.max(...rs.map(r => +r.t));
+  const fresh = Date.now() - t1 < STALE_MIN * 60000;
+  const bx = boxesOf(job), up = bx.filter(b => b.status === 'running'), down = bx.filter(b => b.status === 'destroyed');
+  const ended = !up.length && down.length ? Math.max(...down.map(b => +new Date(b.until || 0))) : null;
+  const running = up.length > 0 || (!bx.length && fresh);
+  const end = running ? Date.now() : Math.max(t1, ended || 0), el = (end - t0) / 1000;
+  // cost from the boxes that say when they started and what they cost; else elapsed x the rate box
+  const priced = bx.filter(b => b.since && b.dph);
+  const cost = priced.length ? priced.reduce((a, b) => a + Math.max(0, (b.status === 'running' ? Date.now() : +new Date(b.until || Date.now())) - +new Date(b.since)) / 3.6e6 * b.dph, 0) : el / 3600 * rate;
+  const dph = up.length ? up.reduce((a, b) => a + (b.dph || 0), 0) : null;
+  return { t0, t1, fresh, live: running, running, ended, el, cost, dph, up };
+}
+function pill(c) {
+  if (fetchErr) return ['stale', 'offline, showing last data'];
+  if (c.ended) return ['', `stopped · box destroyed ${ago(c.ended)}`];
+  if (c.running && c.fresh) return ['live', '● live · updated ' + ago(c.t1)];
+  if (c.running) return ['stale', `box running, no upload for ${ago(c.t1).replace(' ago', '')}`];
+  return ['stale', 'idle · last update ' + ago(c.t1)];
+}
+
+// ---------- views ----------
+function render() {
+  $('fetched').textContent = lastFetch ? lastFetch.toLocaleTimeString() : 'never';
+  const groups = {};
+  for (const r of rows) { const k = runOf(r.name); if (k) (groups[k] = groups[k] || []).push(r); }
+  if (!groups.ppo && groups['ppo-old']) groups.ppo = groups['ppo-old']; // a run from before the ppo/ prefix
+  delete groups['ppo-old'];
+  const keys = [...Object.keys(RUNS), ...Object.keys(groups).sort()].filter((k, i, a) => groups[k] && a.indexOf(k) === i);
+  if (!keys.length) {
+    $('status').className = 'pill'; $('status').textContent = fetchErr ? 'offline' : 'no run';
+    $('tabs').innerHTML = '';
+    $('view').innerHTML = `<div class="card empty${fetchErr ? ' err' : ''}">${fetchErr ? 'Could not reach Supabase: ' + esc(fetchErr) : 'No training uploads yet.'}</div>`;
+    return;
+  }
+  const latest = keys.slice().sort((a, b) => Math.max(...groups[b].map(r => +r.t)) - Math.max(...groups[a].map(r => +r.t)))[0];
+  if (!groups[tab]) tab = latest;
+  $('tabs').innerHTML = keys.map(k => `<button class="${k === tab ? 'on' : ''}" data-k="${esc(k)}">${esc(label(k))}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.k; store('train.tab', tab); render(); });
+  rate = rateFor(tab);
+  let c = clock(groups[tab], tab);
+  if (c.dph) { rate = c.dph; c = clock(groups[tab], tab); }
+  if (document.activeElement !== $('rate')) $('rate').value = rate;
+  [$('status').className, $('status').textContent] = ['pill ' + pill(c)[0], pill(c)[1]];
+  (tab === 'fvi' ? viewFvi : viewPpo)(groups[tab], c, tab);
+  $('view').insertAdjacentHTML('beforeend', boxesCard());
+}
+// Re-label the status pill between fetches without rebuilding the charts (keeps hover tooltips alive).
+setInterval(() => { const g = rows.filter(r => { const k = runOf(r.name); return k === tab || (tab === 'ppo' && k === 'ppo-old' && !rows.some(x => runOf(x.name) === 'ppo')); }); if (g.length) { const c = clock(g, tab); [$('status').className, $('status').textContent] = ['pill ' + pill(c)[0], pill(c)[1]]; } }, 5000);
+
+function boxesCard() {
+  let all = [];
+  try { all = JSON.parse((rows.find(r => r.name === 'boxes') || {}).body || '[]'); } catch (e) {}
+  if (!Array.isArray(all) || !all.length) return '';
+  const t = s => s ? new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '–';
+  const up = all.filter(b => b.status === 'running');
+  return `<div class="card" style="margin-top:12px"><h2>Machines · ${up.length} running${up.length ? `, $${up.reduce((a, b) => a + (b.dph || 0), 0).toFixed(2)}/hr` : ''}</h2><div class="tablewrap"><table>
+    <tr><th>Box</th><th>Job</th><th>Threads</th><th>$/hr</th><th>Status</th><th>Up</th><th>Cost</th></tr>
+    ${all.map(b => { const s = b.since ? +new Date(b.since) : null, e = b.status === 'running' ? Date.now() : b.until ? +new Date(b.until) : null;
+      return `<tr><td>${esc(b.id)}</td><td>${esc(b.job ? label(b.job) : '')}</td><td>${b.threads || '–'}</td><td>${b.dph != null ? (+b.dph).toFixed(2) : '–'}</td>
+      <td style="color:var(--${b.status === 'running' ? 'good' : 'ink3'})">${b.status === 'running' ? '● running' : esc(b.status || '')}</td>
+      <td>${s ? t(b.since) + '–' + (b.status === 'running' ? 'now' : t(b.until)) : b.until ? 'until ' + t(b.until) : '–'}</td>
+      <td>${s && e && b.dph ? '$' + ((e - s) / 3.6e6 * b.dph).toFixed(2) : '–'}</td></tr>`; }).join('')}
+  </table></div></div>`;
+}
+
+function viewFvi(rs, c) {
+  const f = parseFvi(rs);
+  const nd = f.done.length;
+  // ETA: mean time of finished stages past stage 0 (stage 0 trains 5x the epochs); fall back to stage 0 / 5.
+  const later = f.done.filter(s => s.k > 0 && s.secs), s0 = f.done.find(s => s.k === 0 && s.secs);
+  const per = later.length ? later.reduce((a, s) => a + s.secs, 0) / later.length : s0 ? s0.secs / 5 : null;
+  const curStart = f.cur && f.done.length ? Math.max(...f.done.map(s => +(s.curveAt || 0))) : null;
+  const curEl = f.cur && curStart ? (Date.now() - curStart) / 1000 : 0;
+  const left = per != null ? Math.max(0, (STAGES - nd) * per - (c.live ? Math.min(curEl, per * .95) : 0)) : null;
+  const lastPlay = f.list.filter(s => s.play).pop();
+  const lastExact = f.list.filter(s => s.exact != null).pop();
+  let h = `<div class="tiles">
+    ${tile('Stages done', `${nd} / ${STAGES}`, f.cur ? `training stage ${f.cur.k}` : nd === STAGES ? 'finished' : '')}
+    ${tile('Elapsed', dur(c.el), c.ended ? 'box destroyed' : c.live ? 'since first upload' : 'run idle')}
+    ${tile('ETA', nd === STAGES ? 'done' : c.ended ? 'stopped' : left == null ? '–' : dur(left), per ? `~${dur(per)} per stage` : 'after the first stage')}
+    ${tile('Cost so far', '$' + c.cost.toFixed(2), left != null && nd < STAGES ? `~$${(c.cost + left / 3600 * rate).toFixed(2)} at finish` : `at $${rate}/hr`)}
+    ${tile('Gain vs live bot', lastPlay ? `${lastPlay.play.gain > 0 ? '+' : ''}${lastPlay.play.gain.toFixed(2)}` : '–', lastPlay ? `± ${lastPlay.play.se} pts, last ${lastPlay.k + 1} stages` : 'every 4 stages')}
+    ${tile('Error vs exact', lastExact ? lastExact.exact.toFixed(4) : '–', lastExact ? `stage ${lastExact.k}, ${lastExact.agree}% minimax moves` : 'stages 0–3')}
+  </div>
+  <div class="card" style="margin-bottom:12px"><h2>Stage progress</h2>
+    <div class="stages">${Array.from({ length: STAGES }, (_, k) => { const s = f.list.find(s => s.k === k); return `<div class="${s && s.done ? 'done' : s && s === f.cur ? 'cur' : ''}" title="stage ${k}"></div>`; }).join('')}</div>
+    <div class="scale"><span>0 (last cards)</span><span>23 (full game)</span></div></div>
+  <div class="grid2">
+    <div class="card"><h2>${f.cur ? `Stage ${f.cur.k} loss (live)` : 'Latest stage loss'}</h2>${legend([['held-out RMSE', 'var(--s1)'], ['train RMSE', 'var(--s2)']])}<div class="chart" id="c1"></div></div>
+    <div class="card"><h2>Final held-out RMSE by stage</h2>${legend([['held-out', 'var(--s1)'], ['vs exact solver', 'var(--s3)']])}<div class="chart" id="c2"></div></div>
+    <div class="card"><h2>Gain vs live bot (points per game, 2 players)</h2><div class="chart" id="c3"></div></div>
+    <div class="card"><h2>Time per stage</h2>${legend([['total', 'var(--s1)'], ['labelling', 'var(--s2)']])}<div class="chart" id="c4"></div></div>
+  </div>
+  <div class="card" style="margin-bottom:12px"><h2>Stages</h2><div class="tablewrap"><table>
+    <tr><th>Stage</th><th>Examples</th><th>Held-out</th><th>Train</th><th>vs exact</th><th>Minimax %</th><th>vs live</th><th>Time</th></tr>
+    ${f.list.map(s => `<tr><td>${s.k}${s === f.cur ? ' (running)' : ''}</td><td>${s.n ? big(s.n) : '–'}</td><td>${s.held != null ? s.held.toFixed(4) : s.curve && s.curve.length ? s.curve[s.curve.length - 1][3].toFixed(4) + '*' : '–'}</td><td>${s.train != null ? s.train.toFixed(4) : '–'}</td><td>${s.exact != null ? s.exact.toFixed(4) : '–'}</td><td>${s.agree != null ? s.agree.toFixed(1) : '–'}</td><td>${s.play ? (s.play.gain > 0 ? '+' : '') + s.play.gain.toFixed(2) + ' ± ' + s.play.se : '–'}</td><td>${s.secs ? dur(s.secs) : '–'}</td></tr>`).join('')}
+  </table></div><div class="foot">* still training (latest logged value). Stage 0 trains 5× the epochs.</div></div>
+  <div class="card"><h2>Log tail</h2><pre>${esc((f.log || (f.by['fvi-run-tail'] || {}).body || 'Nothing logged yet.').trim().split('\n').slice(-40).join('\n'))}</pre></div>`;
+  $('view').innerHTML = h;
+  const s1 = css('--s1'), s2 = css('--s2'), s3 = css('--s3');
+  const curve = (f.cur || f.done[f.done.length - 1] || {}).curve || [];
+  chart($('c1'), [{ name: 'held-out', color: s1, pts: curve.map(r => [r[1], r[3]]) }, { name: 'train', color: s2, pts: curve.map(r => [r[1], r[2]]) }],
+    { logY: true, xFmt: big, xName: 'examples ', yFmt: v => v.toPrecision(2), label: 'loss curve' });
+  const fin = f.list.filter(s => s.held != null);
+  chart($('c2'), [{ name: 'held-out', color: s1, pts: fin.map(s => [s.k, s.held]) }, { name: 'vs exact', color: s3, dots: true, pts: f.list.filter(s => s.exact != null).map(s => [s.k, s.exact]) }],
+    { xMin: 0, xMax: STAGES - 1, xStep: 4, xName: 'stage ', yFmt: v => v.toFixed(3), label: 'held-out RMSE by stage' });
+  const pl = f.list.filter(s => s.play);
+  chart($('c3'), [{ name: 'gain', color: s1, dots: true, pts: pl.map(s => [s.k + 1, s.play.gain]), tip: p => { const s = pl.find(s => s.k + 1 === p[0]); return `${p[1] > 0 ? '+' : ''}${p[1]} ± ${s.play.se} (win ${s.play.win}% vs ${s.play.live}%)`; } }],
+    { xMin: 1, xMax: STAGES, xStep: 4, xName: 'stages trained: ', zero: true, err: pl.map(s => [s.k + 1, s.play.gain, s.play.se]), label: 'gain vs live bot' });
+  const tm = f.list.filter(s => s.secs);
+  chart($('c4'), [{ name: 'total', color: s1, pts: tm.map(s => [s.k, s.secs / 60]), tip: p => dur(p[1] * 60) }, { name: 'labelling', color: s2, pts: tm.filter(s => s.label != null).map(s => [s.k, s.label / 60]), tip: p => dur(p[1] * 60) }],
+    { xMin: 0, xMax: STAGES - 1, xStep: 4, xName: 'stage ', yFmt: v => v + 'm', zero: true, label: 'minutes per stage' });
+}
+
+function viewPpo(rs, c, k) {
+  const p = parsePpo(rs, k), it = p.it, last = it[it.length - 1];
+  const rate_ = it.length > 1 ? (it[it.length - 1].s - it[0].s) / (it.length - 1) : null;
+  const roll = (k, w = 10) => it.map((x, i) => { const a = it.slice(Math.max(0, i - w + 1), i + 1); return [x.i, a.reduce((s, y) => s + y[k], 0) / a.length]; });
+  $('view').innerHTML = `<div class="tiles">
+    ${tile('Iteration', last ? last.i : '–', p.exit != null ? 'exited: ' + esc(p.exit.trim().slice(0, 40) || 'done') : rate_ ? `~${rate_.toFixed(0)} s per iter` : '')}
+    ${tile('Elapsed', dur(c.el), c.ended ? 'box destroyed' : c.live ? 'since first upload' : 'run idle')}
+    ${tile('Cost so far', '$' + c.cost.toFixed(2), c.ended ? 'finished' : `at $${rate}/hr`)}
+    ${tile('Edge vs ' + (last ? last.vs : 'opponents'), last ? (roll('edge').pop()[1] >= 0 ? '+' : '') + roll('edge').pop()[1].toFixed(1) + '%' : '–', '10-iter mean')}
+    ${tile('Value MSE', last ? last.mse.toFixed(4) : '–', last ? `entropy ${last.ent}` : '')}
+    ${p.avs.length ? p.avs.map(a => { const q = a.pts[a.pts.length - 1]; return tile(a.key, `${q.win.toFixed(1)}%`, `± ${q.se} · fair ${a.fair}%`); }).join('')
+      : tile('Checkpoints', p.ckpts.length, p.ckpts.length ? 'latest ' + ago(Math.max(...p.ckpts.map(r => +r.t))) : '')}
+  </div>
+  <div class="grid2">
+    ${p.avs.map((a, j) => `<div class="card"><h2>Win rate, ${esc(a.key)}</h2>${legend([['candidate', 'var(--s1)'], ['fair share ' + a.fair + '%', 'var(--ink3)', 1]])}<div class="chart" id="cv${j}"></div></div>`).join('')}
+    <div class="card"><h2>Edge vs ${esc(last ? last.vs : 'opponents')} (%)</h2>${legend([['per iteration', 'var(--s1)', 1], ['10-iter mean', 'var(--s2)']])}<div class="chart" id="c1"></div></div>
+    <div class="card"><h2>Value MSE</h2><div class="chart" id="c2"></div></div>
+    <div class="card"><h2>Policy entropy</h2><div class="chart" id="c3"></div></div>
+    <div class="card"><h2>Clipped updates (%)</h2><div class="chart" id="c4"></div></div>
+    ${it.some(x => x.beta != null) ? '<div class="card"><h2>Beta</h2><div class="chart" id="c5"></div></div>' : ''}
+  </div>
+  <div class="card"><h2>Log tail</h2><pre>${esc((p.log || 'Nothing logged yet.').trim().split('\n').slice(-40).join('\n'))}</pre></div>`;
+  const s1 = css('--s1'), s2 = css('--s2');
+  const o = { xName: 'iter ', xInt: true, label: '' };
+  chart($('c1'), [{ name: 'edge', color: s1, dash: true, pts: it.map(x => [x.i, x.edge]) }, { name: '10-iter mean', color: s2, pts: roll('edge') }], { ...o, zero: true, yFmt: v => (+v.toFixed(1)) + '%' });
+  chart($('c2'), [{ name: 'value mse', color: s1, pts: it.map(x => [x.i, x.mse]) }], { ...o, yFmt: v => v.toFixed(4) });
+  chart($('c3'), [{ name: 'entropy', color: s1, pts: it.map(x => [x.i, x.ent]) }], { ...o, yFmt: v => v.toFixed(4) });
+  chart($('c4'), [{ name: 'clipped', color: s1, pts: it.map(x => [x.i, x.clip]) }], { ...o, yFmt: v => (+v.toFixed(2)) + '%' });
+  if ($('c5')) chart($('c5'), [{ name: 'beta', color: s1, pts: it.filter(x => x.beta != null).map(x => [x.i, x.beta]) }], o);
+  const ink3 = css('--ink3');
+  p.avs.forEach((a, j) => {
+    const xs = a.pts.map(q => q.i), lo = Math.min(...xs), hi = Math.max(...xs);
+    chart($('cv' + j), [
+      { name: 'win', color: s1, pts: a.pts.map(q => [q.i, q.win]), tip: pt => { const q = a.pts.find(q => q.i === pt[0]); return `${q.win}% ± ${q.se} (${big(q.deals)} deals)`; } },
+      { name: 'fair', color: ink3, dash: true, pts: [[lo, a.fair], [hi, a.fair]], tip: () => a.fair + '%' }],
+      { ...o, xName: p.avsIter ? 'iter ' : 'test #', err: a.pts.map(q => [q.i, q.win, q.se]), yFmt: v => (+v.toFixed(1)) + '%' });
+  });
+}
+
+load(); setInterval(load, POLL);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>
