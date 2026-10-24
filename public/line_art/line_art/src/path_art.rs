@@ -33,9 +33,16 @@ pub struct PathArt {
     // with a learned ridge, its radius, the peak Adam learning rate for its log, and that log's Adam moments
     learn_ridge: bool,
     pub ridge_radius: f32,
-    lr_kernel: f32,
+    pub lr_kernel: f32,
     m_r: f32,
     v_r: f32,
+    // with a pencil stroke, the stroke kernel's value at each whole radius from 0 to PENCIL (linear in between,
+    // 0 beyond), learned freely; the kernel as a sum of one fixed basis kernel per knot; and the knots' logs'
+    // Adam moments
+    pub pencil: Option<Vec<f32>>,
+    basis: Vec<Vec<f32>>,
+    m_p: Vec<f32>,
+    v_p: Vec<f32>,
     // the splat window's area at the start
     splat_area: usize,
     lambda: f32,
@@ -106,6 +113,8 @@ pub struct Params {
     // rate for the log of the radius
     pub learn_ridge: bool,
     pub lr_kernel: f32,
+    // learn the stroke's whole radial profile, a pencil stroke, starting from the `ridge` one
+    pub pencil: bool,
 }
 
 const BETA1: f32 = 0.9;
@@ -113,6 +122,10 @@ const BETA2: f32 = 0.999;
 // the range a learned ridge radius is kept to, in pixels
 const RIDGE_MIN: f32 = 0.75;
 const RIDGE_MAX: f32 = 10.0;
+// how far a pencil stroke's kernel reaches, in pixels
+const PENCIL: i32 = 6;
+// its knots' floor, so their logs stay finite
+const PENCIL_MIN: f32 = 1e-6;
 // The coarse grid's margin, in blocks, so that nodes at the image's edge still feel the coarse loss
 const COARSE_PAD: f32 = 2.0;
 // A line longer than this many sigmas counts as long
@@ -141,6 +154,31 @@ fn ridge_kernel(r: f32, n: i32) -> Vec<f32> {
     }
     let s: f32 = k.iter().sum();
     k.iter().map(|v| v / s).collect()
+}
+
+// The pencil kernel's basis: for each knot i, the kernel that is 1 at radius i falling linearly to 0 at i - 1 and
+// i + 1, averaged over each pixel. (2 PENCIL + 1) on a side.
+fn pencil_basis() -> Vec<Vec<f32>> {
+    const SUB: i32 = 8;
+    let n = PENCIL;
+    (0..=n)
+        .map(|i| {
+            let mut k = vec![];
+            for y in -n..=n {
+                for x in -n..=n {
+                    let mut a = 0.0;
+                    for sy in 0..SUB {
+                        for sx in 0..SUB {
+                            let (px, py) = (x as f32 + (sx as f32 + 0.5) / SUB as f32 - 0.5, y as f32 + (sy as f32 + 0.5) / SUB as f32 - 0.5);
+                            a += (1.0 - ((px * px + py * py).sqrt() - i as f32).abs()).max(0.0);
+                        }
+                    }
+                    k.push(a / (SUB * SUB) as f32);
+                }
+            }
+            k
+        })
+        .collect()
 }
 
 // Half the side of a ridge kernel of radius r: just enough, or one more when the radius is learned so the
@@ -219,6 +257,10 @@ impl PathArt {
             lr_kernel: p.lr_kernel,
             m_r: 0.0,
             v_r: 0.0,
+            pencil: None,
+            basis: vec![],
+            m_p: vec![],
+            v_p: vec![],
             splat_area: 1,
             lambda: p.lambda,
             line: p.line,
@@ -245,9 +287,45 @@ impl PathArt {
             coarse_until: p.coarse_until,
             coarse_weight: p.coarse,
         };
+        if p.pencil {
+            g.start_pencil(p.ridge);
+        }
         g.splat_area = (2 * g.radius() as usize + 2).pow(2);
         g.forward();
         g
+    }
+
+    // Switches to a pencil stroke shaped at first like the ridge of radius r: its knots are that ridge's kernel
+    // along a row, which is close, as the basis kernels are averaged over pixels the same way.
+    fn start_pencil(&mut self, r: f32) {
+        let n = PENCIL;
+        let ridge = ridge_kernel(r, n);
+        let row = &ridge[(n * (2 * n + 1)) as usize..((n + 1) * (2 * n + 1)) as usize];
+        let knots: Vec<f32> = (0..=n).map(|i| row[(n + i) as usize].max(PENCIL_MIN)).collect();
+        self.basis = pencil_basis();
+        self.m_p = vec![0.0; knots.len()];
+        self.v_p = vec![0.0; knots.len()];
+        self.learn_ridge = false;
+        self.set_pencil(knots);
+    }
+
+    fn set_pencil(&mut self, knots: Vec<f32>) {
+        let mut k = vec![0f32; self.basis[0].len()];
+        for (b, v) in self.basis.iter().zip(&knots) {
+            for (k, b) in k.iter_mut().zip(b) {
+                *k += v * b;
+            }
+        }
+        self.stroke = Some(k);
+        self.pencil = Some(knots);
+    }
+
+    // The pencil stroke's cross-section: its darkness across a straight line of unit ink, at each whole pixel
+    // from the centre out to PENCIL
+    pub fn pencil_profile(&self) -> Vec<f32> {
+        let (k, n) = match &self.stroke { Some(k) => (k, self.radius()), None => return vec![] };
+        let side = (2 * n + 1) as usize;
+        (0..=n as usize).map(|x| (0..side).map(|y| k[y * side + n as usize + x]).sum()).collect()
     }
 
     // Node positions in the photo's pixels
@@ -382,6 +460,12 @@ impl PathArt {
         }
         let r: Vec<f32> = blur(&d, w, h, self.coarse_sigma).iter().zip(&self.coarse_target).map(|(g, t)| g - t).collect();
         (r.iter().map(|r| r * r).sum(), blur(&r, w, h, self.coarse_sigma))
+    }
+
+    // Gradient of the loss with respect to each pencil knot, through its basis kernel
+    fn pencil_gradient(&self) -> Vec<f32> {
+        let gk = self.kernel_gradient();
+        self.basis.iter().map(|b| b.iter().zip(&gk).map(|(b, g)| b * g).sum()).collect()
     }
 
     // How far the stroke's kernel reaches, in pixels
@@ -652,11 +736,16 @@ impl PathArt {
     // Starts a second pass from where this one ended: the line becomes a ridge stroke starting at radius `ridge`,
     // compared with the unblurred photo as with the airbrush, and its radius is learned along with the nodes and
     // the order over `iterations` more steps, on a fresh schedule.
-    pub fn blur_pass(&mut self, iterations: usize, ridge: f32, lr_node: f32, temp_start: f32, warmup: usize) {
+    // With pencil, it learns the stroke's whole profile instead, starting from that ridge.
+    pub fn blur_pass(&mut self, iterations: usize, ridge: f32, pencil: bool, lr_node: f32, temp_start: f32, warmup: usize) {
         self.airbrush = true;
         self.target = self.photo.clone();
-        self.learn_ridge = true;
-        self.set_ridge(ridge);
+        if pencil {
+            self.start_pencil(ridge);
+        } else {
+            self.learn_ridge = true;
+            self.set_ridge(ridge);
+        }
         self.iteration = 0;
         self.iterations = iterations;
         self.warmup = warmup;
@@ -685,6 +774,7 @@ impl PathArt {
         let coarse = self.coarse_weight * (1.0 - progress / self.coarse_until).max(0.0).powi(2);
         let gn = self.gradient(coarse);
         let gr = if self.learn_ridge { Some(self.radius_gradient()) } else { None };
+        let gp = self.pencil.as_ref().map(|_| self.pencil_gradient());
         self.iteration += 1;
         let t = self.iteration as f32;
         // linear warmup to the peak learning rate, then a cosine down to 0 at the last step
@@ -715,6 +805,18 @@ impl PathArt {
             self.v_r = BETA2 * self.v_r + (1.0 - BETA2) * g * g;
             let step = self.lr_kernel * schedule * (self.m_r / c1) / ((self.v_r / c2).sqrt() + 1e-8);
             self.set_ridge((self.ridge_radius.ln() - step).exp().clamp(RIDGE_MIN, RIDGE_MAX));
+        }
+        if let Some(gp) = gp {
+            // Adam on the knots' logs, so they stay positive, on the same schedule
+            let mut knots = self.pencil.take().unwrap();
+            for (i, v) in knots.iter_mut().enumerate() {
+                let g = gp[i] * *v;
+                self.m_p[i] = BETA1 * self.m_p[i] + (1.0 - BETA1) * g;
+                self.v_p[i] = BETA2 * self.v_p[i] + (1.0 - BETA2) * g * g;
+                let step = self.lr_kernel * schedule * (self.m_p[i] / c1) / ((self.v_p[i] / c2).sqrt() + 1e-8);
+                *v = (v.ln() - step).exp().max(PENCIL_MIN);
+            }
+            self.set_pencil(knots);
         }
         self.forward();
         true
@@ -791,7 +893,7 @@ mod tests {
     }
 
     fn params() -> Params {
-        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.0 }
+        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.0, pencil: false }
     }
 
     // the same, as a ridge-shaped airbrush stroke
@@ -811,6 +913,7 @@ mod tests {
         tracks(PathArt::new(disc(), 60, 60, &params(), &mut rng));
         tracks(PathArt::new(disc(), 60, 60, &ridge(), &mut rng));
         tracks(learned(&mut rng));
+        tracks(PathArt::new(disc(), 60, 60, &Params { pencil: true, lr_kernel: 0.05, ..ridge() }, &mut rng));
     }
 
     // The kernel's and the learned radius's gradients should match finite differences of the loss.
@@ -835,6 +938,16 @@ mod tests {
         let at = |g: &mut PathArt, r: f32| { g.stroke = Some(ridge_kernel(r, n)); g.forward(); g.loss };
         let fd = (at(&mut g, r + 0.02) - at(&mut g, r - 0.02)) / 0.04;
         assert!((fd - gr).abs() <= 0.05 * fd.abs().max(gr.abs()) + 0.05, "radius: analytic {} vs numeric {}", gr, fd);
+        // and the pencil knots', the loss being quadratic in them too
+        let mut g = PathArt::new(disc(), 60, 60, &Params { pencil: true, lr_kernel: 0.05, ..ridge() }, &mut rng);
+        for _ in 0..10 { g.step(&mut rng); }
+        let gp = g.pencil_gradient();
+        let knots = g.pencil.clone().unwrap();
+        for i in 0..knots.len() {
+            let mut at = |d: f32| { let mut k = knots.clone(); k[i] += d; g.set_pencil(k); g.forward(); g.loss };
+            let fd = (at(eps) - at(-eps)) / (2.0 * eps);
+            assert!((fd - gp[i]).abs() <= 0.02 * fd.abs().max(gp[i].abs()) + 0.05, "knot {}: analytic {} vs numeric {}", i, gp[i], fd);
+        }
     }
 
     fn tracks(mut g: PathArt) {

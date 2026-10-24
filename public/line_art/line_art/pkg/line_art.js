@@ -90,9 +90,10 @@ export class PathFace {
     }
     /**
      * @param {number} iterations
+     * @param {boolean} pencil
      */
-    blur_pass(iterations) {
-        wasm.pathface_blur_pass(this.__wbg_ptr, iterations);
+    blur_pass(iterations, pencil) {
+        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil);
     }
     /**
      * @returns {number}
@@ -147,6 +148,15 @@ export class PathFace {
      */
     nodes() {
         const ret = wasm.pathface_nodes(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    profile() {
+        const ret = wasm.pathface_profile(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;

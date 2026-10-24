@@ -16,13 +16,14 @@ export class Face {
 export class PathFace {
     free(): void;
     [Symbol.dispose](): void;
-    blur_pass(iterations: number): void;
+    blur_pass(iterations: number, pencil: boolean): void;
     dot(): number;
     edges(): Uint16Array;
     iteration(): number;
     loss(): number;
     constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number, airbrush: boolean, ridge: number, learn_ridge: boolean);
     nodes(): Float32Array;
+    profile(): Float32Array;
     ridge(): number;
     shown(): Float32Array;
     step(): boolean;
@@ -42,13 +43,14 @@ export interface InitOutput {
     readonly face_nodes: (a: number) => [number, number];
     readonly face_step: (a: number) => number;
     readonly face_widths: (a: number) => [number, number];
-    readonly pathface_blur_pass: (a: number, b: number) => void;
+    readonly pathface_blur_pass: (a: number, b: number, c: number) => void;
     readonly pathface_dot: (a: number) => number;
     readonly pathface_edges: (a: number) => [number, number];
     readonly pathface_iteration: (a: number) => number;
     readonly pathface_loss: (a: number) => number;
     readonly pathface_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly pathface_nodes: (a: number) => [number, number];
+    readonly pathface_profile: (a: number) => [number, number];
     readonly pathface_ridge: (a: number) => number;
     readonly pathface_shown: (a: number) => [number, number];
     readonly pathface_step: (a: number) => number;
