@@ -131,15 +131,13 @@ const RIDGE_MIN: f32 = 0.75;
 const RIDGE_MAX: f32 = 10.0;
 // how far a pencil stroke's kernel reaches, in pixels
 const PENCIL: i32 = 4;
-// and with graphite
-const GRAPHITE_REACH: i32 = 1;
 // its knots' floor, so their logs stay finite
 const PENCIL_MIN: f32 = 1e-6;
 // A graphite line is LANES parallel streaks, LANE_GAP pixels apart, each laying down graphite that varies by up
 // to STREAK either way over about STREAK_LEN pixels along it, on top of the whole line's pressure varying by up
 // to PRESSURE over about PRESSURE_LEN pixels
-const LANES: usize = 4;
-const LANE_GAP: f32 = 0.8;
+const LANES: usize = 3;
+const LANE_GAP: f32 = 0.5;
 const STREAK: f32 = 1.0;
 const STREAK_LEN: f32 = 1.5;
 const PRESSURE: f32 = 0.35;
@@ -325,9 +323,12 @@ impl PathArt {
             coarse_until: p.coarse_until,
             coarse_weight: p.coarse,
         };
-        if p.pencil || p.graphite {
-            // a pencil's own stroke is narrow: its width comes from its streaks
-            g.start_pencil(p.ridge, if p.graphite { GRAPHITE_REACH } else { PENCIL });
+        if p.pencil {
+            g.start_pencil(p.ridge, PENCIL);
+        }
+        if p.graphite {
+            // no stroke kernel: a pencil line is just its streaks
+            g.stroke = Some(vec![1.0]);
         }
         g.splat_area = (2 * g.radius() as usize + 2).pow(2);
         g.forward();
@@ -393,8 +394,7 @@ impl PathArt {
     }
 
     // A graphite drawing as shown, rendered scale times finer than the optimizer's pixels: the same streaks, split
-    // into finer samples, and the same stroke, scaled up, so the grain the optimizer averages over each pixel
-    // shows. Row-major, (photo width * scale) wide.
+    // into finer samples, so the grain the optimizer averages over each pixel shows. Row-major, (photo width * scale) wide.
     pub fn shown_fine(&self, scale: usize) -> Vec<f32> {
         let (m, sc) = (self.margin, scale as f32);
         let (fw, fh) = ((self.width - 2 * m as usize) * scale, (self.height - 2 * m as usize) * scale);
@@ -423,8 +423,8 @@ impl PathArt {
         for &(x, y) in &self.nodes {
             put(x, y, self.dot);
         }
-        // the stroke, its knots spread over scale fine pixels each, and as much ink in all
-        let knots = match &self.pencil { Some(k) => k, None => return d };
+        // the stroke, its knots spread over scale fine pixels each, and as much ink in all, if it has one
+        let knots = match &self.pencil { Some(k) => k, None => return self.show(&d) };
         let r = (knots.len() as f32 * sc).ceil() as i32;
         let side = (2 * r + 1) as usize;
         let mut k = vec![0f32; side * side];
@@ -1148,16 +1148,15 @@ mod tests {
         let fd = (at(&mut g, r + 0.02) - at(&mut g, r - 0.02)) / 0.04;
         assert!((fd - gr).abs() <= 0.05 * fd.abs().max(gr.abs()) + 0.05, "radius: analytic {} vs numeric {}", gr, fd);
         // and the pencil knots', the loss being quadratic in them too
-        // with graphite the loss is no longer quadratic, so the step is smaller and the match looser
-        for (graphite, eps, tol) in [(false, eps, 0.02), (true, 0.001, 0.05)] {
-            let mut g = PathArt::new(disc(), 60, 60, &Params { pencil: true, graphite, lr_kernel: 0.05, ..ridge() }, &mut rng);
+        {
+            let mut g = PathArt::new(disc(), 60, 60, &Params { pencil: true, lr_kernel: 0.05, ..ridge() }, &mut rng);
             for _ in 0..10 { g.step(&mut rng); }
             let gp = g.pencil_gradient();
             let knots = g.pencil.clone().unwrap();
             for i in 0..knots.len() {
                 let mut at = |d: f32| { let mut k = knots.clone(); k[i] += d; g.set_pencil(k); g.forward(); g.loss };
                 let fd = (at(eps) - at(-eps)) / (2.0 * eps);
-                assert!((fd - gp[i]).abs() <= tol * fd.abs().max(gp[i].abs()) + 0.05, "knot {}: analytic {} vs numeric {}", i, gp[i], fd);
+                assert!((fd - gp[i]).abs() <= 0.02 * fd.abs().max(gp[i].abs()) + 0.05, "knot {}: analytic {} vs numeric {}", i, gp[i], fd);
             }
         }
     }

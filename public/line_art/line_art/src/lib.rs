@@ -81,7 +81,7 @@ impl PathFace {
     #[wasm_bindgen(constructor)]
     // airbrush: a soft stroke instead of a sharp line, with a Gaussian profile, or with ridge > 0 one that falls
     // off linearly to 0 at ridge pixels from its centre; learn_ridge learns that radius along with the nodes,
-    // starting from ridge; graphite draws like a pencil, in streaks with a learned stroke, starting from that ridge
+    // starting from ridge; graphite draws like a pencil, as sharp streaks with no stroke kernel
     #[allow(clippy::too_many_arguments)]
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool, ridge: f32, learn_ridge: bool, graphite: bool) -> PathFace {
         use rand::SeedableRng;
