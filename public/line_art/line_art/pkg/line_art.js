@@ -125,11 +125,12 @@ export class PathFace {
      * @param {number} nodes
      * @param {number} iterations
      * @param {boolean} airbrush
+     * @param {number} ridge
      */
-    constructor(darkness, width, height, nodes, iterations, airbrush) {
+    constructor(darkness, width, height, nodes, iterations, airbrush, ridge) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush);
+        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush, ridge);
         this.__wbg_ptr = ret;
         PathFaceFinalization.register(this, this.__wbg_ptr, this);
         return this;

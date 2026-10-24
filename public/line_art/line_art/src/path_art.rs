@@ -28,6 +28,8 @@ pub struct PathArt {
     weight: Vec<f32>,
     sigma: f32,
     kernel: Vec<f32>,
+    // with a ridge stroke, its 2D kernel, (2 radius + 1) on a side, used instead of the Gaussian
+    ridge: Option<Vec<f32>>,
     lambda: f32,
     // ink per unit length of every segment, which is its width in pixels
     pub line: f32,
@@ -89,6 +91,9 @@ pub struct Params {
     pub dot: f32,
     // draw with a soft stroke, as wide as the loss's blur, instead of a sharp line
     pub airbrush: bool,
+    // > 0: an airbrush stroke whose darkness falls off linearly to 0 at this many pixels from its centre,
+    // instead of a Gaussian
+    pub ridge: f32,
 }
 
 const BETA1: f32 = 0.9;
@@ -97,6 +102,32 @@ const BETA2: f32 = 0.999;
 const COARSE_PAD: f32 = 2.0;
 // A line longer than this many sigmas counts as long
 const LONG: f32 = 8.0;
+
+// The 2D kernel whose blur of a straight line falls off linearly, from its centre to 0 at radius r: the inverse
+// Abel transform of that profile, arccosh(r / d) / (pi r) at distance d, averaged over each pixel because it is
+// infinite at the centre, and normalized. (2 ceil(r) + 1) on a side, row-major.
+fn ridge_kernel(r: f32) -> Vec<f32> {
+    let n = r.ceil() as i32;
+    const SUB: i32 = 16;
+    let mut k = vec![];
+    for y in -n..=n {
+        for x in -n..=n {
+            let mut a = 0.0;
+            for sy in 0..SUB {
+                for sx in 0..SUB {
+                    let (px, py) = (x as f32 + (sx as f32 + 0.5) / SUB as f32 - 0.5, y as f32 + (sy as f32 + 0.5) / SUB as f32 - 0.5);
+                    let d = (px * px + py * py).sqrt();
+                    if d < r {
+                        a += (r / d).acosh();
+                    }
+                }
+            }
+            k.push(a);
+        }
+    }
+    let s: f32 = k.iter().sum();
+    k.iter().map(|v| v / s).collect()
+}
 
 // The coarse grid's size, margins included
 fn coarse_size(width: usize, height: usize, block: f32) -> (usize, usize) {
@@ -108,7 +139,7 @@ impl PathArt {
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, p: &Params, rng: &mut impl Rng) -> PathArt {
         // Work on the photo with a margin of paper around it, so that ink near the edge is all counted and blurred
         // like anywhere else; otherwise lines could hide ink by hugging the edge. Nodes stay on the photo.
-        let margin = (3.0 * p.sigma).ceil() as usize + 2;
+        let margin = (3.0 * p.sigma).max(p.ridge).ceil() as usize + 2;
         let (inner_w, inner_h) = (width, height);
         let (width, height) = (inner_w + 2 * margin, inner_h + 2 * margin);
         let mut padded = vec![0f32; width * height];
@@ -161,6 +192,7 @@ impl PathArt {
             weight,
             sigma: p.sigma,
             kernel: k.iter().map(|v| v / s).collect(),
+            ridge: if p.ridge > 0.0 { Some(ridge_kernel(p.ridge)) } else { None },
             lambda: p.lambda,
             line: p.line,
             dot: p.dot,
@@ -198,7 +230,7 @@ impl PathArt {
     // The drawing as it is shown, in the photo's pixels: the ink itself, blurred if it is airbrushed.
     pub fn shown(&self) -> Vec<f32> {
         let (d, _) = self.render();
-        let d = if self.airbrush { blur(&d, self.width, self.height, self.sigma) } else { d };
+        let d = if self.airbrush { self.conv(&d) } else { d };
         let m = self.margin as usize;
         let (w, h) = (self.width - 2 * m, self.height - 2 * m);
         (0..w * h).map(|i| d[(i / w + m) * self.width + i % w + m]).collect()
@@ -251,9 +283,8 @@ impl PathArt {
 
     // Renders the path and sets the residual G D - T and the loss.
     fn forward(&mut self) {
-        let (w, h) = (self.width, self.height);
         let (d, ink) = self.render();
-        self.residual = blur(&d, w, h, self.sigma).iter().zip(&self.target).map(|(g, t)| g - t).collect();
+        self.residual = self.conv(&d).iter().zip(&self.target).map(|(g, t)| g - t).collect();
         self.loss = self.lambda * ink + self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r * r).sum::<f32>();
     }
 
@@ -274,6 +305,49 @@ impl PathArt {
         (r.iter().map(|r| r * r).sum(), blur(&r, w, h, self.coarse_sigma))
     }
 
+    // How far the stroke's kernel reaches, in pixels
+    fn radius(&self) -> i32 {
+        match &self.ridge {
+            Some(k) => ((k.len() as f32).sqrt() as i32 - 1) / 2,
+            None => (self.kernel.len() / 2) as i32,
+        }
+    }
+
+    // G applied to an image: the Gaussian blur, or the ridge kernel. Either is symmetric, so it is its own
+    // adjoint, which the gradients rely on.
+    fn conv(&self, src: &[f32]) -> Vec<f32> {
+        let (w, h) = (self.width, self.height);
+        let k = match &self.ridge {
+            Some(k) => k,
+            None => return blur(src, w, h, self.sigma),
+        };
+        let r = self.radius();
+        let n = 2 * r + 1;
+        let mut out = vec![0f32; w * h];
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let v = src[y as usize * w + x as usize];
+                if v == 0.0 {
+                    continue;
+                }
+                for dy in -r..=r {
+                    let yy = y + dy;
+                    if yy < 0 || yy >= h as i32 {
+                        continue;
+                    }
+                    let row = &k[((dy + r) * n) as usize..((dy + r + 1) * n) as usize];
+                    for dx in -r..=r {
+                        let xx = x + dx;
+                        if xx >= 0 && xx < w as i32 {
+                            out[yy as usize * w + xx as usize] += v * row[(dx + r) as usize];
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     // Adds sign * G (the line a-b) into scratch. Returns how many samples that took.
     fn splat(&mut self, a: u32, b: u32, sign: f32) -> usize {
         let (w, h) = (self.width, self.height);
@@ -281,10 +355,11 @@ impl PathArt {
         let len = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt();
         let n = samples(len);
         let mass = sign * self.line * len / n as f32;
-        let r = (self.kernel.len() / 2) as i32;
-        let m = self.kernel.len() + 1;
-        // the blur of a bilinear splat is separable: in each axis, the kernel at x0 and at x0 + 1, mixed
+        let r = self.radius();
+        let m = 2 * r as usize + 2;
+        // the stroke of a bilinear splat: the kernel centred on each of its four pixels, mixed
         let (mut kx, mut ky) = (vec![0f32; m], vec![0f32; m]);
+        let mut win = vec![0f32; m * m];
         for i in 0..n {
             let t = (i as f32 + 0.5) / n as f32;
             let (j, fx, fy) = match bilinear(ax + (bx - ax) * t, ay + (by - ay) * t, w, h) {
@@ -292,18 +367,36 @@ impl PathArt {
                 None => continue,
             };
             let (x0, y0) = ((j % w) as i32, (j / w) as i32);
-            for q in 0..m {
-                let k0 = if q < m - 1 { self.kernel[q] } else { 0.0 };
-                let k1 = if q > 0 { self.kernel[q - 1] } else { 0.0 };
-                kx[q] = (1.0 - fx) * k0 + fx * k1;
-                ky[q] = mass * ((1.0 - fy) * k0 + fy * k1);
+            if let Some(k) = &self.ridge {
+                let n = m - 1;
+                let at = |qx: usize, qy: usize| if qx < n && qy < n { k[qy * n + qx] } else { 0.0 };
+                for qy in 0..m {
+                    for qx in 0..m {
+                        let (lx, ly) = (qx.wrapping_sub(1), qy.wrapping_sub(1));
+                        win[qy * m + qx] = mass
+                            * ((1.0 - fx) * (1.0 - fy) * at(qx, qy) + fx * (1.0 - fy) * at(lx, qy) + (1.0 - fx) * fy * at(qx, ly) + fx * fy * at(lx, ly));
+                    }
+                }
+            } else {
+                // a Gaussian is separable: in each axis, the kernel at x0 and at x0 + 1, mixed
+                for q in 0..m {
+                    let k0 = if q < m - 1 { self.kernel[q] } else { 0.0 };
+                    let k1 = if q > 0 { self.kernel[q - 1] } else { 0.0 };
+                    kx[q] = (1.0 - fx) * k0 + fx * k1;
+                    ky[q] = mass * ((1.0 - fy) * k0 + fy * k1);
+                }
+                for qy in 0..m {
+                    for qx in 0..m {
+                        win[qy * m + qx] = ky[qy] * kx[qx];
+                    }
+                }
             }
-            for (qy, &vy) in ky.iter().enumerate() {
+            for qy in 0..m {
                 let y = y0 - r + qy as i32;
                 if y < 0 || y >= h as i32 {
                     continue;
                 }
-                for (qx, &vx) in kx.iter().enumerate() {
+                for qx in 0..m {
                     let x = x0 - r + qx as i32;
                     if x < 0 || x >= w as i32 {
                         continue;
@@ -313,7 +406,7 @@ impl PathArt {
                         self.touched.push(p as u32);
                     }
                     // never exactly 0 once touched, so a pixel is listed once
-                    self.scratch[p] += vy * vx + 1e-30;
+                    self.scratch[p] += win[qy * m + qx] + 1e-30;
                 }
             }
         }
@@ -322,7 +415,7 @@ impl PathArt {
 
     // E = G W (G D - T), half the loss's derivative with respect to D
     fn e(&self) -> Vec<f32> {
-        blur(&self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r).collect::<Vec<_>>(), self.width, self.height, self.sigma)
+        self.conv(&self.residual.iter().zip(&self.weight).map(|(r, wt)| wt * r).collect::<Vec<_>>())
     }
 
     // A few hundred to a few thousand 2-opt moves at temperature `temp`. A move picks a node a and a node c
@@ -593,14 +686,24 @@ mod tests {
     }
 
     fn params() -> Params {
-        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false }
+        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0 }
+    }
+
+    // the same, as a ridge-shaped airbrush stroke
+    fn ridge() -> Params {
+        Params { airbrush: true, ridge: 2.5, ..params() }
     }
 
     // The loss the annealing keeps track of move by move should match a fresh render.
     #[test]
     fn annealing_tracks_the_loss() {
+        tracks(params());
+        tracks(ridge());
+    }
+
+    fn tracks(p: Params) {
         let mut rng = rand::thread_rng();
-        let mut g = PathArt::new(disc(), 60, 60, &params(), &mut rng);
+        let mut g = PathArt::new(disc(), 60, 60, &p, &mut rng);
         g.anneal(1.0, &mut rng);
         assert!(g.accepted > 0);
         let (tracked, residual) = (g.loss, g.residual.clone());
@@ -613,8 +716,13 @@ mod tests {
     // The analytic node gradients should match finite differences of the loss.
     #[test]
     fn gradients_match_finite_differences() {
+        gradients(params());
+        gradients(ridge());
+    }
+
+    fn gradients(p: Params) {
         let mut rng = rand::thread_rng();
-        let mut g = PathArt::new(disc(), 60, 60, &params(), &mut rng);
+        let mut g = PathArt::new(disc(), 60, 60, &p, &mut rng);
         for _ in 0..30 { g.step(&mut rng); }
         // check the fine and coarse losses together
         let mu = 0.3;
@@ -639,13 +747,17 @@ mod tests {
             if near_step { continue; }
             for c in 0..2 {
                 let at = |d: f32| if c == 0 { (x + d, y) } else { (x, y + d) };
+                let mid = total(&mut g);
                 g.nodes[v] = at(eps); let up = total(&mut g);
                 g.nodes[v] = at(-eps); let down = total(&mut g);
                 g.nodes[v] = (x, y);
                 let fd = (up - down) / (2.0 * eps);
                 let an = gn[2 * v + c];
                 if fd.abs() < 5e-2 { continue; }
-                assert!((fd - an).abs() <= 0.25 * fd.abs().max(an.abs()) + 2e-2, "node {} axis {}: analytic {} vs numeric {}", v, c, an, fd);
+                // the loss is only piecewise smooth (bilinear sampling has kinks at pixel centres, which matter
+                // with a peaked kernel), so the gradient may match the slope on one side instead
+                let near = |fd: f32| (fd - an).abs() <= 0.25 * fd.abs().max(an.abs()) + 2e-2;
+                assert!(near(fd) || near((up - mid) / eps) || near((mid - down) / eps), "node {} axis {}: analytic {} vs numeric {}", v, c, an, fd);
                 checked += 1;
             }
         }

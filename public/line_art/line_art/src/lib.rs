@@ -79,8 +79,9 @@ pub struct PathFace {
 impl PathFace {
     // darkness: row-major, 0 = white, 1 = black
     #[wasm_bindgen(constructor)]
-    // airbrush: a soft stroke with a Gaussian profile instead of a sharp line
-    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool) -> PathFace {
+    // airbrush: a soft stroke instead of a sharp line, with a Gaussian profile, or with ridge > 0 one that falls
+    // off linearly to 0 at ridge pixels from its centre
+    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool, ridge: f32) -> PathFace {
         use rand::SeedableRng;
         set_panic_hook();
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -106,6 +107,7 @@ impl PathFace {
             tone: TONE,
             dot: DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI,
             airbrush,
+            ridge,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
         PathFace { path, rng }
