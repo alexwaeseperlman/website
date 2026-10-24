@@ -29,6 +29,8 @@ pub struct GraphArt {
     min_width: f32,
     lr_width: f32,
     lr_node: f32,
+    beta1: f32,
+    beta2: f32,
     // Adam moments for the widths, then for the node coordinates
     m_w: Vec<f32>,
     v_w: Vec<f32>,
@@ -47,6 +49,9 @@ pub struct Params {
     // peak Adam learning rates: log width per step, and pixels per step
     pub lr_width: f32,
     pub lr_node: f32,
+    // Adam's decay rates for the running mean and variance of the gradient
+    pub beta1: f32,
+    pub beta2: f32,
     // how much harder ink on white paper is penalized than ink on the subject
     pub paper: f32,
     // unsharp-mask strength that brings out eyes, nose and mouth against the much darker hair
@@ -71,59 +76,53 @@ pub struct Params {
 
 // Lines fainter than this are left out of the drawing the loss sees (all of them together hold a tiny amount
 // of ink) and are not sent to be drawn (at under 1/255 opacity even on a 3x screen, they would not change a
-// pixel), and their gradients are only checked every 16th step, at every 4th pixel (lazy Adam).
+// pixel), and their gradients are only checked every 16th step, with samples twice as far apart (lazy Adam).
 const FAINT: f32 = 1e-3;
-const BETA1: f32 = 0.9;
-const BETA2: f32 = 0.999;
 
 fn blur(src: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f32> {
-    let r = (sigma * 3.0).ceil() as i32;
-    let k: Vec<f32> = (-r..=r).map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp()).collect();
+    let r = (sigma * 3.0).ceil() as usize;
+    let k: Vec<f32> = (0..=2 * r).map(|i| (-((i as f32 - r as f32).powi(2)) / (2.0 * sigma * sigma)).exp()).collect();
     let s: f32 = k.iter().sum();
     let k: Vec<f32> = k.iter().map(|v| v / s).collect();
+    // rows: each output pixel gathers its 2r + 1 neighbours, with the taps that fall off the edge dropped
     let mut tmp = vec![0f32; w * h];
-    let mut out = vec![0f32; w * h];
-    for y in 0..h {
+    for (row, out) in src.chunks_exact(w).zip(tmp.chunks_exact_mut(w)) {
         for x in 0..w {
-            let mut a = 0.0;
-            for (i, kv) in k.iter().enumerate() {
-                let xx = x as i32 + i as i32 - r;
-                if xx >= 0 && xx < w as i32 {
-                    a += kv * src[y * w + xx as usize];
-                }
-            }
-            tmp[y * w + x] = a;
+            let (lo, hi) = (x.saturating_sub(r), (x + r).min(w - 1));
+            let taps = &k[lo + r - x..=hi + r - x];
+            out[x] = row[lo..=hi].iter().zip(taps).map(|(a, b)| a * b).sum();
         }
     }
+    // columns: each output row is a weighted sum of whole input rows, which runs along memory
+    let mut out = vec![0f32; w * h];
     for y in 0..h {
-        for x in 0..w {
-            let mut a = 0.0;
-            for (i, kv) in k.iter().enumerate() {
-                let yy = y as i32 + i as i32 - r;
-                if yy >= 0 && yy < h as i32 {
-                    a += kv * tmp[yy as usize * w + x];
-                }
+        let dst = &mut out[y * w..(y + 1) * w];
+        for yy in y.saturating_sub(r)..=(y + r).min(h - 1) {
+            let kv = k[yy + r - y];
+            for (d, &t) in dst.iter_mut().zip(&tmp[yy * w..(yy + 1) * w]) {
+                *d += kv * t;
             }
-            out[y * w + x] = a;
         }
     }
     out
 }
 
-// Bilinear weights of a point in pixel space, where pixel i covers [i, i + 1): its four pixels' indices and
-// weights, or None when it falls outside the image.
-fn bilinear(x: f32, y: f32, w: usize, h: usize) -> Option<(usize, f32, f32)> {
-    let (x, y) = (x - 0.5, y - 0.5);
-    if x < 0.0 || y < 0.0 || x >= (w - 1) as f32 || y >= (h - 1) as f32 {
-        return None;
-    }
-    let (x0, y0) = (x as usize, y as usize);
-    Some((y0 * w + x0, x - x0 as f32, y - y0 as f32))
+// Bilinear weights of a point in pixel space, where pixel i covers [i, i + 1): its top-left pixel's index and
+// the weights toward the next column and row. Nodes are kept inside [0.5, size - 0.5], so every point on a line
+// is too; the clamp only matters on the last row and column.
+#[inline(always)]
+fn bilinear(x: f32, y: f32, w: usize, h: usize) -> (usize, f32, f32) {
+    let (x, y) = ((x - 0.5).max(0.0), (y - 0.5).max(0.0));
+    let (x0, y0) = ((x as usize).min(w - 2), (y as usize).min(h - 2));
+    (y0 * w + x0, x - x0 as f32, y - y0 as f32)
 }
 
-// Points along a segment, one per unit of length (at least one), at fractions t = (i + 0.5) / n.
+// Points along a segment, one per SPACING pixels (at least one), at fractions t = (i + 0.5) / n. The drawing
+// is blurred with sigma 2 before it is compared, which smooths samples 2 px apart into a continuous line
+// (the ripple left is about e^-20 of the line's ink).
+const SPACING: f32 = 2.0;
 fn samples(len: f32) -> usize {
-    len.ceil().max(1.0) as usize
+    (len / SPACING).ceil().max(1.0) as usize
 }
 
 impl GraphArt {
@@ -173,6 +172,8 @@ impl GraphArt {
             min_width: p.min_width,
             lr_width: p.lr_width,
             lr_node: p.lr_node,
+            beta1: p.beta1,
+            beta2: p.beta2,
             m_w: vec![0.0; k],
             v_w: vec![0.0; k],
             m_n: vec![0.0; 2 * n],
@@ -199,24 +200,23 @@ impl GraphArt {
             let n = samples(len);
             let mass = wk * len / n as f32;
             ink += wk * len;
+            let (sx, sy) = ((bx - ax) / n as f32, (by - ay) / n as f32);
             for i in 0..n {
-                let t = (i as f32 + 0.5) / n as f32;
-                if let Some((j, fx, fy)) = bilinear(ax + (bx - ax) * t, ay + (by - ay) * t, w, h) {
-                    d[j] += mass * (1.0 - fx) * (1.0 - fy);
-                    d[j + 1] += mass * fx * (1.0 - fy);
-                    d[j + w] += mass * (1.0 - fx) * fy;
-                    d[j + w + 1] += mass * fx * fy;
-                }
+                let t = i as f32 + 0.5;
+                let (j, fx, fy) = bilinear(ax + sx * t, ay + sy * t, w, h);
+                d[j] += mass * (1.0 - fx) * (1.0 - fy);
+                d[j + 1] += mass * fx * (1.0 - fy);
+                d[j + w] += mass * (1.0 - fx) * fy;
+                d[j + w + 1] += mass * fx * fy;
             }
         }
         // the dots on the nodes are part of the drawing too
         for &(x, y) in &self.nodes {
-            if let Some((j, fx, fy)) = bilinear(x, y, w, h) {
-                d[j] += self.dot * (1.0 - fx) * (1.0 - fy);
-                d[j + 1] += self.dot * fx * (1.0 - fy);
-                d[j + w] += self.dot * (1.0 - fx) * fy;
-                d[j + w + 1] += self.dot * fx * fy;
-            }
+            let (j, fx, fy) = bilinear(x, y, w, h);
+            d[j] += self.dot * (1.0 - fx) * (1.0 - fy);
+            d[j + 1] += self.dot * fx * (1.0 - fy);
+            d[j + w] += self.dot * (1.0 - fx) * fy;
+            d[j + w + 1] += self.dot * fx * fy;
         }
         let gd = blur(&d, w, h, self.sigma);
         let mut loss = self.lambda * ink;
@@ -235,7 +235,7 @@ impl GraphArt {
 
     // Gradients of the loss: one per line width (None for a line skipped this time), and (x, y) per node.
     // Faint lines only need to know whether adding some would help, so unless `all` is set they are
-    // skipped, and when they are checked it is at every 4th pixel; E is blurred twice, so smooth at that
+    // skipped, and when they are checked it is with samples twice as far apart; E is blurred twice, so smooth at that
     // scale. They are most of the pairs, so this is most of the time saved.
     fn backward(&self, e: &[f32], all: bool) -> (Vec<Option<f32>>, Vec<f32>) {
         let (w, h) = (self.width, self.height);
@@ -243,11 +243,10 @@ impl GraphArt {
         let mut gn = vec![0f32; 2 * self.nodes.len()];
         // moving a node moves its dot
         for (v, &(x, y)) in self.nodes.iter().enumerate() {
-            if let Some((j, fx, fy)) = bilinear(x, y, w, h) {
-                let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
-                gn[2 * v] += 2.0 * self.dot * ((q - p) * (1.0 - fy) + (s - r) * fy);
-                gn[2 * v + 1] += 2.0 * self.dot * ((r - p) * (1.0 - fx) + (s - q) * fx);
-            }
+            let (j, fx, fy) = bilinear(x, y, w, h);
+            let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
+            gn[2 * v] += 2.0 * self.dot * ((q - p) * (1.0 - fy) + (s - r) * fy);
+            gn[2 * v + 1] += 2.0 * self.dot * ((r - p) * (1.0 - fx) + (s - q) * fx);
         }
         for (k, &(a, b)) in self.pairs.iter().enumerate() {
             let wk = self.widths[k];
@@ -258,22 +257,25 @@ impl GraphArt {
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
             let (dx, dy) = (bx - ax, by - ay);
             let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-            let n = if live { samples(len) } else { samples(len / 4.0) };
-            // sum of E, and of t * grad E and (1 - t) * grad E, along the line
-            let (mut se, mut gbx, mut gby, mut gax, mut gay) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            let n = if live { samples(len) } else { samples(len / 2.0) };
+            // sum of E, of grad E, and of t * grad E along the line; (1 - t) * grad E is the difference
+            let (mut se, mut ex_sum, mut ey_sum, mut gbx, mut gby) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            let inv = 1.0 / n as f32;
             for i in 0..n {
-                let t = (i as f32 + 0.5) / n as f32;
-                if let Some((j, fx, fy)) = bilinear(ax + dx * t, ay + dy * t, w, h) {
-                    let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
-                    se += p * (1.0 - fx) * (1.0 - fy) + q * fx * (1.0 - fy) + r * (1.0 - fx) * fy + s * fx * fy;
-                    let ex = (q - p) * (1.0 - fy) + (s - r) * fy;
-                    let ey = (r - p) * (1.0 - fx) + (s - q) * fx;
-                    gbx += ex * t;
-                    gby += ey * t;
-                    gax += ex * (1.0 - t);
-                    gay += ey * (1.0 - t);
-                }
+                let t = (i as f32 + 0.5) * inv;
+                let (j, fx, fy) = bilinear(ax + dx * t, ay + dy * t, w, h);
+                let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
+                let top = p + (q - p) * fx;
+                let bottom = r + (s - r) * fx;
+                se += top + (bottom - top) * fy;
+                let ex = (q - p) + ((s - r) - (q - p)) * fy;
+                let ey = bottom - top;
+                ex_sum += ex;
+                ey_sum += ey;
+                gbx += ex * t;
+                gby += ey * t;
             }
+            let (gax, gay) = (ex_sum - gbx, ey_sum - gby);
             // each sample carries wk * len / n of ink
             let per = len / n as f32;
             gw[k] = Some(2.0 * per * se + self.lambda * len);
@@ -307,10 +309,11 @@ impl GraphArt {
             let progress = (self.iteration - self.warmup) as f32 / (self.iterations - self.warmup).max(1) as f32;
             0.5 * (1.0 + (std::f32::consts::PI * progress).cos())
         };
-        let (c1, c2) = (1.0 - BETA1.powf(t), 1.0 - BETA2.powf(t));
+        let (b1, b2) = (self.beta1, self.beta2);
+        let (c1, c2) = (1.0 - b1.powf(t), 1.0 - b2.powf(t));
         let adam = |g: f32, m: &mut f32, v: &mut f32| {
-            *m = BETA1 * *m + (1.0 - BETA1) * g;
-            *v = BETA2 * *v + (1.0 - BETA2) * g * g;
+            *m = b1 * *m + (1.0 - b1) * g;
+            *v = b2 * *v + (1.0 - b2) * g * g;
             (*m / c1) / ((*v / c2).sqrt() + 1e-20)
         };
         let lr = self.lr_width * schedule;
@@ -352,7 +355,7 @@ mod tests {
     fn gradients_match_finite_differences() {
         let (w, h) = (60, 60);
         let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 30.0, (i / w) as f32 - 30.0); if x * x + y * y < 300.0 { 0.8 } else { 0.0 } }).collect();
-        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.2, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 30, start_width: 0.5, dot: 4.5, min_width: 1e-6 };
+        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.2, lr_node: 0.5, beta1: 0.9, beta2: 0.999, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 30, start_width: 0.5, dot: 4.5, min_width: 1e-6 };
         let mut rng = rand::thread_rng();
         let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
         for _ in 0..30 { g.step(); }
@@ -381,7 +384,7 @@ mod tests {
                 let k = g.pairs.iter().position(|&p| p == (a as u16, b as u16)).unwrap();
                 let (ux, uy) = g.nodes[u];
                 let len = ((x - ux).powi(2) + (y - uy).powi(2)).sqrt();
-                g.widths[k] >= FAINT && (len - len.round()).abs() < 2.0 * eps
+                g.widths[k] >= FAINT && (len / SPACING - (len / SPACING).round()).abs() < 2.0 * eps
             });
             if near_step { continue; }
             for c in 0..2 {
