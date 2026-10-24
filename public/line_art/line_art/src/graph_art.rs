@@ -7,8 +7,8 @@
 // |sqrt(W) G (D - T)|^2 + lambda * ink. Each iteration renders D, blurs, and gets E = G W G (D - T), which is
 // half the loss's derivative with respect to D. Every gradient follows from it: a line's width by summing E
 // along the line, a node's position by summing the gradient of E along each of its lines. All line widths
-// and node positions then take one Adam step, with the learning rate on a cosine schedule from its peak to 0,
-// and widths are clamped to [0, max_width].
+// and node positions then take one Adam step, with the learning rate warming up linearly to its peak and then
+// following a cosine down to 0, and widths are clamped to [0, max_width].
 use rand::Rng;
 
 pub struct GraphArt {
@@ -31,6 +31,7 @@ pub struct GraphArt {
     m_n: Vec<f32>,
     v_n: Vec<f32>,
     pub iterations: usize,
+    warmup: usize,
     pub iteration: usize,
     pub loss: f32,
 }
@@ -53,6 +54,11 @@ pub struct Params {
     // cost per unit of ink: higher means fewer, bolder lines
     pub lambda: f32,
     pub max_width: f32,
+    // steps of linear learning-rate warmup before the cosine decay
+    pub warmup: usize,
+    // the random start: how many lines, with widths up to start_width
+    pub start_lines: usize,
+    pub start_width: f32,
 }
 
 const BETA1: f32 = 0.9;
@@ -111,16 +117,14 @@ fn samples(len: f32) -> usize {
 impl GraphArt {
     // darkness: row-major, 0 = white, 1 = black
     pub fn new(darkness: Vec<f32>, width: usize, height: usize, p: &Params, rng: &mut impl Rng) -> GraphArt {
-        let soft = blur(&darkness, width, height, 4.0);
         let wide = blur(&darkness, width, height, 8.0);
         let fine: Vec<f32> = darkness.iter().zip(&wide).map(|(d, w)| d - w).collect();
         let darkness: Vec<f32> = darkness.iter().zip(&fine).map(|(d, f)| (d + p.detail * f).clamp(0.0, 1.0).powf(p.gamma)).collect();
-        // nodes go where there is ink, and extra where there are features
         let detail = blur(&fine.iter().map(|f| f.abs()).collect::<Vec<_>>(), width, height, 3.0);
         let dm = detail.iter().cloned().fold(1e-6f32, f32::max);
-        let sm = soft.iter().cloned().fold(1e-6f32, f32::max);
-        let density: Vec<f32> = soft.iter().zip(&detail).map(|(s, d)| s / sm + 2.0 * d / dm).collect();
-        let nodes = place_nodes(&density, width, height, p.nodes, rng);
+        // start from noise: nodes anywhere, and a random handful of lines with random widths
+        let nodes: Vec<(f32, f32)> =
+            (0..p.nodes).map(|_| (0.5 + rng.gen::<f32>() * (width - 1) as f32, 0.5 + rng.gen::<f32>() * (height - 1) as f32)).collect();
         // W is large on paper, so lines across the background cost more, and larger again where the photo has
         // detail (eyes, brows, nose, mouth), which is what reads as a likeness
         let light = blur(&darkness, width, height, 3.0);
@@ -133,12 +137,16 @@ impl GraphArt {
             }
         }
         let k = pairs.len();
+        let mut widths = vec![0.0; k];
+        for _ in 0..p.start_lines {
+            widths[rng.gen_range(0..k)] = rng.gen::<f32>() * p.start_width;
+        }
         GraphArt {
             width,
             height,
             nodes,
             pairs,
-            widths: vec![0.0; k],
+            widths,
             target: blur(&darkness, width, height, p.sigma),
             weight,
             sigma: p.sigma,
@@ -151,6 +159,7 @@ impl GraphArt {
             m_n: vec![0.0; 2 * n],
             v_n: vec![0.0; 2 * n],
             iterations: p.iterations,
+            warmup: p.warmup,
             iteration: 0,
             loss: 0.0,
         }
@@ -258,14 +267,20 @@ impl GraphArt {
         let (gw, gn) = self.backward(&e, self.iteration % 8 == 0);
         self.iteration += 1;
         let t = self.iteration as f32;
-        let cosine = 0.5 * (1.0 + (std::f32::consts::PI * (t - 1.0) / self.iterations as f32).cos());
+        // linear warmup to the peak learning rate, then a cosine down to 0 at the last step
+        let schedule = if self.iteration <= self.warmup {
+            t / self.warmup as f32
+        } else {
+            let progress = (self.iteration - self.warmup) as f32 / (self.iterations - self.warmup).max(1) as f32;
+            0.5 * (1.0 + (std::f32::consts::PI * progress).cos())
+        };
         let (c1, c2) = (1.0 - BETA1.powf(t), 1.0 - BETA2.powf(t));
         let adam = |g: f32, m: &mut f32, v: &mut f32| {
             *m = BETA1 * *m + (1.0 - BETA1) * g;
             *v = BETA2 * *v + (1.0 - BETA2) * g * g;
             (*m / c1) / ((*v / c2).sqrt() + 1e-8)
         };
-        let lr = self.lr_width * cosine;
+        let lr = self.lr_width * schedule;
         for k in 0..self.widths.len() {
             // a skipped line keeps its moments and width until it is next checked (lazy Adam)
             let g = match gw[k] {
@@ -275,7 +290,7 @@ impl GraphArt {
             let u = adam(g, &mut self.m_w[k], &mut self.v_w[k]);
             self.widths[k] = (self.widths[k] - lr * u).clamp(0.0, self.max_width);
         }
-        let lr = self.lr_node * cosine;
+        let lr = self.lr_node * schedule;
         let (xmax, ymax) = (self.width as f32 - 0.5, self.height as f32 - 0.5);
         for v in 0..self.nodes.len() {
             let ux = adam(gn[2 * v], &mut self.m_n[2 * v], &mut self.v_n[2 * v]);
@@ -292,33 +307,6 @@ impl GraphArt {
     }
 }
 
-// Nodes go where the picture has ink: dart throwing weighted by the blurred darkness, with a minimum spacing
-// so they don't clump, relaxed whenever too many darts miss.
-fn place_nodes(soft: &[f32], w: usize, h: usize, count: usize, rng: &mut impl Rng) -> Vec<(f32, f32)> {
-    let max = soft.iter().cloned().fold(0f32, f32::max).max(1e-6);
-    let mut spacing = ((w * h) as f32 / count as f32).sqrt() * 0.9;
-    let mut nodes: Vec<(f32, f32)> = Vec::with_capacity(count);
-    let mut misses = 0;
-    while nodes.len() < count {
-        let x = rng.gen::<f32>() * (w - 1) as f32;
-        let y = rng.gen::<f32>() * (h - 1) as f32;
-        let d = soft[y as usize * w + x as usize] / max;
-        if rng.gen::<f32>() > d {
-            continue;
-        }
-        if nodes.iter().any(|&(a, b)| (a - x).powi(2) + (b - y).powi(2) < spacing * spacing) {
-            misses += 1;
-            if misses > 200 {
-                spacing *= 0.95;
-                misses = 0;
-            }
-            continue;
-        }
-        nodes.push((x, y));
-    }
-    nodes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,7 +316,7 @@ mod tests {
     fn gradients_match_finite_differences() {
         let (w, h) = (60, 60);
         let dark: Vec<f32> = (0..w * h).map(|i| { let (x, y) = ((i % w) as f32 - 30.0, (i / w) as f32 - 30.0); if x * x + y * y < 300.0 { 0.8 } else { 0.0 } }).collect();
-        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.05, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5 };
+        let p = Params { nodes: 12, sigma: 2.0, iterations: 30, lr_width: 0.05, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, max_width: 1.5, warmup: 3, start_lines: 0, start_width: 0.0 };
         let mut rng = rand::thread_rng();
         let mut g = GraphArt::new(dark, w, h, &p, &mut rng);
         for _ in 0..30 { g.step(); }

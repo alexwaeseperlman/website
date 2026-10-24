@@ -1,8 +1,8 @@
 // Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes.
 // onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration) after every
 // optimizer step, where a width is ink per unit length; post the returned message to the worker to start over.
-export function lineArt(img, onGraph, { nodes = 300, iterations = 200 } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261024e", import.meta.url), { type: "module" });
+export function lineArt(img, onGraph, { nodes = 300, iterations = 1000 } = {}) {
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261024f", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -59,6 +59,15 @@ export function graphView(canvas, width, height) {
       ctx.lineTo(nodes[b], nodes[b + 1]);
       ctx.stroke();
     }
+    // a small dot on every node
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "black";
+    ctx.beginPath();
+    for (let i = 0; i < nodes.length; i += 2) {
+      ctx.moveTo(nodes[i] + 1.2, nodes[i + 1]);
+      ctx.arc(nodes[i], nodes[i + 1], 1.2, 0, 2 * Math.PI);
+    }
+    ctx.fill();
   }
 
   return {

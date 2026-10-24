@@ -7,7 +7,7 @@ fn main() {
     let (w, h): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
     let bytes = std::fs::read(&a[1]).unwrap();
     let dark: Vec<f32> = bytes.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-    let mut p = Params { nodes: 300, sigma: 2.0, iterations: 200, lr_width: 0.02, lr_node: 0.5, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, max_width: 1.5 };
+    let mut p = Params { nodes: 300, sigma: 2.0, iterations: 1000, lr_width: 0.02, lr_node: 1.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, max_width: 1.5, warmup: 50, start_lines: 3000, start_width: 0.3 };
     for kv in &a[5..] {
         let (k, v) = kv.split_once('=').unwrap();
         let v: f32 = v.parse().unwrap();
@@ -23,6 +23,9 @@ fn main() {
             "features" => p.features = v,
             "lambda" => p.lambda = v,
             "max_width" => p.max_width = v,
+            "warmup" => p.warmup = v as usize,
+            "start_lines" => p.start_lines = v as usize,
+            "start_width" => p.start_width = v,
             _ => panic!("unknown key {}", k),
         }
     }
