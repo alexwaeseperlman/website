@@ -600,6 +600,9 @@ mod tests {
             // a node held at the edge sits on a pixel centre, where bilinear interpolation has a kink
             let (x0, x1, y0, y1) = g.bounds;
             if x <= x0 + eps || x >= x1 - eps || y <= y0 + eps || y >= y1 - eps { continue; }
+            // so does a dot crossing a row or column of pixel centres
+            let kink = |c: f32| ((c - 0.5) - (c - 0.5).round()).abs() < 2.0 * eps;
+            if kink(x) || kink(y) { continue; }
             // a line's sample count steps when its length crosses a whole number; skip nodes with a line near one
             let i = g.pos[v] as usize;
             let near_step = [i.wrapping_sub(1), i + 1].iter().filter(|&&k| k < g.order.len()).any(|&k| {
