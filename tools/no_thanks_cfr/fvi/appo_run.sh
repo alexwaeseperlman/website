@@ -6,7 +6,7 @@
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 OUT="$1"; T="$2"; G="${3:-16}"; EVERY="${4:-25}"; DEALS="${5:-20000}"
-g++ -O3 -march=native -ffast-math -std=c++17 -pthread "$here/fvi.cpp" -o "$here/fvi" 2>/dev/null
+[ -n "$NOBUILD" ] || g++ -O3 -march=native -ffast-math -std=c++17 -pthread "$here/fvi.cpp" -o "$here/fvi" 2>/dev/null
 [ -f "$here/../nash/live.json" ] || python3 "$here/../nash/dequant.py" "$here/../../../public/no_thanks/bot-net.json" "$here/../nash/live.json"
 mkdir -p "$OUT"; cd "$OUT"; export LIVE="$here/../nash/live.json"
 done_t=0; [ -f appo-meta.txt ] && done_t=$(cut -d' ' -f1 appo-meta.txt)
