@@ -70,7 +70,8 @@ pub struct Params {
 }
 
 // Lines fainter than this are left out of the drawing the loss sees (all of them together hold a tiny amount
-// of ink), and only have their gradients checked every 8th step (lazy Adam).
+// of ink) and are not sent to be drawn (at under 1/255 opacity even on a 3x screen, they would not change a
+// pixel), and their gradients are only checked every 16th step, at every 4th pixel (lazy Adam).
 const FAINT: f32 = 1e-3;
 const BETA1: f32 = 0.9;
 const BETA2: f32 = 0.999;
@@ -234,7 +235,7 @@ impl GraphArt {
 
     // Gradients of the loss: one per line width (None for a line skipped this time), and (x, y) per node.
     // Faint lines only need to know whether adding some would help, so unless `all` is set they are
-    // skipped, and when they are checked it is at every other pixel; E is blurred twice, so smooth at that
+    // skipped, and when they are checked it is at every 4th pixel; E is blurred twice, so smooth at that
     // scale. They are most of the pairs, so this is most of the time saved.
     fn backward(&self, e: &[f32], all: bool) -> (Vec<Option<f32>>, Vec<f32>) {
         let (w, h) = (self.width, self.height);
@@ -257,7 +258,7 @@ impl GraphArt {
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
             let (dx, dy) = (bx - ax, by - ay);
             let len = (dx * dx + dy * dy).sqrt().max(1e-3);
-            let n = if live { samples(len) } else { samples(len / 2.0) };
+            let n = if live { samples(len) } else { samples(len / 4.0) };
             // sum of E, and of t * grad E and (1 - t) * grad E, along the line
             let (mut se, mut gbx, mut gby, mut gax, mut gay) = (0.0, 0.0, 0.0, 0.0, 0.0);
             for i in 0..n {
@@ -296,7 +297,7 @@ impl GraphArt {
         }
         let (loss, e) = self.forward();
         self.loss = loss;
-        let (gw, gn) = self.backward(&e, self.iteration % 8 == 0);
+        let (gw, gn) = self.backward(&e, self.iteration % 16 == 0);
         self.iteration += 1;
         let t = self.iteration as f32;
         // linear warmup to the peak learning rate, then a cosine down to 0 at the last step
@@ -336,9 +337,9 @@ impl GraphArt {
         true
     }
 
-    // Every line, with its width.
+    // Every line that is not too faint to see, with its width.
     pub fn edges(&self) -> Vec<(u16, u16, f32)> {
-        self.pairs.iter().zip(&self.widths).map(|(&(a, b), &w)| (a, b, w)).collect()
+        self.pairs.iter().zip(&self.widths).filter(|(_, &w)| w >= FAINT).map(|(&(a, b), &w)| (a, b, w)).collect()
     }
 }
 
