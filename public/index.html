@@ -143,7 +143,7 @@ stylesheets:
 </script>
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
-  import { lineArt, drawGraph } from './line_art/line_art.js?v=20261024b';
+  import { lineArt, graphView } from './line_art/line_art.js?v=20261024j';
   // The original 700-point pixel annealer, kept for the Pre-AI only switch
   import { lineArt as preAiLineArt } from './line_art/pre_ai/line_art.js';
   document.addEventListener('readystatechange', () => {
@@ -156,6 +156,7 @@ stylesheets:
     let message = null;
     let imageLoaded = false;
     let workerPreAi = false;
+    let view = null;
     let preAiLoaded = false;
     window.restartLineArt = function restartLineArt() {
       if (!imageLoaded) {
@@ -183,9 +184,8 @@ stylesheets:
         setTimeout(send, 10);
       }
       else if (window.worker == null) {
-        [window.worker, message] = lineArt(image, (nodes, edges, ink) => {
-          drawGraph(canvas, image.width, image.height, nodes, edges, ink);
-        });
+        view = view || graphView(canvas, image.width, image.height);
+        [window.worker, message] = lineArt(image, (nodes, edges, widths) => view.update(nodes, edges, widths));
       }
       else {
         worker.postMessage(message);
@@ -198,8 +198,10 @@ stylesheets:
     window.killLineArt = () => {
       if (window.worker) window.worker.terminate();
       window.worker = null;
+      if (view) view.clear();
       let ctx = canvas.getContext('2d')
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }

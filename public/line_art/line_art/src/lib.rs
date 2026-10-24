@@ -5,37 +5,53 @@ use graph_art::{GraphArt, Params};
 use utils::set_panic_hook;
 use wasm_bindgen::prelude::*;
 
-// The worker (../../wasm-worker.js) owns the timing: it calls run() in short bursts and posts the graph back.
+// The worker (../../wasm-worker.js) calls step() once per frame and posts the graph back.
 #[wasm_bindgen]
 pub struct Face {
     graph: GraphArt,
-    rng: rand::rngs::ThreadRng,
 }
 
 #[wasm_bindgen]
 impl Face {
     // darkness: row-major, 0 = white, 1 = black
     #[wasm_bindgen(constructor)]
-    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, sigma: f32, ink: f32) -> Face {
+    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize) -> Face {
         set_panic_hook();
         let mut rng = rand::thread_rng();
-        let params = Params { nodes, sigma, ink, start_temperature: 1.0, sweeps: 10.0, paper: 8.0, detail: 3.0, shift_rate: 0.03, gamma: 2.0 };
-        Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng), rng }
+        let params = Params {
+            nodes,
+            sigma: 2.0,
+            iterations,
+            lr_width: 0.4,
+            lr_node: 8.0,
+            beta1: 0.9,
+            beta2: 0.999,
+            paper: 12.0,
+            detail: 3.0,
+            gamma: 2.0,
+            features: 6.0,
+            lambda: 0.02,
+            max_width: 1.5,
+            warmup: 50,
+            start_lines: 375,
+            start_width: 0.15,
+            dot: 4.52,
+            min_width: 1e-6,
+        };
+        Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng) }
     }
 
-    // Runs `proposals` flips; returns how many were accepted.
-    pub fn run(&mut self, proposals: u32) -> u32 {
-        (0..proposals).filter(|_| self.graph.step(&mut self.rng)).count() as u32
+    // One Adam step on every line width and node position; false once the schedule is over.
+    pub fn step(&mut self) -> bool {
+        self.graph.step()
     }
 
-    // Proposals in one pass over every pair of nodes. A pass with nothing accepted after cooling means it's done.
-    pub fn sweep(&self) -> u32 {
-        self.graph.on.len() as u32
+    pub fn iteration(&self) -> usize {
+        self.graph.iteration
     }
 
-    // Proposals in the whole cooling schedule.
-    pub fn schedule(&self) -> u32 {
-        self.graph.schedule as u32
+    pub fn loss(&self) -> f32 {
+        self.graph.loss
     }
 
     // [x0, y0, x1, y1, ...]
@@ -45,6 +61,11 @@ impl Face {
 
     // [a0, b0, a1, b1, ...] node indices of the lines that are drawn
     pub fn edges(&self) -> Vec<u16> {
-        self.graph.edges().iter().flat_map(|&(a, b)| [a, b]).collect()
+        self.graph.edges().iter().flat_map(|&(a, b, _)| [a, b]).collect()
+    }
+
+    // Width (ink per unit length) of each line in edges(), in the same order
+    pub fn widths(&self) -> Vec<f32> {
+        self.graph.edges().iter().map(|&(_, _, w)| w).collect()
     }
 }

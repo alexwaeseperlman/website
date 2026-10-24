@@ -274,6 +274,11 @@ mjx-container {
   opacity: 0.75;
 }
 
+/* the graph face draws solid black lines; only the pre-AI drawing is faded */
+html:not(.pre-ai) #line-art-canvas-container {
+  opacity: 1;
+}
+
 @media screen and (max-width: 600px) {
   #root {
     padding: 16px 4vw;
