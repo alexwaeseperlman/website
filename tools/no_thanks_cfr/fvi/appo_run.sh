@@ -14,6 +14,7 @@ while [ "$done_t" -lt "$T" ]; do
   next=$(( done_t + EVERY )); [ "$next" -gt "$T" ] && next=$T
   "$here/fvi" appo "$next" "$G" >> log.txt
   done_t=$next; cp appo.json "appo-$done_t.json"; cp appo-meta.txt "appo-$done_t-meta.txt"
+  if [ -f appo-adv.json ]; then cp appo-adv.json "appo-$done_t-adv.json"; fi
   echo "iter $done_t" >> avs.txt
   "$here/fvi" avs "appo-$done_t.json" "$DEALS" >> avs.txt
 done
