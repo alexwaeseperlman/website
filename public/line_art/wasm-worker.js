@@ -1,8 +1,10 @@
-import init, { Face } from './line_art/pkg/line_art.js';
+// The ?v= queries keep a browser from pairing this with a cached copy of the old line art JS or wasm, which
+// sat at the same paths. Bump the version (here, in line_art.js and in ../index.html) whenever pkg/ is rebuilt.
+import init, { Face } from './line_art/pkg/line_art.js?v=20261024b';
 
 // Anneals a graph drawing of the image it is sent, posting {nodes, edges, done} every frame. A new message
 // starts over; the job counter stops the old loop.
-const ready = init();
+const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261024b', import.meta.url) });
 const SECONDS = 6; // how long the cooling should take to watch
 let job = 0;
 
