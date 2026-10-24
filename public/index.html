@@ -43,22 +43,22 @@ stylesheets:
           <p>
             <a href="figgie_equity/index.html">Figgie equity calculator</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="tax_calculator/index.html">Tax calculator</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="map/index.html">Map projector</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="turns/">Turns</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="burns/">Burns</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="no_thanks/">No Thanks!</a>
           </p>
-          <p>
+          <p data-ai>
             <a href="scroll/">scroll</a>
           </p>
         </div>
@@ -121,6 +121,25 @@ stylesheets:
         <img src="x.svg" />
       </a>
     </div>
+    <label id="pre-ai-toggle">
+      <input type="checkbox" id="pre-ai-checkbox" />
+      <span class="pre-ai-switch"></span>
+      <span>Pre-AI only</span>
+    </label>
+<script>
+  (() => {
+    const checkbox = document.getElementById("pre-ai-checkbox");
+    checkbox.checked = document.documentElement.classList.contains("pre-ai");
+    checkbox.addEventListener("change", () => {
+      document.documentElement.classList.toggle("pre-ai", checkbox.checked);
+      try {
+        localStorage.setItem("preAiOnly", checkbox.checked ? "1" : "0");
+      } catch (e) {}
+      // Refit the open menu section to its new height
+      if (window.onresize) window.onresize();
+    });
+  })();
+</script>
 <script src="line_art/line_art.js" type="module"></script>
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
