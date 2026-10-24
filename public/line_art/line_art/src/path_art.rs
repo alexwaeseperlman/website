@@ -52,6 +52,9 @@ pub struct PathArt {
     pub accepted: usize,
     // T_c: the photo's darkness summed over each block, blurred
     coarse_target: Vec<f32>,
+    airbrush: bool,
+    // the darkness the drawing aims for, unblurred
+    photo: Vec<f32>,
     coarse_weight: f32,
     coarse_block: f32,
     coarse_sigma: f32,
@@ -84,6 +87,8 @@ pub struct Params {
     pub tone: f32,
     // ink in the dot drawn on each node (pi r^2 for a solid dot of radius r)
     pub dot: f32,
+    // draw with a soft stroke, as wide as the loss's blur, instead of a sharp line
+    pub airbrush: bool,
 }
 
 const BETA1: f32 = 0.9;
@@ -127,7 +132,10 @@ impl PathArt {
         }
         let (target, weight, darkness) = prepare(&padded, width, height, p.detail, p.gamma, p.paper, p.features, p.sigma);
         // one line can only lay down so much ink, so it aims for a lighter version of the photo
-        let target: Vec<f32> = target.iter().map(|t| t * p.tone).collect();
+        let photo: Vec<f32> = darkness.iter().map(|d| d * p.tone).collect();
+        // With an airbrush stroke the drawing itself is blurred, a soft line with a Gaussian profile of width
+        // sigma, so it is compared with the photo directly rather than with a blurred photo.
+        let target: Vec<f32> = if p.airbrush { photo.clone() } else { target.iter().map(|t| t * p.tone).collect() };
         let f = p.coarse_block;
         let (cw, ch) = coarse_size(width, height, f);
         let mut blocks = vec![0f32; cw * ch];
@@ -170,6 +178,8 @@ impl PathArt {
             temp_end: p.temp_end,
             budget: p.budget,
             accepted: 0,
+            airbrush: p.airbrush,
+            photo,
             coarse_target: blur(&blocks.iter().map(|b| b * n as f32 / total).collect::<Vec<_>>(), cw, ch, p.coarse_sigma),
             coarse_block: f,
             coarse_sigma: p.coarse_sigma,
@@ -183,6 +193,23 @@ impl PathArt {
     // Node positions in the photo's pixels
     pub fn points(&self) -> Vec<(f32, f32)> {
         self.nodes.iter().map(|&(x, y)| (x - self.margin, y - self.margin)).collect()
+    }
+
+    // The drawing as it is shown, in the photo's pixels: the ink itself, blurred if it is airbrushed.
+    pub fn shown(&self) -> Vec<f32> {
+        let (d, _) = self.render();
+        let d = if self.airbrush { blur(&d, self.width, self.height, self.sigma) } else { d };
+        let m = self.margin as usize;
+        let (w, h) = (self.width - 2 * m, self.height - 2 * m);
+        (0..w * h).map(|i| d[(i / w + m) * self.width + i % w + m]).collect()
+    }
+
+    // Mean squared difference between the drawing as shown and the darkness it aims for, per photo pixel.
+    pub fn pixel_error(&self) -> f32 {
+        let m = self.margin as usize;
+        let w = self.width - 2 * m;
+        let shown = self.shown();
+        shown.iter().enumerate().map(|(i, s)| (s - self.photo[(i / w + m) * self.width + i % w + m]).powi(2)).sum::<f32>() / shown.len() as f32
     }
 
     fn length(&self, a: u32, b: u32) -> f32 {
@@ -566,7 +593,7 @@ mod tests {
     }
 
     fn params() -> Params {
-        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0 }
+        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false }
     }
 
     // The loss the annealing keeps track of move by move should match a fresh render.

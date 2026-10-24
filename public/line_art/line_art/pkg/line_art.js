@@ -124,11 +124,12 @@ export class PathFace {
      * @param {number} height
      * @param {number} nodes
      * @param {number} iterations
+     * @param {boolean} airbrush
      */
-    constructor(darkness, width, height, nodes, iterations) {
+    constructor(darkness, width, height, nodes, iterations, airbrush) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations);
+        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush);
         this.__wbg_ptr = ret;
         PathFaceFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -138,6 +139,15 @@ export class PathFace {
      */
     nodes() {
         const ret = wasm.pathface_nodes(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    shown() {
+        const ret = wasm.pathface_shown(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;

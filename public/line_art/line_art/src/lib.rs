@@ -79,7 +79,8 @@ pub struct PathFace {
 impl PathFace {
     // darkness: row-major, 0 = white, 1 = black
     #[wasm_bindgen(constructor)]
-    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize) -> PathFace {
+    // airbrush: a soft stroke with a Gaussian profile instead of a sharp line
+    pub fn new(darkness: Vec<f32>, width: usize, height: usize, nodes: usize, iterations: usize, airbrush: bool) -> PathFace {
         use rand::SeedableRng;
         set_panic_hook();
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -102,8 +103,9 @@ impl PathFace {
             coarse_block: 10.0,
             coarse_sigma: 5.0,
             coarse_until: 0.6,
-            tone: 0.6,
+            tone: TONE,
             dot: DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI,
+            airbrush,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
         PathFace { path, rng }
@@ -137,6 +139,12 @@ impl PathFace {
         vec![self.path.line; self.path.order.len().saturating_sub(1)]
     }
 
+    // The drawing as the optimizer sees it, row-major in the photo's pixels, as darkness relative to the photo's
+    // (1 = as dark as the darkest part of the photo it aims for). Only meaningful drawn as is for an airbrush.
+    pub fn shown(&self) -> Vec<f32> {
+        self.path.shown().iter().map(|v| v / TONE).collect()
+    }
+
     // Radius of the solid dot on each node, whose ink the optimizer counts
     pub fn dot(&self) -> f32 {
         DOT_RADIUS
@@ -144,3 +152,5 @@ impl PathFace {
 }
 
 const DOT_RADIUS: f32 = 0.6;
+// how dark the path aims to be, as a fraction of the photo
+const TONE: f32 = 0.6;
