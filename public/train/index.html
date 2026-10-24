@@ -221,11 +221,31 @@ const ago = t => dur((Date.now() - t) / 1000) + ' ago';
 const big = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
 const tile = (k, v, s = '') => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
 
-function clock(rs) {
+// The Vast thread keeps a row "boxes": [{id, job, threads, dph, status: running|destroyed, since, until}].
+function boxesOf(job) {
+  let all = [];
+  try { all = JSON.parse((rows.find(r => r.name === 'boxes') || {}).body || '[]'); } catch (e) {}
+  return Array.isArray(all) ? all.filter(b => b && b.job === job) : [];
+}
+function clock(rs, job) {
   const t0 = Math.min(...rs.map(r => +r.t)), t1 = Math.max(...rs.map(r => +r.t));
-  const live = Date.now() - t1 < STALE_MIN * 60000;
-  const end = live ? Date.now() : t1, el = (end - t0) / 1000;
-  return { t0, t1, live, el, cost: el / 3600 * rate };
+  const fresh = Date.now() - t1 < STALE_MIN * 60000;
+  const bx = boxesOf(job), up = bx.filter(b => b.status === 'running'), down = bx.filter(b => b.status === 'destroyed');
+  const ended = !up.length && down.length ? Math.max(...down.map(b => +new Date(b.until || 0))) : null;
+  const running = up.length > 0 || (!bx.length && fresh);
+  const end = running ? Date.now() : Math.max(t1, ended || 0), el = (end - t0) / 1000;
+  // cost from the boxes that say when they started and what they cost; else elapsed x the rate box
+  const priced = bx.filter(b => b.since && b.dph);
+  const cost = priced.length ? priced.reduce((a, b) => a + Math.max(0, (b.status === 'running' ? Date.now() : +new Date(b.until || Date.now())) - +new Date(b.since)) / 3.6e6 * b.dph, 0) : el / 3600 * rate;
+  const dph = up.length ? up.reduce((a, b) => a + (b.dph || 0), 0) : null;
+  return { t0, t1, fresh, live: running, running, ended, el, cost, dph, up };
+}
+function pill(c) {
+  if (fetchErr) return ['stale', 'offline, showing last data'];
+  if (c.ended) return ['', `stopped · box destroyed ${ago(c.ended)}`];
+  if (c.running && c.fresh) return ['live', '● live · updated ' + ago(c.t1)];
+  if (c.running) return ['stale', `box running, no upload for ${ago(c.t1).replace(' ago', '')}`];
+  return ['stale', 'idle · last update ' + ago(c.t1)];
 }
 
 // ---------- views ----------
@@ -245,11 +265,31 @@ function render() {
   if (!groups[tab]) tab = latest;
   $('tabs').innerHTML = keys.map(k => `<button class="${k === tab ? 'on' : ''}" data-k="${k}">${RUNS[k]}</button>`).join('');
   $('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.k; store('train.tab', tab); render(); });
-  rate = rateFor(tab); if (document.activeElement !== $('rate')) $('rate').value = rate;
-  const c = clock(groups[tab]);
-  $('status').className = 'pill ' + (fetchErr ? 'stale' : c.live ? 'live' : 'stale');
-  $('status').textContent = fetchErr ? 'offline, showing last data' : c.live ? '● live · updated ' + ago(c.t1) : 'idle · last update ' + ago(c.t1);
+  rate = rateFor(tab);
+  let c = clock(groups[tab], tab);
+  if (c.dph) { rate = c.dph; c = clock(groups[tab], tab); }
+  if (document.activeElement !== $('rate')) $('rate').value = rate;
+  [$('status').className, $('status').textContent] = ['pill ' + pill(c)[0], pill(c)[1]];
   (tab === 'fvi' ? viewFvi : viewPpo)(groups[tab], c);
+  $('view').insertAdjacentHTML('beforeend', boxesCard());
+}
+// Re-label the status pill between fetches without rebuilding the charts (keeps hover tooltips alive).
+setInterval(() => { const g = rows.filter(r => { const k = runOf(r.name); return k === tab || (tab === 'ppo' && k === 'ppo-old' && !rows.some(x => runOf(x.name) === 'ppo')); }); if (g.length) { const c = clock(g, tab); [$('status').className, $('status').textContent] = ['pill ' + pill(c)[0], pill(c)[1]]; } }, 5000);
+
+function boxesCard() {
+  let all = [];
+  try { all = JSON.parse((rows.find(r => r.name === 'boxes') || {}).body || '[]'); } catch (e) {}
+  if (!Array.isArray(all) || !all.length) return '';
+  const t = s => s ? new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '–';
+  const up = all.filter(b => b.status === 'running');
+  return `<div class="card" style="margin-top:12px"><h2>Machines · ${up.length} running${up.length ? `, $${up.reduce((a, b) => a + (b.dph || 0), 0).toFixed(2)}/hr` : ''}</h2><div class="tablewrap"><table>
+    <tr><th>Box</th><th>Job</th><th>Threads</th><th>$/hr</th><th>Status</th><th>Up</th><th>Cost</th></tr>
+    ${all.map(b => { const s = b.since ? +new Date(b.since) : null, e = b.status === 'running' ? Date.now() : b.until ? +new Date(b.until) : null;
+      return `<tr><td>${esc(b.id)}</td><td>${esc(RUNS[b.job] || b.job || '')}</td><td>${b.threads || '–'}</td><td>${b.dph != null ? (+b.dph).toFixed(2) : '–'}</td>
+      <td style="color:var(--${b.status === 'running' ? 'good' : 'ink3'})">${b.status === 'running' ? '● running' : esc(b.status || '')}</td>
+      <td>${s ? t(b.since) + '–' + (b.status === 'running' ? 'now' : t(b.until)) : b.until ? 'until ' + t(b.until) : '–'}</td>
+      <td>${s && e && b.dph ? '$' + ((e - s) / 3.6e6 * b.dph).toFixed(2) : '–'}</td></tr>`; }).join('')}
+  </table></div></div>`;
 }
 
 function viewFvi(rs, c) {
@@ -265,8 +305,8 @@ function viewFvi(rs, c) {
   const lastExact = f.list.filter(s => s.exact != null).pop();
   let h = `<div class="tiles">
     ${tile('Stages done', `${nd} / ${STAGES}`, f.cur ? `training stage ${f.cur.k}` : nd === STAGES ? 'finished' : '')}
-    ${tile('Elapsed', dur(c.el), c.live ? 'since first upload' : 'run idle')}
-    ${tile('ETA', left == null ? '–' : nd === STAGES ? 'done' : dur(left), per ? `~${dur(per)} per stage` : 'after the first stage')}
+    ${tile('Elapsed', dur(c.el), c.ended ? 'box destroyed' : c.live ? 'since first upload' : 'run idle')}
+    ${tile('ETA', nd === STAGES ? 'done' : c.ended ? 'stopped' : left == null ? '–' : dur(left), per ? `~${dur(per)} per stage` : 'after the first stage')}
     ${tile('Cost so far', '$' + c.cost.toFixed(2), left != null && nd < STAGES ? `~$${(c.cost + left / 3600 * rate).toFixed(2)} at finish` : `at $${rate}/hr`)}
     ${tile('Gain vs live bot', lastPlay ? `${lastPlay.play.gain > 0 ? '+' : ''}${lastPlay.play.gain.toFixed(2)}` : '–', lastPlay ? `± ${lastPlay.play.se} pts, last ${lastPlay.k + 1} stages` : 'every 4 stages')}
     ${tile('Error vs exact', lastExact ? lastExact.exact.toFixed(4) : '–', lastExact ? `stage ${lastExact.k}, ${lastExact.agree}% minimax moves` : 'stages 0–3')}
@@ -307,8 +347,8 @@ function viewPpo(rs, c) {
   const roll = (k, w = 10) => it.map((x, i) => { const a = it.slice(Math.max(0, i - w + 1), i + 1); return [x.i, a.reduce((s, y) => s + y[k], 0) / a.length]; });
   $('view').innerHTML = `<div class="tiles">
     ${tile('Iteration', last ? last.i : '–', p.exit != null ? 'exited: ' + esc(p.exit.trim().slice(0, 40) || 'done') : rate_ ? `~${rate_.toFixed(0)} s per iter` : '')}
-    ${tile('Elapsed', dur(c.el), c.live ? 'since first upload' : 'run idle')}
-    ${tile('Cost so far', '$' + c.cost.toFixed(2), `at $${rate}/hr`)}
+    ${tile('Elapsed', dur(c.el), c.ended ? 'box destroyed' : c.live ? 'since first upload' : 'run idle')}
+    ${tile('Cost so far', '$' + c.cost.toFixed(2), c.ended ? 'finished' : `at $${rate}/hr`)}
     ${tile('Edge vs opponents', last ? (roll('edge').pop()[1] >= 0 ? '+' : '') + roll('edge').pop()[1].toFixed(1) + '%' : '–', '10-iter mean')}
     ${tile('Value MSE', last ? last.mse.toFixed(4) : '–', last ? `entropy ${last.ent}` : '')}
     ${tile('Checkpoints', p.ckpts.length, p.ckpts.length ? 'latest ' + ago(Math.max(...p.ckpts.map(r => +r.t))) : '')}

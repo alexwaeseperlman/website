@@ -10,7 +10,7 @@ returns jsonb language sql stable security definer set search_path = public as $
   select coalesce(jsonb_agg(jsonb_build_object(
     'name', name, 'at', at, 'size', length(body),
     'body', case when name ~ 'setup' or name ~ '\.json$' then null
-                 else regexp_replace(right(body, 300000), '[0-9a-fA-F]{48,}', '[masked]', 'g') end
+                 else regexp_replace(right(body, 1000000), '[0-9a-fA-F]{48,}', '[masked]', 'g') end
   ) order by at), '[]'::jsonb)
   from public.nothanks_train_upload
 $$;
