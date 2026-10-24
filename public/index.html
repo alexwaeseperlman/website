@@ -6,6 +6,12 @@ stylesheets:
   - /flip-card.css
 ---
 
+    <label id="pre-ai-toggle">
+      <input type="checkbox" id="pre-ai-checkbox" />
+      <span class="pre-ai-switch"></span>
+      <span>Pre-AI only</span>
+    </label>
+
 <div class="menu-link" id="about-me">
       <a class="menu-link-label">About me</a>
       <div class="content">
@@ -121,11 +127,6 @@ stylesheets:
         <img src="x.svg" />
       </a>
     </div>
-    <label id="pre-ai-toggle">
-      <input type="checkbox" id="pre-ai-checkbox" />
-      <span class="pre-ai-switch"></span>
-      <span>Pre-AI only</span>
-    </label>
 <script>
   (() => {
     const checkbox = document.getElementById("pre-ai-checkbox");

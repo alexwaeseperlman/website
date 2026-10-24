@@ -127,6 +127,7 @@ h1 {
   align-items: center;
   gap: 10px;
   align-self: flex-start;
+  margin-top: -24px;
   font-family: "Roboto";
   font-size: 15px;
   color: #0079ac;
