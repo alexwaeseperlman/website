@@ -562,6 +562,8 @@ int main(int argc, char** argv){
   if (mode == "aheat") return aheatMain(argv[2], argc > 3 ? atoi(argv[3]) : 2);
   if (mode == "achaintest") return achainTest(atoi(argv[2]));
   if (mode == "avs") return avsMain(argv[2], atoi(argv[3]));
+  if (mode == "aroll") return arollMain(argv[2], atoi(argv[3]), atoi(argv[4]));
+  if (mode == "abias") return abiasMain(argv[2], atoi(argv[3]), atoi(argv[4]));
   if (mode == "aplay") return aplayMain(atoi(argv[2]));
   if (mode == "alabeltest") return alabelTest(atoi(argv[2]));
   if (mode == "acheck") return acheckMain(atoi(argv[2]), atoi(argv[3]));
