@@ -17,7 +17,7 @@ static bool takeShares(const ANet& A, Work* w, float* x, const Game& h, double* 
   Game a = h; if (step(a, true)){ for (int q = 0; q < a.n; q++) out[q] = winShare(a, q); return true; }
   afeatures(a, x); const float* s = A.forward(x, w); for (int k = 0; k < a.n; k++) out[(a.turn + k) % a.n] = s[k]; return false;
 }
-static void chainAt(const ANet& A, Work* w, const Game& g, Chain& c){
+static void chainAtSlow(const ANet& A, Work* w, const Game& g, Chain& c){
   int n = g.n; vector<array<double, 7>> T; vector<int> mover; vector<char> term; vector<float> X; vector<float> x(AF);
   Game h = g;
   for (;;){
@@ -31,6 +31,51 @@ static void chainAt(const ANet& A, Work* w, const Game& g, Chain& c){
   for (int q = 0; q < n; q++){ c.T0[q] = T[0][q]; c.v1[q] = T[sel][q]; }
   int p = g.turn; c.kT = 0; c.kS = (p - mover[sel] + n) % n; c.termT = term[0]; c.termS = term[sel];
   c.xT.assign(X.begin(), X.begin() + AF); c.xS.assign(X.begin() + (long)sel * AF, X.begin() + (long)(sel + 1) * AF);
+}
+// The same, fast: along the chain only chips and the taker change, so each player's pooled conv features come in two
+// versions (with and without the card in play), worked out once; each node is then just the head.
+static void chainAt(const ANet& A, Work* w, const Game& g, Chain& c){
+  (void)w; int n = g.n, cd = g.deck[g.idx], PS = 3 * A.C2; bool last = g.idx + 1 >= 24;
+  float hold[7][ACL] = {}, seen[ACL] = {};
+  for (int q = 0; q < n; q++) for (int v = 3; v <= 35; v++) if (g.has[q * 37 + v]){ hold[q][v - 3] = 1; seen[v - 3] = 1; }
+  seen[cd - 3] = 1;
+  vector<float> pl0((size_t)n * PS), pl1((size_t)n * PS);
+  if (!last) for (int q = 0; q < n; q++){ A.pools(hold[q], seen, &pl0[q * PS]); hold[q][cd - 3] = 1; A.pools(hold[q], seen, &pl1[q * PS]); hold[q][cd - 3] = 0; }
+  vector<array<double, 7>> T; vector<Game> nodes; Game h = g;
+  for (;;){
+    array<double, 7> a{}; int t = h.turn;
+    if (last){ Game e = h; step(e, true); for (int q = 0; q < n; q++) a[q] = winShare(e, q); }
+    else {
+      const float* pl[7]; int cc[7]; float sh[7];
+      for (int r = 0; r < n; r++){ int q = (t + r) % n; pl[r] = q == t ? &pl1[q * PS] : &pl0[q * PS]; cc[r] = h.chips[q] + (q == t ? h.pot : 0); }
+      A.head(n, pl, cc, 24 - (g.idx + 1), sh); for (int r = 0; r < n; r++) a[(t + r) % n] = sh[r];
+    }
+    T.push_back(a); nodes.push_back(h);
+    if (h.chips[t] == 0) break;
+    step(h, false);
+  }
+  int L = (int)T.size() - 1, sel = L;
+  for (int j = L - 1; j >= 1; j--) if (T[j][nodes[j].turn] >= T[sel][nodes[j].turn]) sel = j;
+  for (int q = 0; q < n; q++){ c.T0[q] = T[0][q]; c.v1[q] = T[sel][q]; }
+  int p = g.turn; c.kT = 0; c.kS = (p - nodes[sel].turn + n) % n; c.termT = c.termS = last;
+  c.xT.resize(AF); c.xS.resize(AF);
+  if (!last){ Game e = nodes[0]; step(e, true); afeatures(e, c.xT.data()); e = nodes[sel]; step(e, true); afeatures(e, c.xS.data()); }
+}
+// ./fvi achaintest <positions>: chainAt against chainAtSlow on positions from random games
+static int achainTest(int npos){
+  ANet A(11); unique_ptr<Work> w(A.work()); Rng r(3); double md = 0; int cnt = 0;
+  for (int i = 0; i < npos; i++){
+    Game g; newGame(g, 2 + i % 6, r); int steps = (int)(r() * 120);
+    for (int s = 0; s < steps; s++){ if (step(g, g.chips[g.turn] == 0 || r() < 0.3)){ newGame(g, 2 + i % 6, r); } }
+    if (g.chips[g.turn] == 0) continue;
+    Chain a, b; chainAt(A, w.get(), g, a); chainAtSlow(A, w.get(), g, b); cnt++;
+    double d = 0; for (int q = 0; q < g.n; q++){ d = max(d, fabs(a.T0[q] - b.T0[q])); d = max(d, fabs(a.v1[q] - b.v1[q])); }
+    if (d > 1e-4) printf("pos %d n %d idx %d pot %d diff %.2e T0 %.4f/%.4f v1 %.4f/%.4f kS %d/%d\n", i, g.n, g.idx, g.pot, d, a.T0[g.turn], b.T0[g.turn], a.v1[g.turn], b.v1[g.turn], a.kS, b.kS);
+    md = max(md, d);
+    if (a.kS != b.kS) printf("kS differs at %d\n", i);
+    for (int k = 0; k < AF; k++) if (!a.termT && (a.xT[k] != b.xT[k] || a.xS[k] != b.xS[k])){ printf("features differ at %d k %d: %g %g / %g %g\n", i, k, a.xT[k], b.xT[k], a.xS[k], b.xS[k]); break; }
+  }
+  printf("%d positions, max difference %.2e\n", cnt, md); return 0;
 }
 
 struct ASample { int a, kT, kS; bool termT, termS; float cT, cS, lp, v, adv, ret; };
