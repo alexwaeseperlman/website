@@ -351,6 +351,19 @@ static void aTarget(const Game& h, int k, const ANet* prev, Work* w, float* x, f
   for (int q = 0; q < MAXP; q++) y[q] = q < h.n ? (float)(acc[(h.turn + q) % h.n] / m) : 0.f;
 }
 
+// Persistent workers for the training steps: spawning hundreds of threads twice per step costs more than a small batch.
+struct Pool {
+  int n; vector<thread> th; atomic<long> gen{ 0 }; atomic<int> done{ 0 }; atomic<bool> quit{ false }; function<void(int)> f;
+  explicit Pool(int n_) : n(n_){
+    for (int t = 1; t < n; t++) th.emplace_back([this, t]{
+      for (long seen = 0;;){ long g; while ((g = gen.load(memory_order_acquire)) == seen && !quit) this_thread::yield();
+        if (quit) return; seen = g; f(t); done.fetch_add(1, memory_order_acq_rel); } });
+  }
+  void run(function<void(int)> fn){ f = move(fn); done = 0; gen.fetch_add(1, memory_order_acq_rel); f(0);
+    while (done.load(memory_order_acquire) < n - 1) this_thread::yield(); }
+  ~Pool(){ quit = true; for (auto& t : th) t.join(); }
+};
+
 // Targets for every afterstate along the chain of passes on g's card (stage k, the same as aTarget on each of them),
 // with the conv features cached per player/card combination and the head memoised per (outer taker, next card,
 // inner taker, chips after the take). y gets MAXP floats per node, relative to that afterstate's next mover.
@@ -443,6 +456,7 @@ static int atrainMain(int k, int chains, int epochs){
   double tg = chrono::duration<double>(chrono::steady_clock::now() - t0).count();
   // training threads: a batch of 512 split over hundreds of threads would be all thread start-up, so cap it (TRAIN_THREADS)
   const int TT = min(NT, getenv("TRAIN_THREADS") ? atoi(getenv("TRAIN_THREADS")) : 16);
+  Pool pool(TT);
   vector<vector<float>> G(TT, vector<float>(A.n)); vector<unique_ptr<Work>> C; for (int t = 0; t < NT; t++) C.emplace_back(A.work());
   auto rmse = [&](long a, long b){ vector<double> se(NT, 0); vector<thread> th;
     for (int t = 0; t < NT; t++) th.emplace_back([&, t]{ for (long i = a + t; i < b; i += NT){ const float* s = A.forward(&AX[i * F], C[t].get()); double e = s[0] - AY[i * MAXP]; se[t] += e * e; } });
@@ -456,16 +470,13 @@ static int atrainMain(int k, int chains, int epochs){
     if (s == steps) break;
     double lr = lr0 * (s < steps / 2 ? 1 : s < steps * 3 / 4 ? 0.3 : 0.1);
     vector<long> idx(bs); for (auto& i : idx) i = (long)(r() * nTrain);
-    vector<thread> th;
-    for (int t = 0; t < TT; t++) th.emplace_back([&, t]{
+    pool.run([&](int t){
       fill(G[t].begin(), G[t].end(), 0.f); float d[7];
       for (int b = t; b < bs; b += TT){ const float* x = &AX[idx[b] * F]; const float* sh = A.forward(x, C[t].get()); int nn = (int)x[0];
         for (int q = 0; q < nn; q++) d[q] = (sh[q] - AY[idx[b] * MAXP + q]) / bs; A.backward(x, C[t].get(), d, G[t].data()); }
     });
-    for (auto& t : th) t.join(); th.clear();
-    for (int t = 0; t < TT; t++) th.emplace_back([&, t]{   // reduce the gradients, each thread a slice of the weights
+    pool.run([&](int t){   // reduce the gradients, each thread a slice of the weights
       for (int i = (int)((long)A.n * t / TT), e = (int)((long)A.n * (t + 1) / TT); i < e; i++) for (int u = 1; u < TT; u++) G[0][i] += G[u][i]; });
-    for (auto& t : th) t.join();
     A.adam(G[0], lr);
   }
   printf("anet stage %d: %ld afterstates (%.0fs to label), held-out RMSE %.4f, train %.4f, %.0fs total\n", k, n, tg, rmse(nTrain, n),
