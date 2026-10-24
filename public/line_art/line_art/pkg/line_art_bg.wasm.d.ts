@@ -20,6 +20,7 @@ export const pathface_nodes: (a: number) => [number, number];
 export const pathface_profile: (a: number) => [number, number];
 export const pathface_ridge: (a: number) => number;
 export const pathface_shown: (a: number) => [number, number];
+export const pathface_shown_fine: (a: number, b: number) => [number, number];
 export const pathface_step: (a: number) => number;
 export const pathface_widths: (a: number) => [number, number];
 export const __wbindgen_exn_store: (a: number) => void;

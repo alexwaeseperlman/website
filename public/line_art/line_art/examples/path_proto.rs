@@ -82,6 +82,10 @@ fn main() {
     write(&g);
     let shown: Vec<u8> = g.shown().iter().flat_map(|v| v.to_le_bytes()).collect();
     std::fs::write(format!("{}.shown.f32", a[4]), shown).unwrap();
+    if p.graphite {
+        let fine: Vec<u8> = g.shown_fine(3).iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(format!("{}.fine.f32", a[4]), fine).unwrap();
+    }
     eprintln!("pixel error {:.5}", g.pixel_error());
     eprintln!("ridge radius {:.3}", g.ridge_radius);
     if let Some(k) = &g.pencil { eprintln!("pencil knots {:.4?}\nprofile {:.4?}", k, g.pencil_profile()); }

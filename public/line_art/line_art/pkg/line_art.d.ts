@@ -26,6 +26,7 @@ export class PathFace {
     profile(): Float32Array;
     ridge(): number;
     shown(): Float32Array;
+    shown_fine(scale: number): Float32Array;
     step(): boolean;
     widths(): Float32Array;
 }
@@ -53,6 +54,7 @@ export interface InitOutput {
     readonly pathface_profile: (a: number) => [number, number];
     readonly pathface_ridge: (a: number) => number;
     readonly pathface_shown: (a: number) => [number, number];
+    readonly pathface_shown_fine: (a: number, b: number) => [number, number];
     readonly pathface_step: (a: number) => number;
     readonly pathface_widths: (a: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;

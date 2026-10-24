@@ -1,12 +1,12 @@
 // Starts a worker that draws `img` as a graph: straight lines of varying width between a set of nodes, or with
 // kind "path", one unbroken line through all of them, or with kind "airbrush" (Gaussian), "ridge" (linear
 // falloff) or "learned" (a ridge whose falloff radius is learned) that line as a soft stroke.
-// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration, dot, image, ridge, profile) after
+// onGraph gets (nodes [x, y, ...], edges [a, b, ...], widths [w, ...], done, iteration, dot, image, ridge, profile, scale) after
 // every optimizer step, where a width is ink per unit length, dot is the radius of the dot on each node and image
-// (soft strokes only) is the drawing's darkness per pixel, and ridge (learned only) the learned radius in px;
+// (soft strokes only) is the drawing's darkness per pixel, scale times finer than the photo, and ridge (learned only) the learned radius in px;
 // post the returned message to the worker to start over.
 export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "graph" } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261025a", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261025b", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -21,7 +21,7 @@ export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "
   for (let i = 0; i < darkness.length; i++) {
     darkness[i] = 1 - (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / (3 * 255);
   }
-  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration, e.data.dot, e.data.image, e.data.ridge, e.data.profile);
+  worker.onmessage = (e) => onGraph(e.data.nodes, e.data.edges, e.data.widths, e.data.done, e.data.iteration, e.data.dot, e.data.image, e.data.ridge, e.data.profile, e.data.scale);
   const message = { darkness, width, height, nodes, iterations, kind };
   worker.postMessage(message);
   return [worker, message];
@@ -36,7 +36,7 @@ export function graphView(canvas, width, height) {
 
   function draw() {
     raf = 0;
-    const { nodes, edges, widths, dot, image } = latest;
+    const { nodes, edges, widths, dot, image, scale } = latest;
     const dpr = window.devicePixelRatio || 1;
     if (canvas.width !== Math.round(width * dpr)) {
       canvas.width = Math.round(width * dpr);
@@ -51,13 +51,15 @@ export function graphView(canvas, width, height) {
     ctx.fillRect(0, 0, width, height);
     if (image) {
       // an airbrushed drawing: show the optimizer's own picture of it, one value per photo pixel
-      const pixels = new ImageData(width, height);
+      // (scale times finer than the photo for a pencil)
+      const [iw, ih] = [width * scale, height * scale];
+      const pixels = new ImageData(iw, ih);
       for (let i = 0; i < image.length; i++) {
         const v = 255 * (1 - Math.min(1, Math.max(0, image[i])));
         pixels.data[4 * i] = pixels.data[4 * i + 1] = pixels.data[4 * i + 2] = v;
         pixels.data[4 * i + 3] = 255;
       }
-      if (!buffer) buffer = new OffscreenCanvas(width, height);
+      if (!buffer || buffer.width !== iw) buffer = new OffscreenCanvas(iw, ih);
       buffer.getContext("2d").putImageData(pixels, 0, 0);
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(buffer, 0, 0, width, height);
@@ -90,8 +92,8 @@ export function graphView(canvas, width, height) {
   }
 
   return {
-    update(nodes, edges, widths, dot = 1.2, image) {
-      latest = { nodes, edges, widths, dot, image };
+    update(nodes, edges, widths, dot = 1.2, image, scale = 1) {
+      latest = { nodes, edges, widths, dot, image, scale };
       if (!raf) raf = requestAnimationFrame(draw);
     },
     clear() {

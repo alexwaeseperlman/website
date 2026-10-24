@@ -168,6 +168,11 @@ impl PathFace {
         self.path.shown().iter().map(|v| v / TONE).collect()
     }
 
+    // A pencil drawing as shown, like shown(), but rendered scale times finer, (photo width * scale) wide
+    pub fn shown_fine(&self, scale: usize) -> Vec<f32> {
+        self.path.shown_fine(scale).iter().map(|v| v / TONE).collect()
+    }
+
     // The ridge's radius in pixels (0 for a sharp line or a Gaussian)
     pub fn ridge(&self) -> f32 {
         self.path.ridge_radius

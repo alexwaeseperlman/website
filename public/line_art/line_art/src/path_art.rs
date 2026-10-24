@@ -131,15 +131,17 @@ const RIDGE_MIN: f32 = 0.75;
 const RIDGE_MAX: f32 = 10.0;
 // how far a pencil stroke's kernel reaches, in pixels
 const PENCIL: i32 = 4;
+// and with graphite
+const GRAPHITE_REACH: i32 = 1;
 // its knots' floor, so their logs stay finite
 const PENCIL_MIN: f32 = 1e-6;
 // A graphite line is LANES parallel streaks, LANE_GAP pixels apart, each laying down graphite that varies by up
 // to STREAK either way over about STREAK_LEN pixels along it, on top of the whole line's pressure varying by up
 // to PRESSURE over about PRESSURE_LEN pixels
-const LANES: usize = 3;
-const LANE_GAP: f32 = 0.9;
-const STREAK: f32 = 0.8;
-const STREAK_LEN: f32 = 3.0;
+const LANES: usize = 4;
+const LANE_GAP: f32 = 0.8;
+const STREAK: f32 = 1.0;
+const STREAK_LEN: f32 = 1.5;
 const PRESSURE: f32 = 0.35;
 const PRESSURE_LEN: f32 = 12.0;
 
@@ -191,10 +193,9 @@ fn ridge_kernel(r: f32, n: i32) -> Vec<f32> {
 }
 
 // The pencil kernel's basis: for each knot i, the kernel that is 1 at radius i falling linearly to 0 at i - 1 and
-// i + 1, averaged over each pixel. (2 PENCIL + 1) on a side.
-fn pencil_basis() -> Vec<Vec<f32>> {
+// i + 1, averaged over each pixel. (2 n + 1) on a side.
+fn pencil_basis(n: i32) -> Vec<Vec<f32>> {
     const SUB: i32 = 8;
-    let n = PENCIL;
     (0..=n)
         .map(|i| {
             let mut k = vec![];
@@ -325,7 +326,8 @@ impl PathArt {
             coarse_weight: p.coarse,
         };
         if p.pencil || p.graphite {
-            g.start_pencil(p.ridge);
+            // a pencil's own stroke is narrow: its width comes from its streaks
+            g.start_pencil(p.ridge, if p.graphite { GRAPHITE_REACH } else { PENCIL });
         }
         g.splat_area = (2 * g.radius() as usize + 2).pow(2);
         g.forward();
@@ -334,12 +336,12 @@ impl PathArt {
 
     // Switches to a pencil stroke shaped at first like the ridge of radius r: its knots are that ridge's kernel
     // along a row, which is close, as the basis kernels are averaged over pixels the same way.
-    fn start_pencil(&mut self, r: f32) {
-        let n = PENCIL;
+    // It reaches n pixels.
+    fn start_pencil(&mut self, r: f32, n: i32) {
         let ridge = ridge_kernel(r, n);
         let row = &ridge[(n * (2 * n + 1)) as usize..((n + 1) * (2 * n + 1)) as usize];
         let knots: Vec<f32> = (0..=n).map(|i| row[(n + i) as usize].max(PENCIL_MIN)).collect();
-        self.basis = pencil_basis();
+        self.basis = pencil_basis(n);
         self.m_p = vec![0.0; knots.len()];
         self.v_p = vec![0.0; knots.len()];
         self.learn_ridge = false;
@@ -390,6 +392,69 @@ impl PathArt {
         (0..w * h).map(|i| d[(i / w + m) * self.width + i % w + m]).collect()
     }
 
+    // A graphite drawing as shown, rendered scale times finer than the optimizer's pixels: the same streaks, split
+    // into finer samples, and the same stroke, scaled up, so the grain the optimizer averages over each pixel
+    // shows. Row-major, (photo width * scale) wide.
+    pub fn shown_fine(&self, scale: usize) -> Vec<f32> {
+        let (m, sc) = (self.margin, scale as f32);
+        let (fw, fh) = ((self.width - 2 * m as usize) * scale, (self.height - 2 * m as usize) * scale);
+        let mut d = vec![0f32; fw * fh];
+        // ink in a fine pixel counts scale^2 times over, as it covers 1 / scale^2 of a pixel
+        let mut put = |x: f32, y: f32, ink: f32| {
+            if let Some((j, fx, fy)) = bilinear((x - m) * sc, (y - m) * sc, fw, fh) {
+                let ink = ink * sc * sc;
+                d[j] += ink * (1.0 - fx) * (1.0 - fy);
+                d[j + 1] += ink * fx * (1.0 - fy);
+                d[j + fw] += ink * (1.0 - fx) * fy;
+                d[j + fw + 1] += ink * fx * fy;
+            }
+        };
+        for s in self.order.windows(2) {
+            let len = self.length(s[0], s[1]);
+            let mass = self.line * len / samples(len) as f32;
+            let (a, b, streaks) = self.streaks(s[0], s[1], scale);
+            let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
+            let (dx, dy) = (bx - ax, by - ay);
+            let (nx, ny) = (-dy / len.max(1e-3), dx / len.max(1e-3));
+            for &(t, o, share) in &streaks {
+                put(ax + dx * t + o * nx, ay + dy * t + o * ny, mass * share);
+            }
+        }
+        for &(x, y) in &self.nodes {
+            put(x, y, self.dot);
+        }
+        // the stroke, its knots spread over scale fine pixels each, and as much ink in all
+        let knots = match &self.pencil { Some(k) => k, None => return d };
+        let r = (knots.len() as f32 * sc).ceil() as i32;
+        let side = (2 * r + 1) as usize;
+        let mut k = vec![0f32; side * side];
+        for y in -r..=r {
+            for x in -r..=r {
+                let u = ((x * x + y * y) as f32).sqrt() / sc;
+                let (i, f) = (u as usize, u.fract());
+                let at = |i: usize| knots.get(i).copied().unwrap_or(0.0);
+                k[(y + r) as usize * side + (x + r) as usize] = (at(i) * (1.0 - f) + at(i + 1) * f) / (sc * sc);
+            }
+        }
+        let mut out = vec![0f32; fw * fh];
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let kv = k[(dy + r) as usize * side + (dx + r) as usize];
+                if kv == 0.0 {
+                    continue;
+                }
+                let (x0, x1) = ((-dx).max(0) as usize, (fw as i32 - dx).min(fw as i32) as usize);
+                for y in (-dy).max(0) as usize..(fh as i32 - dy).min(fh as i32) as usize {
+                    let (yy, xx0) = ((y as i32 + dy) as usize, (x0 as i32 + dx) as usize);
+                    for (o, v) in out[yy * fw + xx0..yy * fw + xx0 + (x1 - x0)].iter_mut().zip(&d[y * fw + x0..y * fw + x1]) {
+                        *o += kv * v;
+                    }
+                }
+            }
+        }
+        self.show(&out)
+    }
+
     // Mean squared difference between the drawing as shown and the darkness it aims for, per photo pixel.
     pub fn pixel_error(&self) -> f32 {
         let m = self.margin as usize;
@@ -402,7 +467,9 @@ impl PathArt {
     // way the path runs it: for each, its fraction t of the way along, its offset across (one of the LANES streaks
     // a pencil's tip leaves) and how much of the line's ink it carries. That share depends only on the pair of
     // nodes and the sample's index, never on where the nodes are, so it moves and stretches with the line.
-    fn streaks(&self, a: u32, b: u32) -> (u32, u32, Vec<(f32, f32, f32)>) {
+    // With sub > 1, each sample is split into sub finer ones along the line, the texture following smoothly, for
+    // drawing finer than the optimizer's pixels.
+    fn streaks(&self, a: u32, b: u32, sub: usize) -> (u32, u32, Vec<(f32, f32, f32)>) {
         let (a, b) = (a.min(b), a.max(b));
         let n = samples(self.length(a, b));
         let pair = hash(self.seed ^ hash(((a as u64) << 32) | b as u64));
@@ -410,13 +477,15 @@ impl PathArt {
         let knots = |seed: u64, len: f32| -> Vec<f32> { (0..=(n as f32 / len) as usize + 1).map(|i| knot(seed, i)).collect() };
         let pressure = knots(pair, PRESSURE_LEN);
         let lanes: Vec<Vec<f32>> = (0..LANES).map(|k| knots(hash(pair ^ (k as u64 + 1)), STREAK_LEN)).collect();
-        let mut out = Vec::with_capacity(n * LANES);
-        for i in 0..n {
-            let t = (i as f32 + 0.5) / n as f32;
-            let p = 1.0 + PRESSURE * smooth(&pressure, i as f32 / PRESSURE_LEN);
+        let mut out = Vec::with_capacity(n * sub * LANES);
+        for q in 0..n * sub {
+            let t = (q as f32 + 0.5) / (n * sub) as f32;
+            // where along the line the texture is read, in samples: exactly the sample's index when sub = 1
+            let i = (t * n as f32 - 0.5).clamp(0.0, (n - 1) as f32);
+            let p = 1.0 + PRESSURE * smooth(&pressure, i / PRESSURE_LEN);
             for (k, lane) in lanes.iter().enumerate() {
-                let streak = (1.0 + STREAK * smooth(lane, i as f32 / STREAK_LEN)).max(0.0);
-                out.push((t, (k as f32 - (LANES - 1) as f32 / 2.0) * LANE_GAP, p * streak / LANES as f32));
+                let streak = (1.0 + STREAK * smooth(lane, i / STREAK_LEN)).max(0.0);
+                out.push((t, (k as f32 - (LANES - 1) as f32 / 2.0) * LANE_GAP, p * streak / (LANES * sub) as f32));
             }
         }
         (a, b, out)
@@ -429,7 +498,7 @@ impl PathArt {
         let n = samples(len);
         let mass = self.line * len / n as f32;
         if self.graphite {
-            let (a, b, s) = self.streaks(a, b);
+            let (a, b, s) = self.streaks(a, b, 1);
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
             let (dx, dy) = (bx - ax, by - ay);
             let (nx, ny) = (-dy / len.max(1e-3), dx / len.max(1e-3));
@@ -807,7 +876,7 @@ impl PathArt {
     // direction u and the quarter turn R, and stretches its ink.
     fn backward_streaks(&self, a: u32, b: u32, e: &[f32], gn: &mut [f32]) {
         let (w, h) = (self.width, self.height);
-        let (a, b, streaks) = self.streaks(a, b);
+        let (a, b, streaks) = self.streaks(a, b, 1);
         let (a, b) = (a as usize, b as usize);
         let ((ax, ay), (bx, by)) = (self.nodes[a], self.nodes[b]);
         let (dx, dy) = (bx - ax, by - ay);
@@ -880,7 +949,7 @@ impl PathArt {
         self.airbrush = true;
         self.target = self.photo.clone();
         if pencil {
-            self.start_pencil(ridge);
+            self.start_pencil(ridge, PENCIL);
         } else {
             self.learn_ridge = true;
             self.set_ridge(ridge);
