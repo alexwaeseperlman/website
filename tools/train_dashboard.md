@@ -31,8 +31,14 @@ The page reads them through `public.train_dash()` (`tools/supabase/train_dash.sq
 | PPO (`deep ppo`) | `ppo/log.txt` (stdout; `iter N/M: … edge vs opponents +x%, entropy x, value mse x, clipped x%, Ns` lines), `ppo/deep-ppo-…-<iter>.json`, `ppo-info`, `ppo-exit` |
 | Nash FVI (`fvi/run_all.sh`) | `fvi/log.txt` (run_all's log.txt), `fvi/aloss<k>.csv` (`step,examples_seen,train_rmse,heldout_rmse`), `fvi/a<k>.json`, `fvi-info`, `fvi-run-tail` |
 
-Elapsed time starts at the run's oldest row, so overwrite the `*-info` row when starting a fresh run (or clear the old
-rows). A new kind of run needs a prefix, a parser and a view in `public/train/index.html` (`RUNS`, `runOf`, `view*`).
+Every run uses one prefix `<job>` (same as `job` in the boxes row): rows `<job>/…`, `<job>-info`, `<job>-exit`. Each
+prefix gets its own tab. `fvi` gets the stage view; **any other prefix is read as PPO-style `iter N/M:` lines from
+`<job>/log.txt`** (so e.g. anet PPO from `fvi appo` can upload as `appo/log.txt` with no page change). Checkpoints named
+`…-<iter>.json` are counted. Give a new job a nicer tab name in `RUNS` in `public/train/index.html`; a log in any other
+format needs a parser and view there.
+
+Elapsed time starts at the run's oldest row, so overwrite the `<job>-info` row when starting a fresh run under a reused
+prefix (or clear the old rows).
 
 ## 3. Keep the `boxes` row current
 
