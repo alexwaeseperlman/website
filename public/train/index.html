@@ -159,12 +159,23 @@ function parsePpo(rs, k) {
   const log = (by[k + '/log.txt'] || by.log || {}).body || '';
   const it = [];
   for (const l of log.split('\n')) {
-    const m = l.match(/^iter (\d+)\/\d+: (\d+) decisions, edge vs opponents ([+-]?[\d.]+)%, entropy ([\d.]+), value mse ([\d.]+), clipped ([\d.]+)%, (\d+)s/);
-    if (m) it.push({ i: +m[1], dec: +m[2], edge: +m[3], ent: +m[4], mse: +m[5], clip: +m[6], s: +m[7] });
+    // deep ppo: "edge vs opponents"; anet ppo (fvi appo): "edge vs live" plus "beta x"
+    const m = l.match(/^iter (\d+)\/\d+: (\d+) decisions, edge vs (\w+) ([+-]?[\d.]+)%, entropy ([\d.]+), value mse ([\d.]+), clipped ([\d.]+)%,(?: beta ([\d.]+),)? (\d+)s/);
+    if (m) it.push({ i: +m[1], dec: +m[2], vs: m[3], edge: +m[4], ent: +m[5], mse: +m[6], clip: +m[7], beta: m[8] != null ? +m[8] : null, s: +m[9] });
+  }
+  // <job>/avs.txt: head-to-head tests vs the live bot, e.g. "iter 50: 3 players, 1 copy + 2 live, 20000 deals: 17.51% +- 0.27
+  // (fair 33.3%)". A line "iter N" (alone or as a prefix) sets the iteration; without one, tests are numbered in order.
+  const avs = {}; let at = null, n = 0;
+  for (const l of ((by[k + '/avs.txt'] || {}).body || '').split('\n')) {
+    const h = l.match(/^\s*iter (\d+)/); if (h) at = +h[1];
+    const m = l.match(/(\d+) players, (\d+) cop(?:y|ies) \+ (\d+) live, (\d+) deals: ([\d.]+)% \+- ([\d.]+) \(fair ([\d.]+)%\)/);
+    if (!m) continue;
+    const key = `${m[1]}p: ${m[2]} ${+m[2] === 1 ? 'copy' : 'copies'} + ${m[3]} live`;
+    (avs[key] = avs[key] || { key, fair: +m[7], pts: [] }).pts.push({ i: at != null ? at : ++n, win: +m[5], se: +m[6], deals: +m[4] });
   }
   const ckpts = rs.filter(r => /-\d+\.json$/.test(r.name));
   const exit = (by[k + '-exit'] || {}).body;
-  return { by, log, it, ckpts, exit };
+  return { by, log, it, ckpts, exit, avs: Object.values(avs), avsIter: at != null };
 }
 
 // ---------- charts ----------
@@ -356,15 +367,18 @@ function viewPpo(rs, c, k) {
     ${tile('Iteration', last ? last.i : '–', p.exit != null ? 'exited: ' + esc(p.exit.trim().slice(0, 40) || 'done') : rate_ ? `~${rate_.toFixed(0)} s per iter` : '')}
     ${tile('Elapsed', dur(c.el), c.ended ? 'box destroyed' : c.live ? 'since first upload' : 'run idle')}
     ${tile('Cost so far', '$' + c.cost.toFixed(2), c.ended ? 'finished' : `at $${rate}/hr`)}
-    ${tile('Edge vs opponents', last ? (roll('edge').pop()[1] >= 0 ? '+' : '') + roll('edge').pop()[1].toFixed(1) + '%' : '–', '10-iter mean')}
+    ${tile('Edge vs ' + (last ? last.vs : 'opponents'), last ? (roll('edge').pop()[1] >= 0 ? '+' : '') + roll('edge').pop()[1].toFixed(1) + '%' : '–', '10-iter mean')}
     ${tile('Value MSE', last ? last.mse.toFixed(4) : '–', last ? `entropy ${last.ent}` : '')}
-    ${tile('Checkpoints', p.ckpts.length, p.ckpts.length ? 'latest ' + ago(Math.max(...p.ckpts.map(r => +r.t))) : '')}
+    ${p.avs.length ? p.avs.map(a => { const q = a.pts[a.pts.length - 1]; return tile(a.key, `${q.win.toFixed(1)}%`, `± ${q.se} · fair ${a.fair}%`); }).join('')
+      : tile('Checkpoints', p.ckpts.length, p.ckpts.length ? 'latest ' + ago(Math.max(...p.ckpts.map(r => +r.t))) : '')}
   </div>
   <div class="grid2">
-    <div class="card"><h2>Edge vs opponents (%)</h2>${legend([['per iteration', 'var(--s1)', 1], ['10-iter mean', 'var(--s2)']])}<div class="chart" id="c1"></div></div>
+    ${p.avs.map((a, j) => `<div class="card"><h2>Win rate, ${esc(a.key)}</h2>${legend([['candidate', 'var(--s1)'], ['fair share ' + a.fair + '%', 'var(--ink3)', 1]])}<div class="chart" id="cv${j}"></div></div>`).join('')}
+    <div class="card"><h2>Edge vs ${esc(last ? last.vs : 'opponents')} (%)</h2>${legend([['per iteration', 'var(--s1)', 1], ['10-iter mean', 'var(--s2)']])}<div class="chart" id="c1"></div></div>
     <div class="card"><h2>Value MSE</h2><div class="chart" id="c2"></div></div>
     <div class="card"><h2>Policy entropy</h2><div class="chart" id="c3"></div></div>
     <div class="card"><h2>Clipped updates (%)</h2><div class="chart" id="c4"></div></div>
+    ${it.some(x => x.beta != null) ? '<div class="card"><h2>Beta</h2><div class="chart" id="c5"></div></div>' : ''}
   </div>
   <div class="card"><h2>Log tail</h2><pre>${esc((p.log || 'Nothing logged yet.').trim().split('\n').slice(-40).join('\n'))}</pre></div>`;
   const s1 = css('--s1'), s2 = css('--s2');
@@ -373,6 +387,15 @@ function viewPpo(rs, c, k) {
   chart($('c2'), [{ name: 'value mse', color: s1, pts: it.map(x => [x.i, x.mse]) }], { ...o, yFmt: v => v.toFixed(4) });
   chart($('c3'), [{ name: 'entropy', color: s1, pts: it.map(x => [x.i, x.ent]) }], { ...o, yFmt: v => v.toFixed(4) });
   chart($('c4'), [{ name: 'clipped', color: s1, pts: it.map(x => [x.i, x.clip]) }], { ...o, yFmt: v => (+v.toFixed(2)) + '%' });
+  if ($('c5')) chart($('c5'), [{ name: 'beta', color: s1, pts: it.filter(x => x.beta != null).map(x => [x.i, x.beta]) }], o);
+  const ink3 = css('--ink3');
+  p.avs.forEach((a, j) => {
+    const xs = a.pts.map(q => q.i), lo = Math.min(...xs), hi = Math.max(...xs);
+    chart($('cv' + j), [
+      { name: 'win', color: s1, pts: a.pts.map(q => [q.i, q.win]), tip: pt => { const q = a.pts.find(q => q.i === pt[0]); return `${q.win}% ± ${q.se} (${big(q.deals)} deals)`; } },
+      { name: 'fair', color: ink3, dash: true, pts: [[lo, a.fair], [hi, a.fair]], tip: () => a.fair + '%' }],
+      { ...o, xName: p.avsIter ? 'iter ' : 'test #', err: a.pts.map(q => [q.i, q.win, q.se]), yFmt: v => (+v.toFixed(1)) + '%' });
+  });
 }
 
 load(); setInterval(load, POLL);
