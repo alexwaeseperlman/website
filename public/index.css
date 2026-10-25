@@ -278,13 +278,42 @@ mjx-container {
   display: block;
 }
 
-/* under the face, so it can be drawn again from scratch */
+#line-art-frame {
+  position: relative;
+}
+
+/* a small redraw button in the face's top corner: faint until the face is hovered, always shown on touch screens */
 #line-art-again {
-  display: block;
-  margin: 6px auto 0;
-  font-size: 16px;
-  height: 32px;
-  padding: 0 12px;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  color: #0079ac;
+  border: 1px solid currentColor;
+  opacity: 0.35;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+#line-art-frame:hover #line-art-again,
+#line-art-again:focus-visible {
+  opacity: 1;
+}
+
+#line-art-again:hover {
+  background: #e6f4fa;
+}
+
+@media (hover: none) {
+  #line-art-again {
+    opacity: 0.8;
+  }
 }
 
 /* the pre-AI face stays as it was, without one */
@@ -333,9 +362,8 @@ html:not(.pre-ai) #line-art-canvas-container {
   #line-art-canvas-container {
     float: none;
     display: flex;
-    flex-direction: column;
     width: 100%;
-    align-items: center;
+    justify-content: center;
   }
 }
 

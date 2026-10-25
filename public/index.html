@@ -143,23 +143,29 @@ stylesheets:
 </script>
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
-  import { lineArt, graphView } from './line_art/line_art.js?v=20261025h';
+  import { lineArt, graphView } from './line_art/line_art.js?v=20261025i';
   // The original 700-point pixel annealer, kept for the Pre-AI only switch
   import { lineArt as preAiLineArt } from './line_art/pre_ai/line_art.js';
   document.addEventListener('readystatechange', () => {
     const canvasContainer = document.getElementById("line-art-canvas-container");
+    // the face, with a small redraw button in its corner
+    const frame = document.createElement('div');
+    frame.id = 'line-art-frame';
+    canvasContainer.appendChild(frame);
     const canvas = document.createElement('canvas');
-    canvasContainer.appendChild(canvas);
+    frame.appendChild(canvas);
     // redraws the face from a fresh random start
     const again = document.createElement('button');
     again.type = 'button';
     again.id = 'line-art-again';
-    again.textContent = 'Start over';
+    again.title = 'Draw it again';
+    again.setAttribute('aria-label', 'Draw the face again');
+    again.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     again.addEventListener('click', () => {
       killLineArt();
       restartLineArt();
     });
-    canvasContainer.appendChild(again);
+    frame.appendChild(again);
 
     const image = document.getElementById("line-art-image");
     window.worker = null
