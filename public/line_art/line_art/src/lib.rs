@@ -99,14 +99,15 @@ impl PathFace {
             gamma: 2.0,
             features: 6.0,
             lambda: 0.02,
-            warmup: 50,
+            // the pencil's settings were hill-climbed on its own loss, mean over seeds
+            warmup: if graphite { 25 } else { 50 },
             temp_start: 5.0,
             temp_end: 0.01,
             budget: 20000,
-            coarse: 8400.0,
+            coarse: if graphite { 4200.0 } else { 8400.0 },
             coarse_block: 10.0,
-            coarse_sigma: 5.0,
-            coarse_until: 0.6,
+            coarse_sigma: if graphite { 10.0 } else { 5.0 },
+            coarse_until: if graphite { 0.43 } else { 0.6 },
             tone: TONE,
             dot: if graphite { PENCIL_DOT } else { DOT_RADIUS * DOT_RADIUS * std::f32::consts::PI },
             airbrush,
@@ -115,6 +116,8 @@ impl PathFace {
             lr_kernel: 0.05,
             pencil: false,
             graphite,
+            fade: if graphite { 3.0 } else { 0.0 },
+            fade_until: 0.85,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
         PathFace { path, rng }

@@ -43,6 +43,12 @@ pub struct PathArt {
     // with graphite, lines are drawn as a pencil's streaks (see streaks) and the drawing shows as 1 - exp(-S) for
     // the deposit S = G D, which saturates as strokes pile up; S itself; and the seed of the streaks' texture
     graphite: bool,
+    fade: f32,
+    fade_until: f32,
+    // how many times as many moves a step may try once splats are smaller than the first
+    pub late_moves: usize,
+    // how long a line counts as long, LONG of the loss's starting blurs
+    long: f32,
     deposit: Vec<f32>,
     seed: u64,
     basis: Vec<Vec<f32>>,
@@ -122,6 +128,11 @@ pub struct Params {
     pub pencil: bool,
     // draw in graphite: lines as a pencil's streaks, with a learned stroke, saturating as they pile up
     pub graphite: bool,
+    // with graphite, blur the deposit by a Gaussian this wide at first, narrowing linearly to none by fade_until
+    // of the way through, so that early on nodes feel the photo from further than their streaks reach; the loss
+    // from then on is the pencil's own
+    pub fade: f32,
+    pub fade_until: f32,
 }
 
 const BETA1: f32 = 0.9;
@@ -133,15 +144,21 @@ const RIDGE_MAX: f32 = 10.0;
 const PENCIL: i32 = 4;
 // its knots' floor, so their logs stay finite
 const PENCIL_MIN: f32 = 1e-6;
-// A graphite line is LANES parallel streaks, LANE_GAP pixels apart, each laying down graphite that varies by up
-// to STREAK either way over about STREAK_LEN pixels along it, on top of the whole line's pressure varying by up
-// to PRESSURE over about PRESSURE_LEN pixels
-const LANES: usize = 3;
-const LANE_GAP: f32 = 0.5;
-const STREAK: f32 = 1.0;
-const STREAK_LEN: f32 = 1.5;
+// A graphite line, after Pelletier-Auger's pencil strokes: its cross-section is LANES samples across HALF_WIDTH
+// pixels either side, weighted by a normal curve PROFILE (of the half width) wide; each lane's graphite varies
+// by up to STREAK either way over about STREAK_LEN pixels along it, so the tip leaves long streaks; each side's
+// width varies by up to SIDE over about SIDE_LEN pixels, independently, and the whole line's pressure by up to
+// PRESSURE over PRESSURE_LEN; and every sample is jittered by up to JITTER pixels, which gives the grain.
+const LANES: usize = 5;
+const HALF_WIDTH: f32 = 0.8;
+const PROFILE: f32 = 0.6;
+const STREAK: f32 = 0.9;
+const STREAK_LEN: f32 = 15.0;
+const SIDE: f32 = 0.4;
+const SIDE_LEN: f32 = 20.0;
 const PRESSURE: f32 = 0.35;
 const PRESSURE_LEN: f32 = 12.0;
+const JITTER: f32 = 0.35;
 
 fn hash(mut z: u64) -> u64 {
     z = z.wrapping_add(0x9e3779b97f4a7c15);
@@ -292,6 +309,10 @@ impl PathArt {
             v_r: 0.0,
             pencil: None,
             graphite: p.graphite,
+            fade: p.fade,
+            fade_until: p.fade_until,
+            long: LONG * p.sigma,
+            late_moves: 10,
             deposit: vec![],
             seed: rng.gen(),
             basis: vec![],
@@ -328,7 +349,7 @@ impl PathArt {
         }
         if p.graphite {
             // no stroke kernel: a pencil line is just its streaks
-            g.stroke = Some(vec![1.0]);
+            g.set_fade(p.fade);
         }
         g.splat_area = (2 * g.radius() as usize + 2).pow(2);
         g.forward();
@@ -347,6 +368,22 @@ impl PathArt {
         self.v_p = vec![0.0; knots.len()];
         self.learn_ridge = false;
         self.set_pencil(knots);
+    }
+
+    // Blurs a graphite drawing's deposit by a Gaussian this wide, which is separable and so uses the loss's own
+    // blur, or not at all below a third of a pixel. As the blur narrows, splats get cheaper and each step tries
+    // more moves (see splat), which the end, where the order is left to settle, needs.
+    fn set_fade(&mut self, sigma: f32) {
+        if sigma < 0.3 {
+            self.stroke = Some(vec![1.0]);
+        } else {
+            self.stroke = None;
+            self.sigma = sigma;
+            let r = (sigma * 3.0).ceil() as i32;
+            let k: Vec<f32> = (-r..=r).map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp()).collect();
+            let s: f32 = k.iter().sum();
+            self.kernel = k.iter().map(|v| v / s).collect();
+        }
     }
 
     // How the deposit shows: as is, or as graphite
@@ -476,16 +513,28 @@ impl PathArt {
         // each texture's random values at its whole steps, worked out once
         let knots = |seed: u64, len: f32| -> Vec<f32> { (0..=(n as f32 / len) as usize + 1).map(|i| knot(seed, i)).collect() };
         let pressure = knots(pair, PRESSURE_LEN);
+        let sides = [knots(hash(pair ^ 0xa1), SIDE_LEN), knots(hash(pair ^ 0xb2), SIDE_LEN)];
         let lanes: Vec<Vec<f32>> = (0..LANES).map(|k| knots(hash(pair ^ (k as u64 + 1)), STREAK_LEN)).collect();
+        // the cross-section: each lane's place in [-1, 1] and its share of the normal curve
+        let half = (LANES - 1) as f32 / 2.0;
+        let across: Vec<f32> = (0..LANES).map(|k| (k as f32 - half) / half).collect();
+        let curve: Vec<f32> = across.iter().map(|x| (-x * x / (2.0 * PROFILE * PROFILE)).exp()).collect();
+        let total: f32 = curve.iter().sum();
+        // two numbers in [-1, 1] from one hash's halves
+        let units = |z: u64| { let h = hash(z); ((h as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0, ((h >> 32) as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0) };
         let mut out = Vec::with_capacity(n * sub * LANES);
         for q in 0..n * sub {
-            let t = (q as f32 + 0.5) / (n * sub) as f32;
             // where along the line the texture is read, in samples: exactly the sample's index when sub = 1
-            let i = (t * n as f32 - 0.5).clamp(0.0, (n - 1) as f32);
+            let i = ((q as f32 + 0.5) / sub as f32 - 0.5).clamp(0.0, (n - 1) as f32);
             let p = 1.0 + PRESSURE * smooth(&pressure, i / PRESSURE_LEN);
+            let width = [HALF_WIDTH * (1.0 + SIDE * smooth(&sides[0], i / SIDE_LEN)), HALF_WIDTH * (1.0 + SIDE * smooth(&sides[1], i / SIDE_LEN))];
             for (k, lane) in lanes.iter().enumerate() {
                 let streak = (1.0 + STREAK * smooth(lane, i / STREAK_LEN)).max(0.0);
-                out.push((t, (k as f32 - (LANES - 1) as f32 / 2.0) * LANE_GAP, p * streak / (LANES * sub) as f32));
+                let (ja, jo) = units(pair ^ ((q as u64) << 8 | k as u64));
+                let (ja, jo) = (JITTER * ja, JITTER * jo);
+                let t = ((q as f32 + 0.5 + ja * sub as f32) / (n * sub) as f32).clamp(0.0, 1.0);
+                let o = across[k] * width[(across[k] > 0.0) as usize] + jo;
+                out.push((t, o, p * streak * curve[k] / (total * sub as f32)));
             }
         }
         (a, b, out)
@@ -661,7 +710,8 @@ impl PathArt {
     }
 
     // Adds sign * G (the line a-b) into scratch. Returns how much work that took: samples, scaled by the
-    // kernel's area against the one it started with, so a learned ridge that grows doesn't slow the annealing.
+    // kernel's area against the one it started with, so a learned ridge that grows doesn't slow the annealing, and
+    // one that shrinks (a pencil's fading blur) speeds it up, but by at most late_moves times.
     fn splat(&mut self, a: u32, b: u32, sign: f32) -> usize {
         let (w, h) = (self.width, self.height);
         let points = self.line_points(a, b);
@@ -720,7 +770,7 @@ impl PathArt {
                 }
             }
         }
-        points.len() * m * m / self.splat_area
+        points.len() * (m * m).max(self.splat_area / self.late_moves) / self.splat_area
     }
 
     // E = G W (G D - T), half the loss's derivative with respect to D
@@ -772,7 +822,7 @@ impl PathArt {
             // Blurring four lines is slow when they are long, as they are while the path is still a tangle, so
             // then only moves that shorten the path are worth blurring.
             let longest = old.iter().chain(&new).map(|&(p, q)| self.length(p, q)).fold(0.0, f32::max);
-            if dlen > 0.0 && longest > LONG * self.sigma {
+            if dlen > 0.0 && longest > self.long {
                 continue;
             }
             for &(p, q) in &old {
@@ -1026,6 +1076,10 @@ impl PathArt {
             }
             self.set_pencil(knots);
         }
+        if self.graphite && self.fade > 0.0 {
+            let progress = self.iteration as f32 / self.iterations.max(1) as f32;
+            self.set_fade(self.fade * (1.0 - progress / self.fade_until).max(0.0));
+        }
         self.forward();
         true
     }
@@ -1101,7 +1155,7 @@ mod tests {
     }
 
     fn params() -> Params {
-        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.0, pencil: false, graphite: false }
+        Params { nodes: 40, sigma: 2.0, iterations: 30, line: 0.8, lr_node: 0.5, paper: 4.0, detail: 0.0, gamma: 1.0, features: 0.0, lambda: 0.02, warmup: 3, temp_start: 1.0, temp_end: 0.01, budget: 2000, coarse: 0.3, coarse_block: 6.0, coarse_sigma: 2.0, coarse_until: 0.5, tone: 1.0, dot: 3.0, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.0, pencil: false, graphite: false, fade: 0.0, fade_until: 0.5 }
     }
 
     // the same, as a ridge-shaped airbrush stroke
