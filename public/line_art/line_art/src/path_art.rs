@@ -54,6 +54,8 @@ pub struct PathArt {
     streak_cache: RefCell<HashMap<(u32, u32, usize), (usize, usize, Rc<Vec<(f32, f32, f32)>>)>>,
     // how many times as many moves a step may try once splats are smaller than the first
     pub late_moves: usize,
+    // whether lines are drawn as their streaks: with graphite, once the fading blur is narrow enough to show them
+    streaky: bool,
     // how many parts of the current step are done
     part: usize,
     // how long a line counts as long, LONG of the loss's starting blurs
@@ -168,6 +170,9 @@ const SIDE_LEN: f32 = 20.0;
 const PRESSURE: f32 = 0.35;
 const PRESSURE_LEN: f32 = 12.0;
 const JITTER: f32 = 0.35;
+// While the fading blur is at least this wide it would smooth a line's streaks away, so lines are drawn along
+// their centres instead, which is several times cheaper; the end is still scored on the streaks themselves.
+const STREAKS_FROM: f32 = 1.0;
 
 fn hash(mut z: u64) -> u64 {
     z = z.wrapping_add(0x9e3779b97f4a7c15);
@@ -392,8 +397,9 @@ impl PathArt {
             fade: p.fade,
             fade_until: p.fade_until,
             long: LONG * p.sigma,
-            late_moves: 10,
+            late_moves: 4,
             part: 0,
+            streaky: p.graphite,
             streak_cache: RefCell::new(HashMap::new()),
             deposit: vec![],
             seed: rng.gen(),
@@ -456,6 +462,7 @@ impl PathArt {
     // blur, or not at all below a third of a pixel. As the blur narrows, splats get cheaper and each step tries
     // more moves (see splat), which the end, where the order is left to settle, needs.
     fn set_fade(&mut self, sigma: f32) {
+        self.streaky = sigma < STREAKS_FROM;
         if sigma < 0.3 {
             self.stroke = Some(vec![1.0]);
         } else {
@@ -561,7 +568,7 @@ impl PathArt {
         let len = self.length(a, b);
         let n = samples(len);
         let mass = self.line * len / n as f32;
-        if self.graphite {
+        if self.streaky {
             let (a, b, s) = self.streaks(a, b, 1);
             let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
             let (dx, dy) = (bx - ax, by - ay);
@@ -901,7 +908,7 @@ impl PathArt {
             }
         }
         for s in self.order.windows(2) {
-            if self.graphite {
+            if self.streaky {
                 self.backward_streaks(s[0], s[1], e, gn);
                 continue;
             }

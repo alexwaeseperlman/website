@@ -1,6 +1,6 @@
 // The ?v= queries keep a browser from pairing this with a cached copy of the old line art JS or wasm, which
 // sat at the same paths. Bump the version (here, in line_art.js and in ../index.html) whenever pkg/ is rebuilt.
-import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025f';
+import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025h';
 
 // Fits a graph drawing to the image it is sent, one step at a time, posting the graph after every step as
 // {nodes, edges, widths, dot, iteration, done}: the full graph (Face), or with kind "path" one unbroken line
@@ -14,8 +14,14 @@ import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025f';
 // each step in PARTS posts; the other soft strokes' messages also carry image, the drawing's
 // darkness per pixel exactly as the optimizer scores it. A new message starts over; the job counter stops the
 // old loop.
-const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261025f', import.meta.url) });
+const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261025h', import.meta.url) });
 let job = 0;
+// Runs f as soon as the worker is free: a message to itself, as nested setTimeout(0)s are held back 4 ms each,
+// which at a few thousand posts a run adds seconds
+const channel = new MessageChannel();
+let pending = null;
+channel.port1.onmessage = () => { const f = pending; pending = null; f(); };
+const next = (f) => { pending = f; channel.port2.postMessage(0); };
 const BLUR_STEPS = 500;
 // a pencil step is shown in this many parts, its annealing as it goes
 const PARTS = 3;
@@ -51,7 +57,7 @@ onmessage = async (e) => {
     const iteration = face.iteration() + (blurring ? first : 0);
     postMessage({ nodes: face.nodes(), edges: face.edges(), widths: face.widths(), dot, image, seed, ridge, profile, iteration, done });
     if (done) face.free();
-    else setTimeout(frame, 0);
+    else next(frame);
   };
   frame();
 };

@@ -116,7 +116,7 @@ impl PathFace {
             lr_kernel: 0.05,
             pencil: false,
             graphite,
-            fade: if graphite { 3.0 } else { 0.0 },
+            fade: if graphite { 1.5 } else { 0.0 },
             fade_until: 0.85,
         };
         let path = path_art::PathArt::new(darkness, width, height, &params, &mut rng);
