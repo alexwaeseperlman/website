@@ -150,6 +150,16 @@ stylesheets:
     const canvasContainer = document.getElementById("line-art-canvas-container");
     const canvas = document.createElement('canvas');
     canvasContainer.appendChild(canvas);
+    // redraws the face from a fresh random start
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.id = 'line-art-again';
+    again.textContent = 'Start over';
+    again.addEventListener('click', () => {
+      killLineArt();
+      restartLineArt();
+    });
+    canvasContainer.appendChild(again);
 
     const image = document.getElementById("line-art-image");
     window.worker = null
@@ -185,8 +195,8 @@ stylesheets:
       }
       else if (window.worker == null) {
         view = view || graphView(canvas, image.width, image.height);
-        // one unbroken line through 1500 nodes
-        [window.worker, message] = lineArt(image, (nodes, edges, widths, done, iteration, dot) => view.update(nodes, edges, widths, dot), { nodes: 1500, kind: "path" });
+        // one unbroken pencil line through 1500 nodes
+        [window.worker, message] = lineArt(image, (nodes, edges, widths, done, iteration, dot, pencil, ridge, profile, scale) => view.update(nodes, edges, widths, dot, pencil, scale), { nodes: 1500, kind: "graphite" });
       }
       else {
         worker.postMessage(message);
