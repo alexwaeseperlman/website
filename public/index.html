@@ -143,19 +143,36 @@ stylesheets:
 </script>
 <img src="line-art-image.jpeg" id="line-art-image" class="is-hidden" alt="" />
 <script type="module">
-  import { lineArt, drawGraph } from './line_art/line_art.js?v=20261024b';
+  import { lineArt, graphView } from './line_art/line_art.js?v=20261025j';
   // The original 700-point pixel annealer, kept for the Pre-AI only switch
   import { lineArt as preAiLineArt } from './line_art/pre_ai/line_art.js';
   document.addEventListener('readystatechange', () => {
     const canvasContainer = document.getElementById("line-art-canvas-container");
+    // the face, with a small redraw button in its corner
+    const frame = document.createElement('div');
+    frame.id = 'line-art-frame';
+    canvasContainer.appendChild(frame);
     const canvas = document.createElement('canvas');
-    canvasContainer.appendChild(canvas);
+    frame.appendChild(canvas);
+    // redraws the face from a fresh random start
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.id = 'line-art-again';
+    again.title = 'Draw it again';
+    again.setAttribute('aria-label', 'Draw the face again');
+    again.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    again.addEventListener('click', () => {
+      killLineArt();
+      restartLineArt();
+    });
+    frame.appendChild(again);
 
     const image = document.getElementById("line-art-image");
     window.worker = null
     let message = null;
     let imageLoaded = false;
     let workerPreAi = false;
+    let view = null;
     let preAiLoaded = false;
     window.restartLineArt = function restartLineArt() {
       if (!imageLoaded) {
@@ -183,9 +200,9 @@ stylesheets:
         setTimeout(send, 10);
       }
       else if (window.worker == null) {
-        [window.worker, message] = lineArt(image, (nodes, edges, ink) => {
-          drawGraph(canvas, image.width, image.height, nodes, edges, ink);
-        });
+        view = view || graphView(canvas, image.width, image.height);
+        // one unbroken pencil line through 1500 nodes
+        [window.worker, message] = lineArt(image, (nodes, edges, widths, done, iteration, dot, pencil, ridge, profile, scale) => view.update(nodes, edges, widths, dot, pencil, scale), { nodes: 1500, kind: "graphite" });
       }
       else {
         worker.postMessage(message);
@@ -198,8 +215,10 @@ stylesheets:
     window.killLineArt = () => {
       if (window.worker) window.worker.terminate();
       window.worker = null;
+      if (view) view.clear();
       let ctx = canvas.getContext('2d')
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }

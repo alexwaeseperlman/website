@@ -21,17 +21,30 @@ export class Face {
         return v1;
     }
     /**
+     * @returns {number}
+     */
+    iteration() {
+        const ret = wasm.face_iteration(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    loss() {
+        const ret = wasm.face_loss(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @param {Float32Array} darkness
      * @param {number} width
      * @param {number} height
      * @param {number} nodes
-     * @param {number} sigma
-     * @param {number} ink
+     * @param {number} iterations
      */
-    constructor(darkness, width, height, nodes, sigma, ink) {
+    constructor(darkness, width, height, nodes, iterations) {
         const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.face_new(ptr0, len0, width, height, nodes, sigma, ink);
+        const ret = wasm.face_new(ptr0, len0, width, height, nodes, iterations);
         this.__wbg_ptr = ret;
         FaceFinalization.register(this, this.__wbg_ptr, this);
         return this;
@@ -46,29 +59,188 @@ export class Face {
         return v1;
     }
     /**
-     * @param {number} proposals
-     * @returns {number}
+     * @returns {boolean}
      */
-    run(proposals) {
-        const ret = wasm.face_run(this.__wbg_ptr, proposals);
-        return ret >>> 0;
+    step() {
+        const ret = wasm.face_step(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
-     * @returns {number}
+     * @returns {Float32Array}
      */
-    schedule() {
-        const ret = wasm.face_schedule(this.__wbg_ptr);
-        return ret >>> 0;
-    }
-    /**
-     * @returns {number}
-     */
-    sweep() {
-        const ret = wasm.face_sweep(this.__wbg_ptr);
-        return ret >>> 0;
+    widths() {
+        const ret = wasm.face_widths(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
 }
 if (Symbol.dispose) Face.prototype[Symbol.dispose] = Face.prototype.free;
+
+export class PathFace {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PathFaceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_pathface_free(ptr, 0);
+    }
+    /**
+     * @param {number} iterations
+     * @param {boolean} pencil
+     */
+    blur_pass(iterations, pencil) {
+        wasm.pathface_blur_pass(this.__wbg_ptr, iterations, pencil);
+    }
+    /**
+     * @returns {number}
+     */
+    dot() {
+        const ret = wasm.pathface_dot(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    edges() {
+        const ret = wasm.pathface_edges(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    iteration() {
+        const ret = wasm.pathface_iteration(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    loss() {
+        const ret = wasm.pathface_loss(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {Float32Array} darkness
+     * @param {number} width
+     * @param {number} height
+     * @param {number} nodes
+     * @param {number} iterations
+     * @param {boolean} airbrush
+     * @param {number} ridge
+     * @param {boolean} learn_ridge
+     * @param {boolean} graphite
+     */
+    constructor(darkness, width, height, nodes, iterations, airbrush, ridge, learn_ridge, graphite) {
+        const ptr0 = passArrayF32ToWasm0(darkness, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.pathface_new(ptr0, len0, width, height, nodes, iterations, airbrush, ridge, learn_ridge, graphite);
+        this.__wbg_ptr = ret;
+        PathFaceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    nodes() {
+        const ret = wasm.pathface_nodes(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    profile() {
+        const ret = wasm.pathface_profile(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    ridge() {
+        const ret = wasm.pathface_ridge(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {bigint}
+     */
+    seed() {
+        const ret = wasm.pathface_seed(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    shown() {
+        const ret = wasm.pathface_shown(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @param {number} scale
+     * @returns {Float32Array}
+     */
+    shown_fine(scale) {
+        const ret = wasm.pathface_shown_fine(this.__wbg_ptr, scale);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    step() {
+        const ret = wasm.pathface_step(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {number} parts
+     * @returns {boolean}
+     */
+    step_part(parts) {
+        const ret = wasm.pathface_step_part(this.__wbg_ptr, parts);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    widths() {
+        const ret = wasm.pathface_widths(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) PathFace.prototype[Symbol.dispose] = PathFace.prototype.free;
+
+/**
+ * @param {Float32Array} nodes
+ * @param {Uint16Array} edges
+ * @param {bigint} seed
+ * @param {number} width
+ * @param {number} height
+ * @param {number} scale
+ * @returns {Uint8Array}
+ */
+export function pencil_image(nodes, edges, seed, width, height, scale) {
+    const ptr0 = passArrayF32ToWasm0(nodes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(edges, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.pencil_image(ptr0, len0, ptr1, len1, seed, width, height, scale);
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -208,6 +380,9 @@ function __wbg_get_imports() {
 const FaceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_face_free(ptr, 1));
+const PathFaceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_pathface_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -277,6 +452,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray16ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 2, 2) >>> 0;
+    getUint16ArrayMemory0().set(arg, ptr / 2);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArrayF32ToWasm0(arg, malloc) {

@@ -5,24 +5,65 @@ export class Face {
     free(): void;
     [Symbol.dispose](): void;
     edges(): Uint16Array;
-    constructor(darkness: Float32Array, width: number, height: number, nodes: number, sigma: number, ink: number);
+    iteration(): number;
+    loss(): number;
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number);
     nodes(): Float32Array;
-    run(proposals: number): number;
-    schedule(): number;
-    sweep(): number;
+    step(): boolean;
+    widths(): Float32Array;
 }
+
+export class PathFace {
+    free(): void;
+    [Symbol.dispose](): void;
+    blur_pass(iterations: number, pencil: boolean): void;
+    dot(): number;
+    edges(): Uint16Array;
+    iteration(): number;
+    loss(): number;
+    constructor(darkness: Float32Array, width: number, height: number, nodes: number, iterations: number, airbrush: boolean, ridge: number, learn_ridge: boolean, graphite: boolean);
+    nodes(): Float32Array;
+    profile(): Float32Array;
+    ridge(): number;
+    seed(): bigint;
+    shown(): Float32Array;
+    shown_fine(scale: number): Float32Array;
+    step(): boolean;
+    step_part(parts: number): boolean;
+    widths(): Float32Array;
+}
+
+export function pencil_image(nodes: Float32Array, edges: Uint16Array, seed: bigint, width: number, height: number, scale: number): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_face_free: (a: number, b: number) => void;
+    readonly __wbg_pathface_free: (a: number, b: number) => void;
     readonly face_edges: (a: number) => [number, number];
-    readonly face_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly face_iteration: (a: number) => number;
+    readonly face_loss: (a: number) => number;
+    readonly face_new: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly face_nodes: (a: number) => [number, number];
-    readonly face_run: (a: number, b: number) => number;
-    readonly face_schedule: (a: number) => number;
-    readonly face_sweep: (a: number) => number;
+    readonly face_step: (a: number) => number;
+    readonly face_widths: (a: number) => [number, number];
+    readonly pathface_blur_pass: (a: number, b: number, c: number) => void;
+    readonly pathface_dot: (a: number) => number;
+    readonly pathface_edges: (a: number) => [number, number];
+    readonly pathface_iteration: (a: number) => number;
+    readonly pathface_loss: (a: number) => number;
+    readonly pathface_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
+    readonly pathface_nodes: (a: number) => [number, number];
+    readonly pathface_profile: (a: number) => [number, number];
+    readonly pathface_ridge: (a: number) => number;
+    readonly pathface_seed: (a: number) => bigint;
+    readonly pathface_shown: (a: number) => [number, number];
+    readonly pathface_shown_fine: (a: number, b: number) => [number, number];
+    readonly pathface_step: (a: number) => number;
+    readonly pathface_step_part: (a: number, b: number) => number;
+    readonly pathface_widths: (a: number) => [number, number];
+    readonly pencil_image: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

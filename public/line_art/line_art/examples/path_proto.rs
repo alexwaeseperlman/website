@@ -1,0 +1,97 @@
+// Native harness for tuning the path version: runs it on a raw f32 darkness image and writes nodes and order.
+// path_proto <darkness.f32> <width> <height> <out.txt> [key=value ...] with keys from path_art::Params.
+use line_art::path_art::{Params, PathArt};
+use std::io::Write;
+fn main() {
+    let a: Vec<String> = std::env::args().collect();
+    let (w, h): (usize, usize) = (a[2].parse().unwrap(), a[3].parse().unwrap());
+    let bytes = std::fs::read(&a[1]).unwrap();
+    let dark: Vec<f32> = bytes.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let mut p = Params { nodes: 1500, sigma: 2.0, iterations: 1000, line: 0.7, lr_node: 12.0, paper: 12.0, detail: 3.0, gamma: 2.0, features: 6.0, lambda: 0.02, warmup: 50, temp_start: 5.0, temp_end: 0.01, budget: 20000, coarse: 8400.0, coarse_block: 10.0, coarse_sigma: 5.0, coarse_until: 0.6, tone: 0.6, dot: 0.36 * std::f32::consts::PI, airbrush: false, ridge: 0.0, learn_ridge: false, lr_kernel: 0.05, pencil: false, graphite: false, fade: 0.0, fade_until: 0.6 };
+    let mut snap = vec![];
+    // a blur pass after the first: its steps, starting radius, peak node learning rate, starting temperature, warmup
+    let mut pencil2 = false;
+    let (mut second, mut r2, mut lr2, mut temp2, mut warm2) = (0usize, 3.0f32, 3.0f32, 0.5f32, 20usize);
+    for kv in &a[5..] {
+        let (k, v) = kv.split_once('=').unwrap();
+        let v: f32 = v.parse().unwrap();
+        match k {
+            "nodes" => p.nodes = v as usize,
+            "sigma" => p.sigma = v,
+            "iterations" => p.iterations = v as usize,
+            "line" => p.line = v,
+            "lr_node" => p.lr_node = v,
+            "paper" => p.paper = v,
+            "detail" => p.detail = v,
+            "gamma" => p.gamma = v,
+            "features" => p.features = v,
+            "lambda" => p.lambda = v,
+            "warmup" => p.warmup = v as usize,
+            "temp_start" => p.temp_start = v,
+            "temp_end" => p.temp_end = v,
+            "budget" => p.budget = v as usize,
+            "coarse" => p.coarse = v,
+            "tone" => p.tone = v,
+            "coarse_until" => p.coarse_until = v,
+            "dot" => p.dot = v,
+            "airbrush" => p.airbrush = v > 0.0,
+            "ridge" => p.ridge = v,
+            "learn_ridge" => p.learn_ridge = v > 0.0,
+            "lr_kernel" => p.lr_kernel = v,
+            "pencil" => p.pencil = v > 0.0,
+            "pencil2" => pencil2 = v > 0.0,
+            "graphite" => p.graphite = v > 0.0,
+            "fade" => p.fade = v,
+            "fade_until" => p.fade_until = v,
+            "coarse_block" => p.coarse_block = v,
+            "coarse_sigma" => p.coarse_sigma = v,
+            "second" => second = v as usize,
+            "r2" => r2 = v,
+            "lr2" => lr2 = v,
+            "temp2" => temp2 = v,
+            "warm2" => warm2 = v as usize,
+            "late" => {}
+            "snap" => snap.push(v as usize),
+            _ => panic!("unknown key {}", k),
+        }
+    }
+    let mut rng = rand::thread_rng();
+    let t = std::time::Instant::now();
+    let mut g = PathArt::new(dark, w, h, &p, &mut rng);
+    if let Some(v) = a[5..].iter().find_map(|kv| kv.strip_prefix("late=")) { g.late_moves = v.parse().unwrap(); }
+    let first = g.loss;
+    let mut f = std::fs::File::create(&a[4]).unwrap();
+    let mut write = |g: &PathArt| {
+        writeln!(f, "{}", g.points().iter().map(|(x, y)| format!("{} {}", x, y)).collect::<Vec<_>>().join(",")).unwrap();
+        writeln!(f, "{}", g.order.iter().map(|o| o.to_string()).collect::<Vec<_>>().join(",")).unwrap();
+    };
+    let mut last = 0;
+    while g.step(&mut rng) {
+        if snap.contains(&g.iteration) { write(&g); }
+        if g.iteration % 100 == 0 {
+            eprintln!("{} loss {:.0} accepted {} ({:?})", g.iteration, g.loss, g.accepted - last, t.elapsed());
+            last = g.accepted;
+        }
+    }
+    if second > 0 {
+        eprintln!("first pass: pixel error {:.5} loss {:.0} ({:?})", g.pixel_error(), g.loss, t.elapsed());
+        g.blur_pass(second, r2, pencil2, lr2, temp2, warm2);
+        eprintln!("blur pass start: pixel error {:.5} loss {:.0}", g.pixel_error(), g.loss);
+        while g.step(&mut rng) {
+            if g.iteration % 100 == 0 {
+                eprintln!("b{} loss {:.0} radius {:.2} ({:?})", g.iteration, g.loss, g.ridge_radius, t.elapsed());
+            }
+        }
+    }
+    write(&g);
+    let shown: Vec<u8> = g.shown().iter().flat_map(|v| v.to_le_bytes()).collect();
+    std::fs::write(format!("{}.shown.f32", a[4]), shown).unwrap();
+    if p.graphite {
+        let fine: Vec<u8> = g.shown_fine(3).iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(format!("{}.fine.f32", a[4]), fine).unwrap();
+    }
+    eprintln!("pixel error {:.5}", g.pixel_error());
+    eprintln!("ridge radius {:.3}", g.ridge_radius);
+    if let Some(k) = &g.pencil { eprintln!("pencil knots {:.4?}\nprofile {:.4?}", k, g.pencil_profile()); }
+    eprintln!("{} iterations, loss {:.0} -> {:.0}, {:?}", g.iterations, first, g.loss, t.elapsed());
+}
