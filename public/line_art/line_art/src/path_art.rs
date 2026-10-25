@@ -9,11 +9,44 @@
 // - gradient descent on the nodes: one Adam step on every node position, with the gradient worked out as in
 //   graph_art, learning rate warming up linearly and then following a cosine down to 0.
 // The annealing temperature cools geometrically over the same iterations.
-use crate::graph_art::{bilinear, blur, prepare, samples};
+use crate::graph_art::blur;
 use rand::Rng;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+// The blurred target G T and the per-pixel loss weight W, from the photo's darkness. The darkness gets an
+// unsharp mask (detail) that brings out eyes, nose and mouth against the much darker hair, then a gamma that
+// lightens skin. W is large on paper, so lines across the background cost more, and larger again where the
+// photo has detail (eyes, brows, nose, mouth), which is what reads as a likeness. Also returns the processed
+// darkness itself.
+#[allow(clippy::too_many_arguments)]
+fn prepare(darkness: &[f32], width: usize, height: usize, detail: f32, gamma: f32, paper: f32, features: f32, sigma: f32) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let wide = blur(darkness, width, height, 8.0);
+    let fine: Vec<f32> = darkness.iter().zip(&wide).map(|(d, w)| d - w).collect();
+    let darkness: Vec<f32> = darkness.iter().zip(&fine).map(|(d, f)| (d + detail * f).clamp(0.0, 1.0).powf(gamma)).collect();
+    let amount = blur(&fine.iter().map(|f| f.abs()).collect::<Vec<_>>(), width, height, 3.0);
+    let dm = amount.iter().cloned().fold(1e-6f32, f32::max);
+    let light = blur(&darkness, width, height, 3.0);
+    let weight = light.iter().zip(&amount).map(|(t, d)| 1.0 + paper * (1.0 - t).powi(4) + features * d / dm).collect();
+    (blur(&darkness, width, height, sigma), weight, darkness)
+}
+
+// Bilinear weights of a point in pixel space, where pixel i covers [i, i + 1): its four pixels' indices and
+// weights, or None when it falls outside the image.
+fn bilinear(x: f32, y: f32, w: usize, h: usize) -> Option<(usize, f32, f32)> {
+    let (x, y) = (x - 0.5, y - 0.5);
+    if x < 0.0 || y < 0.0 || x >= (w - 1) as f32 || y >= (h - 1) as f32 {
+        return None;
+    }
+    let (x0, y0) = (x as usize, y as usize);
+    Some((y0 * w + x0, x - x0 as f32, y - y0 as f32))
+}
+
+// Points along a segment, one per unit of length (at least one), at fractions t = (i + 0.5) / n.
+fn samples(len: f32) -> usize {
+    len.ceil().max(1.0) as usize
+}
 
 pub struct PathArt {
     // the photo plus a margin all round; positions are in this frame

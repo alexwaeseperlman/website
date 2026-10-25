@@ -23,8 +23,10 @@ impl Face {
             nodes,
             sigma: 2.0,
             iterations,
-            lr_width: 0.02,
-            lr_node: 1.0,
+            lr_width: 0.4,
+            lr_node: 8.0,
+            beta1: 0.9,
+            beta2: 0.999,
             paper: 12.0,
             detail: 3.0,
             gamma: 2.0,
@@ -32,9 +34,10 @@ impl Face {
             lambda: 0.02,
             max_width: 1.5,
             warmup: 50,
-            start_lines: 3000,
-            start_width: 0.3,
+            start_lines: 375,
+            start_width: 0.15,
             dot: 4.52,
+            min_width: 1e-6,
         };
         Face { graph: GraphArt::new(darkness, width, height, &params, &mut rng) }
     }

@@ -10,7 +10,7 @@
 const FINE = 2;
 
 export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "graph" } = {}) {
-  const worker = new Worker(new URL("./wasm-worker.js?v=20261025i", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("./wasm-worker.js?v=20261025j", import.meta.url), { type: "module" });
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
   const canvas = document.createElement("canvas");
@@ -29,8 +29,8 @@ export function lineArt(img, onGraph, { nodes = 300, iterations = 1000, kind = "
   // carries on; image is then a function giving its RGBA pixels, called only for frames that are shown
   let wasm = null;
   if (kind === "graphite") {
-    import("./line_art/pkg/line_art.js?v=20261025i").then(async (m) => {
-      await m.default({ module_or_path: new URL("./line_art/pkg/line_art_bg.wasm?v=20261025i", import.meta.url) });
+    import("./line_art/pkg/line_art.js?v=20261025j").then(async (m) => {
+      await m.default({ module_or_path: new URL("./line_art/pkg/line_art_bg.wasm?v=20261025j", import.meta.url) });
       wasm = m;
     });
   }
