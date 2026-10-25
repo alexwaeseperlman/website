@@ -19,10 +19,13 @@ export const pathface_new: (a: number, b: number, c: number, d: number, e: numbe
 export const pathface_nodes: (a: number) => [number, number];
 export const pathface_profile: (a: number) => [number, number];
 export const pathface_ridge: (a: number) => number;
+export const pathface_seed: (a: number) => bigint;
 export const pathface_shown: (a: number) => [number, number];
 export const pathface_shown_fine: (a: number, b: number) => [number, number];
 export const pathface_step: (a: number) => number;
+export const pathface_step_part: (a: number, b: number) => number;
 export const pathface_widths: (a: number) => [number, number];
+export const pencil_image: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number) => [number, number];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;
 export const __wbindgen_externrefs: WebAssembly.Table;

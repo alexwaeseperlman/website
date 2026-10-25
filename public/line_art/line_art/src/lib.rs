@@ -128,6 +128,12 @@ impl PathFace {
         self.path.step(&mut self.rng)
     }
 
+    // A step in parts, to show its annealing as it goes: one call per part, the last finishing the step; false
+    // once the schedule is over
+    pub fn step_part(&mut self, parts: usize) -> bool {
+        self.path.step_part(&mut self.rng, parts)
+    }
+
     // Once the path has converged, starts a second pass of `iterations` steps that draws it with a 3 px ridge
     // stroke and learns the ridge's radius while it keeps refining the nodes and the order. With pencil it learns
     // the stroke's whole profile instead, starting from that ridge.
@@ -177,6 +183,11 @@ impl PathFace {
         self.path.shown_fine(scale).iter().map(|v| v / TONE).collect()
     }
 
+    // The seed of a pencil's streaks, for pencil_image
+    pub fn seed(&self) -> u64 {
+        self.path.seed()
+    }
+
     // The ridge's radius in pixels (0 for a sharp line or a Gaussian)
     pub fn ridge(&self) -> f32 {
         self.path.ridge_radius
@@ -194,3 +205,21 @@ const TONE: f32 = 0.6;
 // a pencil line's ink per unit length, and its dots' ink
 const PENCIL_LINE: f32 = 0.3;
 const PENCIL_DOT: f32 = 0.4;
+
+// A pencil drawing as RGBA pixels, (width * scale) by (height * scale), for nodes ([x0, y0, ...] in the photo's
+// pixels) joined by edges ([a, b, ...]) as a PathFace with this seed draws them; grey, white where there is no
+// graphite. It needs no PathFace, so the page can draw while the worker optimizes.
+#[wasm_bindgen]
+pub fn pencil_image(nodes: Vec<f32>, edges: Vec<u16>, seed: u64, width: usize, height: usize, scale: usize) -> Vec<u8> {
+    let points: Vec<(f32, f32)> = nodes.chunks(2).map(|p| (p[0], p[1])).collect();
+    let edges: Vec<(u32, u32)> = edges.chunks(2).map(|e| (e[0] as u32, e[1] as u32)).collect();
+    let shown = path_art::pencil_render(&points, &edges, seed, PENCIL_LINE, PENCIL_DOT, width, height, scale);
+    let mut out = vec![255u8; shown.len() * 4];
+    for (o, v) in out.chunks_exact_mut(4).zip(&shown) {
+        let g = (255.0 * (1.0 - (v / TONE).clamp(0.0, 1.0))) as u8;
+        o[0] = g;
+        o[1] = g;
+        o[2] = g;
+    }
+    out
+}

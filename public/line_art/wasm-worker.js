@@ -1,6 +1,6 @@
 // The ?v= queries keep a browser from pairing this with a cached copy of the old line art JS or wasm, which
 // sat at the same paths. Bump the version (here, in line_art.js and in ../index.html) whenever pkg/ is rebuilt.
-import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025e';
+import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025f';
 
 // Fits a graph drawing to the image it is sent, one step at a time, posting the graph after every step as
 // {nodes, edges, widths, dot, iteration, done}: the full graph (Face), or with kind "path" one unbroken line
@@ -10,14 +10,15 @@ import init, { Face, PathFace } from './line_art/pkg/line_art.js?v=20261025e';
 // then switches to a learned ridge for those, and kind "pencil" does the same but then learns the stroke's whole
 // cross-section (posted as profile, darkness at each pixel out from the centre). Kind "graphite" draws like a
 // pencil in a single pass: each line as a few sharp streaks whose graphite varies along them, with no stroke
-// kernel, saturating as strokes pile up, and its image is FINE times finer than the photo (posted as
-// scale); these messages also carry image, the drawing's
+// kernel, saturating as strokes pile up; it posts the seed of its streaks, from which the page draws it, and
+// each step in PARTS posts; the other soft strokes' messages also carry image, the drawing's
 // darkness per pixel exactly as the optimizer scores it. A new message starts over; the job counter stops the
 // old loop.
-const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261025e', import.meta.url) });
+const ready = init({ module_or_path: new URL('./line_art/pkg/line_art_bg.wasm?v=20261025f', import.meta.url) });
 let job = 0;
 const BLUR_STEPS = 500;
-const FINE = 2;
+// a pencil step is shown in this many parts, its annealing as it goes
+const PARTS = 3;
 
 onmessage = async (e) => {
   const id = ++job;
@@ -36,19 +37,19 @@ onmessage = async (e) => {
   let blurring = false;
   const frame = () => {
     if (id !== job) { face.free(); return; }
-    let done = !face.step();
+    let done = !(graphite ? face.step_part(PARTS) : face.step());
     if (done && two && !blurring) {
-      face.blur_pass(BLUR_STEPS, kind === "pencil", kind === "graphite");
+      face.blur_pass(BLUR_STEPS, kind === "pencil");
       blurring = true;
       done = false;
     }
-    // a pencil drawing is rendered finer than the optimizer's pixels, so its grain shows
-    const scale = graphite ? FINE : 1;
-    const image = graphite ? face.shown_fine(FINE) : soft || blurring ? face.shown() : undefined;
+    // a pencil drawing is drawn by the page from the nodes, the path and the seed of its streaks
+    const image = soft && !graphite || blurring ? face.shown() : undefined;
+    const seed = graphite ? face.seed() : undefined;
     const ridge = kind === "learned" || (blurring && kind === "twopass") ? face.ridge() : undefined;
     const profile = blurring && kind === "pencil" ? face.profile() : undefined;
     const iteration = face.iteration() + (blurring ? first : 0);
-    postMessage({ nodes: face.nodes(), edges: face.edges(), widths: face.widths(), dot, image, scale, ridge, profile, iteration, done });
+    postMessage({ nodes: face.nodes(), edges: face.edges(), widths: face.widths(), dot, image, seed, ridge, profile, iteration, done });
     if (done) face.free();
     else setTimeout(frame, 0);
   };

@@ -25,11 +25,15 @@ export class PathFace {
     nodes(): Float32Array;
     profile(): Float32Array;
     ridge(): number;
+    seed(): bigint;
     shown(): Float32Array;
     shown_fine(scale: number): Float32Array;
     step(): boolean;
+    step_part(parts: number): boolean;
     widths(): Float32Array;
 }
+
+export function pencil_image(nodes: Float32Array, edges: Uint16Array, seed: bigint, width: number, height: number, scale: number): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -53,10 +57,13 @@ export interface InitOutput {
     readonly pathface_nodes: (a: number) => [number, number];
     readonly pathface_profile: (a: number) => [number, number];
     readonly pathface_ridge: (a: number) => number;
+    readonly pathface_seed: (a: number) => bigint;
     readonly pathface_shown: (a: number) => [number, number];
     readonly pathface_shown_fine: (a: number, b: number) => [number, number];
     readonly pathface_step: (a: number) => number;
+    readonly pathface_step_part: (a: number, b: number) => number;
     readonly pathface_widths: (a: number) => [number, number];
+    readonly pencil_image: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

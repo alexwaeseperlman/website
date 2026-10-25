@@ -11,6 +11,9 @@
 // The annealing temperature cools geometrically over the same iterations.
 use crate::graph_art::{bilinear, blur, prepare, samples};
 use rand::Rng;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub struct PathArt {
     // the photo plus a margin all round; positions are in this frame
@@ -45,8 +48,14 @@ pub struct PathArt {
     graphite: bool,
     fade: f32,
     fade_until: f32,
+    // graphite lines' streaks by (lower node, higher node, fineness): their sample count, the step that last used
+    // them, and the streaks
+    #[allow(clippy::type_complexity)]
+    streak_cache: RefCell<HashMap<(u32, u32, usize), (usize, usize, Rc<Vec<(f32, f32, f32)>>)>>,
     // how many times as many moves a step may try once splats are smaller than the first
     pub late_moves: usize,
+    // how many parts of the current step are done
+    part: usize,
     // how long a line counts as long, LONG of the loss's starting blurs
     long: f32,
     deposit: Vec<f32>,
@@ -231,6 +240,77 @@ fn pencil_basis(n: i32) -> Vec<Vec<f32>> {
         .collect()
 }
 
+fn make_streaks(seed: u64, a: u32, b: u32, n: usize, sub: usize) -> Vec<(f32, f32, f32)> {
+    let pair = hash(seed ^ hash(((a as u64) << 32) | b as u64));
+    // each texture's random values at its whole steps, worked out once
+    let knots = |seed: u64, len: f32| -> Vec<f32> { (0..=(n as f32 / len) as usize + 1).map(|i| knot(seed, i)).collect() };
+    let pressure = knots(pair, PRESSURE_LEN);
+    let sides = [knots(hash(pair ^ 0xa1), SIDE_LEN), knots(hash(pair ^ 0xb2), SIDE_LEN)];
+    let lanes: Vec<Vec<f32>> = (0..LANES).map(|k| knots(hash(pair ^ (k as u64 + 1)), STREAK_LEN)).collect();
+    // the cross-section: each lane's place in [-1, 1] and its share of the normal curve
+    let half = (LANES - 1) as f32 / 2.0;
+    let across: Vec<f32> = (0..LANES).map(|k| (k as f32 - half) / half).collect();
+    let curve: Vec<f32> = across.iter().map(|x| (-x * x / (2.0 * PROFILE * PROFILE)).exp()).collect();
+    let total: f32 = curve.iter().sum();
+    // two numbers in [-1, 1] from one hash's halves
+    let units = |z: u64| { let h = hash(z); ((h as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0, ((h >> 32) as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0) };
+    let mut out = Vec::with_capacity(n * sub * LANES);
+    for q in 0..n * sub {
+        // where along the line the texture is read, in samples: exactly the sample's index when sub = 1
+        let i = ((q as f32 + 0.5) / sub as f32 - 0.5).clamp(0.0, (n - 1) as f32);
+        let p = 1.0 + PRESSURE * smooth(&pressure, i / PRESSURE_LEN);
+        let width = [HALF_WIDTH * (1.0 + SIDE * smooth(&sides[0], i / SIDE_LEN)), HALF_WIDTH * (1.0 + SIDE * smooth(&sides[1], i / SIDE_LEN))];
+        for (k, lane) in lanes.iter().enumerate() {
+            let streak = (1.0 + STREAK * smooth(lane, i / STREAK_LEN)).max(0.0);
+            let (ja, jo) = units(pair ^ ((q as u64) << 8 | k as u64));
+            let (ja, jo) = (JITTER * ja, JITTER * jo);
+            let t = ((q as f32 + 0.5 + ja * sub as f32) / (n * sub) as f32).clamp(0.0, 1.0);
+            let o = across[k] * width[(across[k] > 0.0) as usize] + jo;
+            out.push((t, o, p * streak * curve[k] / (total * sub as f32)));
+        }
+    }
+    out
+}
+
+// A graphite drawing as shown, (width * scale) by (height * scale): the streaks of each line between points (in
+// the photo's pixels) that edges join, split into scale times finer samples, and each point's dot. It is what a
+// PathArt with this seed draws, rendered finer than its pixels so the grain the optimizer averages over shows.
+#[allow(clippy::too_many_arguments)]
+pub fn pencil_render(points: &[(f32, f32)], edges: &[(u32, u32)], seed: u64, line: f32, dot: f32, width: usize, height: usize, scale: usize) -> Vec<f32> {
+    let sc = scale as f32;
+    let (fw, fh) = (width * scale, height * scale);
+    let mut d = vec![0f32; fw * fh];
+    // ink in a fine pixel counts scale^2 times over, as it covers 1 / scale^2 of a pixel
+    let mut put = |x: f32, y: f32, ink: f32| {
+        if let Some((j, fx, fy)) = bilinear(x * sc, y * sc, fw, fh) {
+            let ink = ink * sc * sc;
+            d[j] += ink * (1.0 - fx) * (1.0 - fy);
+            d[j + 1] += ink * fx * (1.0 - fy);
+            d[j + fw] += ink * (1.0 - fx) * fy;
+            d[j + fw + 1] += ink * fx * fy;
+        }
+    };
+    for &(a, b) in edges {
+        let (a, b) = (a.min(b), a.max(b));
+        let ((ax, ay), (bx, by)) = (points[a as usize], points[b as usize]);
+        let (dx, dy) = (bx - ax, by - ay);
+        let len = (dx * dx + dy * dy).sqrt();
+        let n = samples(len);
+        let mass = line * len / n as f32;
+        let (nx, ny) = (-dy / len.max(1e-3), dx / len.max(1e-3));
+        for (t, o, share) in make_streaks(seed, a, b, n, scale) {
+            put(ax + dx * t + o * nx, ay + dy * t + o * ny, mass * share);
+        }
+    }
+    for &(x, y) in points {
+        put(x, y, dot);
+    }
+    for v in d.iter_mut() {
+        *v = 1.0 - (-*v).exp();
+    }
+    d
+}
+
 // Half the side of a ridge kernel of radius r: just enough, or one more when the radius is learned so the
 // derivative sees the pixels it would grow into
 fn ridge_size(r: f32, learned: bool) -> i32 {
@@ -313,6 +393,8 @@ impl PathArt {
             fade_until: p.fade_until,
             long: LONG * p.sigma,
             late_moves: 10,
+            part: 0,
+            streak_cache: RefCell::new(HashMap::new()),
             deposit: vec![],
             seed: rng.gen(),
             basis: vec![],
@@ -433,63 +515,13 @@ impl PathArt {
     // A graphite drawing as shown, rendered scale times finer than the optimizer's pixels: the same streaks, split
     // into finer samples, so the grain the optimizer averages over each pixel shows. Row-major, (photo width * scale) wide.
     pub fn shown_fine(&self, scale: usize) -> Vec<f32> {
-        let (m, sc) = (self.margin, scale as f32);
-        let (fw, fh) = ((self.width - 2 * m as usize) * scale, (self.height - 2 * m as usize) * scale);
-        let mut d = vec![0f32; fw * fh];
-        // ink in a fine pixel counts scale^2 times over, as it covers 1 / scale^2 of a pixel
-        let mut put = |x: f32, y: f32, ink: f32| {
-            if let Some((j, fx, fy)) = bilinear((x - m) * sc, (y - m) * sc, fw, fh) {
-                let ink = ink * sc * sc;
-                d[j] += ink * (1.0 - fx) * (1.0 - fy);
-                d[j + 1] += ink * fx * (1.0 - fy);
-                d[j + fw] += ink * (1.0 - fx) * fy;
-                d[j + fw + 1] += ink * fx * fy;
-            }
-        };
-        for s in self.order.windows(2) {
-            let len = self.length(s[0], s[1]);
-            let mass = self.line * len / samples(len) as f32;
-            let (a, b, streaks) = self.streaks(s[0], s[1], scale);
-            let ((ax, ay), (bx, by)) = (self.nodes[a as usize], self.nodes[b as usize]);
-            let (dx, dy) = (bx - ax, by - ay);
-            let (nx, ny) = (-dy / len.max(1e-3), dx / len.max(1e-3));
-            for &(t, o, share) in &streaks {
-                put(ax + dx * t + o * nx, ay + dy * t + o * ny, mass * share);
-            }
-        }
-        for &(x, y) in &self.nodes {
-            put(x, y, self.dot);
-        }
-        // the stroke, its knots spread over scale fine pixels each, and as much ink in all, if it has one
-        let knots = match &self.pencil { Some(k) => k, None => return self.show(&d) };
-        let r = (knots.len() as f32 * sc).ceil() as i32;
-        let side = (2 * r + 1) as usize;
-        let mut k = vec![0f32; side * side];
-        for y in -r..=r {
-            for x in -r..=r {
-                let u = ((x * x + y * y) as f32).sqrt() / sc;
-                let (i, f) = (u as usize, u.fract());
-                let at = |i: usize| knots.get(i).copied().unwrap_or(0.0);
-                k[(y + r) as usize * side + (x + r) as usize] = (at(i) * (1.0 - f) + at(i + 1) * f) / (sc * sc);
-            }
-        }
-        let mut out = vec![0f32; fw * fh];
-        for dy in -r..=r {
-            for dx in -r..=r {
-                let kv = k[(dy + r) as usize * side + (dx + r) as usize];
-                if kv == 0.0 {
-                    continue;
-                }
-                let (x0, x1) = ((-dx).max(0) as usize, (fw as i32 - dx).min(fw as i32) as usize);
-                for y in (-dy).max(0) as usize..(fh as i32 - dy).min(fh as i32) as usize {
-                    let (yy, xx0) = ((y as i32 + dy) as usize, (x0 as i32 + dx) as usize);
-                    for (o, v) in out[yy * fw + xx0..yy * fw + xx0 + (x1 - x0)].iter_mut().zip(&d[y * fw + x0..y * fw + x1]) {
-                        *o += kv * v;
-                    }
-                }
-            }
-        }
-        self.show(&out)
+        let m = self.margin as usize;
+        let edges: Vec<(u32, u32)> = self.order.windows(2).map(|s| (s[0], s[1])).collect();
+        pencil_render(&self.points(), &edges, self.seed, self.line, self.dot, self.width - 2 * m, self.height - 2 * m, scale)
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     // Mean squared difference between the drawing as shown and the darkness it aims for, per photo pixel.
@@ -506,39 +538,22 @@ impl PathArt {
     // nodes and the sample's index, never on where the nodes are, so it moves and stretches with the line.
     // With sub > 1, each sample is split into sub finer ones along the line, the texture following smoothly, for
     // drawing finer than the optimizer's pixels.
-    fn streaks(&self, a: u32, b: u32, sub: usize) -> (u32, u32, Vec<(f32, f32, f32)>) {
+    // They are kept from one step to the next while the line stays in the path and its sample count holds.
+    fn streaks(&self, a: u32, b: u32, sub: usize) -> (u32, u32, Rc<Vec<(f32, f32, f32)>>) {
         let (a, b) = (a.min(b), a.max(b));
         let n = samples(self.length(a, b));
-        let pair = hash(self.seed ^ hash(((a as u64) << 32) | b as u64));
-        // each texture's random values at its whole steps, worked out once
-        let knots = |seed: u64, len: f32| -> Vec<f32> { (0..=(n as f32 / len) as usize + 1).map(|i| knot(seed, i)).collect() };
-        let pressure = knots(pair, PRESSURE_LEN);
-        let sides = [knots(hash(pair ^ 0xa1), SIDE_LEN), knots(hash(pair ^ 0xb2), SIDE_LEN)];
-        let lanes: Vec<Vec<f32>> = (0..LANES).map(|k| knots(hash(pair ^ (k as u64 + 1)), STREAK_LEN)).collect();
-        // the cross-section: each lane's place in [-1, 1] and its share of the normal curve
-        let half = (LANES - 1) as f32 / 2.0;
-        let across: Vec<f32> = (0..LANES).map(|k| (k as f32 - half) / half).collect();
-        let curve: Vec<f32> = across.iter().map(|x| (-x * x / (2.0 * PROFILE * PROFILE)).exp()).collect();
-        let total: f32 = curve.iter().sum();
-        // two numbers in [-1, 1] from one hash's halves
-        let units = |z: u64| { let h = hash(z); ((h as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0, ((h >> 32) as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0) };
-        let mut out = Vec::with_capacity(n * sub * LANES);
-        for q in 0..n * sub {
-            // where along the line the texture is read, in samples: exactly the sample's index when sub = 1
-            let i = ((q as f32 + 0.5) / sub as f32 - 0.5).clamp(0.0, (n - 1) as f32);
-            let p = 1.0 + PRESSURE * smooth(&pressure, i / PRESSURE_LEN);
-            let width = [HALF_WIDTH * (1.0 + SIDE * smooth(&sides[0], i / SIDE_LEN)), HALF_WIDTH * (1.0 + SIDE * smooth(&sides[1], i / SIDE_LEN))];
-            for (k, lane) in lanes.iter().enumerate() {
-                let streak = (1.0 + STREAK * smooth(lane, i / STREAK_LEN)).max(0.0);
-                let (ja, jo) = units(pair ^ ((q as u64) << 8 | k as u64));
-                let (ja, jo) = (JITTER * ja, JITTER * jo);
-                let t = ((q as f32 + 0.5 + ja * sub as f32) / (n * sub) as f32).clamp(0.0, 1.0);
-                let o = across[k] * width[(across[k] > 0.0) as usize] + jo;
-                out.push((t, o, p * streak * curve[k] / (total * sub as f32)));
+        let mut cache = self.streak_cache.borrow_mut();
+        if let Some((m, used, s)) = cache.get_mut(&(a, b, sub)) {
+            if *m == n {
+                *used = self.iteration;
+                return (a, b, s.clone());
             }
         }
-        (a, b, out)
+        let s = Rc::new(make_streaks(self.seed, a, b, n, sub));
+        cache.insert((a, b, sub), (n, self.iteration, s.clone()));
+        (a, b, s)
     }
+
 
     // Where the line a-b puts its ink: (x, y, ink) at each sample, one per pixel of length along its centre or,
     // with graphite, along each streak
@@ -780,14 +795,14 @@ impl PathArt {
 
     // A few hundred to a few thousand 2-opt moves at temperature `temp`. A move picks a node a and a node c
     // near it, and reverses the stretch of path between them so that they become neighbours on it.
-    fn anneal(&mut self, temp: f32, rng: &mut impl Rng) {
+    fn anneal(&mut self, temp: f32, budget: usize, rng: &mut impl Rng) {
         let n = self.nodes.len();
         if n < 3 {
             return;
         }
         let grid = Grid::new(&self.nodes, self.width, self.height);
         let mut spent = 0;
-        while spent < self.budget {
+        while spent < budget {
             let i = rng.gen_range(0..n);
             let a = self.order[i];
             let c = match grid.near(a, &self.nodes, rng) {
@@ -935,7 +950,7 @@ impl PathArt {
         let (ux, uy) = (dx / len, dy / len);
         let (nx, ny) = (-uy, ux);
         let (mut gb, mut ga) = ([0f32; 2], [0f32; 2]);
-        for &(t, o, share) in &streaks {
+        for &(t, o, share) in streaks.iter() {
             if let Some((j, fx, fy)) = bilinear(ax + dx * t + o * nx, ay + dy * t + o * ny, w, h) {
                 let (p, q, r, s) = (e[j], e[j + 1], e[j + w], e[j + w + 1]);
                 let ev = p * (1.0 - fx) * (1.0 - fy) + q * fx * (1.0 - fy) + r * (1.0 - fx) * fy + s * fx * fy;
@@ -1021,12 +1036,28 @@ impl PathArt {
     // One round of annealing on the order, then one Adam step on the nodes. Returns false once the schedule
     // is over.
     pub fn step(&mut self, rng: &mut impl Rng) -> bool {
+        self.step_part(rng, 1)
+    }
+
+    // A step in parts, so that its progress can be shown: each of the first parts - 1 calls does that share of the
+    // annealing, and the last the rest and the Adam step. Returns false once the schedule is over.
+    pub fn step_part(&mut self, rng: &mut impl Rng, parts: usize) -> bool {
         if self.iteration >= self.iterations {
             return false;
         }
         let progress = self.iteration as f32 / (self.iterations - 1).max(1) as f32;
         let temp = self.temp_start * (self.temp_end / self.temp_start).powf(progress);
-        self.anneal(temp, rng);
+        if self.part == 0 {
+            // forget streaks no line has used for a step
+            let now = self.iteration;
+            self.streak_cache.get_mut().retain(|_, (_, used, _)| *used + 1 >= now);
+        }
+        self.anneal(temp, self.budget / parts, rng);
+        self.part += 1;
+        if self.part < parts {
+            return true;
+        }
+        self.part = 0;
         // the coarse loss spreads the nodes out like the photo's darkness, pulling them in from across the paper
         // early on, and fades out by coarse_until of the way through
         let coarse = self.coarse_weight * (1.0 - progress / self.coarse_until).max(0.0).powi(2);
@@ -1217,7 +1248,8 @@ mod tests {
 
     fn tracks(mut g: PathArt) {
         let mut rng = rand::thread_rng();
-        g.anneal(1.0, &mut rng);
+        let budget = g.budget;
+        g.anneal(1.0, budget, &mut rng);
         assert!(g.accepted > 0);
         let (tracked, residual) = (g.loss, g.residual.clone());
         g.forward();

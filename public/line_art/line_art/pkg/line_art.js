@@ -170,6 +170,13 @@ export class PathFace {
         return ret;
     }
     /**
+     * @returns {bigint}
+     */
+    seed() {
+        const ret = wasm.pathface_seed(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
      * @returns {Float32Array}
      */
     shown() {
@@ -196,6 +203,14 @@ export class PathFace {
         return ret !== 0;
     }
     /**
+     * @param {number} parts
+     * @returns {boolean}
+     */
+    step_part(parts) {
+        const ret = wasm.pathface_step_part(this.__wbg_ptr, parts);
+        return ret !== 0;
+    }
+    /**
      * @returns {Float32Array}
      */
     widths() {
@@ -206,6 +221,26 @@ export class PathFace {
     }
 }
 if (Symbol.dispose) PathFace.prototype[Symbol.dispose] = PathFace.prototype.free;
+
+/**
+ * @param {Float32Array} nodes
+ * @param {Uint16Array} edges
+ * @param {bigint} seed
+ * @param {number} width
+ * @param {number} height
+ * @param {number} scale
+ * @returns {Uint8Array}
+ */
+export function pencil_image(nodes, edges, seed, width, height, scale) {
+    const ptr0 = passArrayF32ToWasm0(nodes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(edges, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.pencil_image(ptr0, len0, ptr1, len1, seed, width, height, scale);
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -417,6 +452,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray16ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 2, 2) >>> 0;
+    getUint16ArrayMemory0().set(arg, ptr / 2);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArrayF32ToWasm0(arg, malloc) {
