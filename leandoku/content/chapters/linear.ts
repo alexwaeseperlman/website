@@ -3,6 +3,7 @@ import { apply, assumption, constructor, exact, intro, rw, split, unfold } from 
 
 export const chapter: Chapter = {
   id: 'linear',
+  needs: ['equality'], // compose
   title: 'Linear maps',
   blurb: 'Maps that keep zero, sums and scaling. Compose them, and pull subspaces back through them.',
 };

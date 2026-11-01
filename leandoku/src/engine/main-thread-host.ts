@@ -1,4 +1,4 @@
-import { createHost, type Host } from './wasm-host';
+import { createHost, type Host, type WarmUpCheck } from './wasm-host';
 import type { FromWorker, ToWorker } from './wasm-protocol';
 
 /** The part of `Worker` that WasmEngine uses. */
@@ -20,10 +20,10 @@ export class MainThreadHost implements WorkerLike {
   private host: Host | null;
   private readonly events = new EventTarget();
 
-  constructor() {
+  constructor(warmUp: WarmUpCheck[] = []) {
     this.host = createHost((m) => {
       queueMicrotask(() => this.host && this.events.dispatchEvent(new MessageEvent('message', { data: m })));
-    }, document.baseURI);
+    }, document.baseURI, { warmUp });
   }
 
   postMessage(msg: ToWorker): void {

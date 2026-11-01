@@ -3,6 +3,8 @@ import { course } from '../../content/course';
 import { chooseEngine, createEngine } from '../engine/config';
 import type { StartupProgress } from '../engine/wasm-client';
 import { Session } from '../session/session';
+import { warmUpChecks } from '../core/course/warm-up';
+import { defaultCatalog } from '../core/catalog/registry';
 import { courseNodes, nextNode, tutorialsBefore } from '../core/course/nodes';
 import { loadProgress, loadReadTutorials } from '../storage/storage';
 import { EngineSettings } from './EngineSettings';
@@ -27,7 +29,7 @@ export function App() {
   // One session (and one engine) for the whole visit; views never own it.
   const session = useMemo(
     () =>
-      choice.kind === 'none' ? null : new Session({ createEngine: () => createEngine(choice, setStartup) }),
+      choice.kind === 'none' ? null : new Session({ createEngine: () => createEngine(choice, setStartup, () => warmUpChecks(course, defaultCatalog())) }),
     [choice],
   );
   useEffect(() => () => session?.dispose(), [session]);

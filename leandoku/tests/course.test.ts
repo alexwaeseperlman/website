@@ -46,6 +46,18 @@ describe('course', () => {
     expect(src.prelude).not.toContain('theorem add_assoc');
   });
 
+  it("compiles only the chapter preludes a level uses", () => {
+    const catalog = defaultCatalog();
+    const level = (id: string) => naturalCourse.levels.find((l) => l.id === id)!;
+    const first = levelSource(naturalCourse, level('natural.add_zero'), catalog).prelude;
+    expect(first).not.toContain('structure Group');
+    expect(first).not.toContain('def compose');
+    const maps = naturalCourse.levels.find((l) => l.chapter === 'maps')!;
+    const src = levelSource(naturalCourse, maps, catalog).prelude;
+    expect(src).toContain('def compose');
+    expect(src).not.toContain('structure EuclideanSystem');
+  });
+
   it('every reference solution uses only tactics its level allows', () => {
     const catalog = defaultCatalog();
     for (const level of naturalCourse.levels) {
