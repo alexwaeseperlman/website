@@ -5,9 +5,11 @@ interface Props {
   checkpoint: Checkpoint;
   stale: boolean;
   offline: boolean;
+  /** Tapping a hypothesis offers it to the tactic composer. */
+  onPick: (name: string) => void;
 }
 
-export function StatePane({ checkpoint, stale, offline }: Props) {
+export function StatePane({ checkpoint, stale, offline, onPick }: Props) {
   const { goals, split } = checkpoint;
   if (offline) {
     return <div className="state state-empty">The proof state appears once Lean checks the proof.</div>;
@@ -33,29 +35,40 @@ export function StatePane({ checkpoint, stale, offline }: Props) {
           {goals[0]!.tag ? ` · case ${goals[0]!.tag}` : ''}
         </div>
       )}
-      <GoalView goal={goals[0]!} />
+      <GoalView goal={goals[0]!} onPick={onPick} />
       {goals.length > 1 && (
-        <details className="state-more">
-          <summary>{goals.length - 1} more {goals.length === 2 ? 'goal' : 'goals'}</summary>
+        <div className="state-later">
+          <div className="state-count">Still to prove after this one</div>
           {goals.slice(1).map((g) => (
-            <GoalView key={g.id} goal={g} />
+            <div key={g.id} className="target is-later">
+              <span className="turnstile">⊢</span>
+              <span>{g.target}</span>
+            </div>
           ))}
-        </details>
+        </div>
       )}
     </div>
   );
 }
 
-function GoalView({ goal }: { goal: Goal }) {
+function GoalView({ goal, onPick }: { goal: Goal; onPick: (name: string) => void }) {
   return (
     <div className="goal">
-      {goal.hyps.map((h) => (
-        <div key={h.id} className={`hyp ${h.inaccessible ? 'is-inaccessible' : ''}`}>
-          <span className="hyp-name">{h.name}</span>
-          <span className="hyp-colon">:</span>
-          <span className="hyp-type">{h.type}</span>
-        </div>
-      ))}
+      {goal.hyps.map((h) =>
+        h.inaccessible ? (
+          <div key={h.id} className="hyp is-inaccessible">
+            <span className="hyp-name">{h.name}</span>
+            <span className="hyp-colon">:</span>
+            <span className="hyp-type">{h.type}</span>
+          </div>
+        ) : (
+          <button key={h.id} type="button" className="hyp is-tappable" onClick={() => onPick(h.name)} title={`Use ${h.name}`}>
+            <span className="hyp-name">{h.name}</span>
+            <span className="hyp-colon">:</span>
+            <span className="hyp-type">{h.type}</span>
+          </button>
+        ),
+      )}
       <div className="target">
         <span className="turnstile">⊢</span>
         <span>{goal.target}</span>

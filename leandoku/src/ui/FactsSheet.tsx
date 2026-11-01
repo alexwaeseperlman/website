@@ -1,7 +1,17 @@
 import type { Fact } from '../core/course/facts';
 import type { Definition } from '../core/course/types';
 
-export function FactsSheet({ facts, definitions, onClose }: { facts: Fact[]; definitions: Definition[]; onClose: () => void }) {
+interface Props {
+  facts: Fact[];
+  definitions: Definition[];
+  onClose: () => void;
+  /** Offer a fact to the tactic composer, as tapping a hypothesis does. */
+  onUse: (name: string) => void;
+}
+
+export function FactsSheet({ facts, definitions, onClose, onUse }: Props) {
+  const proved = facts.filter((f) => f.level !== null);
+  const library = facts.filter((f) => f.level === null);
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-label="Definitions and facts" onClick={(e) => e.stopPropagation()}>
@@ -19,10 +29,27 @@ export function FactsSheet({ facts, definitions, onClose }: { facts: Fact[]; def
           </div>
         ))}
         <h3>Facts you have proved</h3>
-        {facts.length === 0 && <p className="slot-empty">None yet. Each level you finish becomes a fact here.</p>}
-        {facts.map((f) => (
+        {proved.length === 0 && <p className="slot-empty">None yet. Each level you finish becomes a fact here.</p>}
+        {proved.map((f) => (
           <div key={f.name} className="fact">
-            <div className="fact-name">{f.name}</div>
+            <div className="fact-name">
+              {f.name}
+              <button type="button" className="link" onClick={() => onUse(f.name)}>
+                Use
+              </button>
+            </div>
+            <pre className="fact-source">{f.statement}</pre>
+          </div>
+        ))}
+        {library.length > 0 && <h3>From Lean's library</h3>}
+        {library.map((f) => (
+          <div key={f.name} className="fact">
+            <div className="fact-name">
+              {f.name}
+              <button type="button" className="link" onClick={() => onUse(f.name)}>
+                Use
+              </button>
+            </div>
             <pre className="fact-source">{f.statement}</pre>
           </div>
         ))}

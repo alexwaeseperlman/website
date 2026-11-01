@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { naturalCourse } from '../content/natural/course';
+import { course as naturalCourse } from '../content/course';
 import { defaultCatalog } from '../src/core/catalog/registry';
 import { levelSource, scriptToDocument } from '../src/core/course/environment';
 import { unlockedLevels, validateCourse } from '../src/core/course/graph';
@@ -26,7 +26,13 @@ describe('course', () => {
   });
 
   it('unlocks a level only when its prerequisites are done', () => {
-    expect(unlockedLevels(naturalCourse, new Set())).toEqual(['natural.add_zero']);
+    // Every chapter is open from the start; within a chapter, levels unlock in order.
+    const open = unlockedLevels(naturalCourse, new Set());
+    for (const chapter of naturalCourse.chapters) {
+      const levels = naturalCourse.levels.filter((l) => l.chapter === chapter.id);
+      expect(open, chapter.id).toContain(levels[0]!.id);
+      expect(open, chapter.id).not.toContain(levels[1]!.id);
+    }
     expect(unlockedLevels(naturalCourse, new Set(['natural.add_zero']))).toContain('natural.add_succ');
   });
 

@@ -73,6 +73,9 @@ export function CodePane({ doc, ser, ev, stale, selection, onSelect }: Props) {
                 else if (line.todo) onSelect({ branch: line.todo, index: 0 });
               }}
             >
+              <span className="code-num" aria-hidden="true">
+                {i + 1}
+              </span>
               <code>{line.text || ' '}</code>
             </div>
             {end && (

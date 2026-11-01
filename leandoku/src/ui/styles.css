@@ -139,11 +139,69 @@ pre,
 }
 
 .chapter {
-  font-size: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 20px;
+  margin: 28px 0 4px;
+}
+
+.chapter-num {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin: 24px 0 8px;
+}
+
+.chapter-count {
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.chapter-blurb {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.tutorial-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+}
+
+.tutorial-card .level-title {
+  font-weight: 500;
+}
+
+.tutorial-card .level-state {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tutorial-card.is-read .level-state {
+  color: var(--muted);
+}
+
+.tutorial-card:disabled {
+  opacity: 0.5;
+}
+
+.tutorial-mark {
+  width: 28px;
+  text-align: center;
+  color: var(--muted);
+  flex: none;
 }
 
 .levels {
@@ -222,9 +280,70 @@ pre,
   flex: 1;
   margin: 0;
   font-size: 17px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.bar-kicker {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Tutorials */
+.tutorial-body {
+  padding: 8px 0 16px;
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.tutorial-body h1 {
+  font-size: 28px;
+  letter-spacing: -0.01em;
+  margin: 16px 0 12px;
+}
+
+.tutorial-body p {
+  margin: 0 0 14px;
+}
+
+.tutorial-body p code {
+  font-size: 15px;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.tutorial-code {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.tutorial-aside {
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.tutorial-foot {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+
+.tutorial-foot .primary {
+  width: 100%;
+  min-height: 48px;
 }
 
 .banner {
@@ -274,6 +393,7 @@ pre,
 }
 
 .proved {
+  scroll-margin-top: calc(64px + env(safe-area-inset-top));
   margin: 12px 0;
   padding: 12px 14px;
   border-radius: var(--radius);
@@ -656,4 +776,185 @@ pre,
 .banner-note {
   font-size: 0.85em;
   margin-top: 4px;
+}
+
+/* Editor details carried over from the first version */
+.code-line {
+  padding-left: 6px;
+  gap: 8px;
+}
+
+.code-num {
+  flex: none;
+  width: 2.2ch;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  user-select: none;
+}
+
+.hyp.is-tappable {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  font: inherit;
+  border-radius: 0;
+}
+
+.hyp.is-tappable:active {
+  background: var(--accent-soft);
+}
+
+.state-later {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.target.is-later {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+  padding-top: 4px;
+}
+
+.palette-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.palette-label {
+  flex: none;
+  width: 76px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.tactic-chip.is-suggested {
+  position: relative;
+  border-color: var(--accent);
+}
+
+.tactic-chip.is-suggested::after,
+.chip-dot {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.tactic-chip.is-suggested::after {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.tactic-chip.is-on.is-suggested::after {
+  background: var(--surface);
+}
+
+.palette-key {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.palette-locked {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.palette-locked summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.palette-locked .palette {
+  margin-top: 6px;
+}
+
+.options {
+  display: grid;
+  gap: 6px;
+}
+
+.option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+}
+
+.option.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.option-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-ligatures: none;
+}
+
+.option-type {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-variant-ligatures: none;
+}
+
+.builder-actions {
+  flex-wrap: wrap;
+}
+
+.builder-preview {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.builder-preview-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.builder-actions .primary {
+  min-width: 96px;
+}
+
+.fact-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fact-name .link {
+  font-family: var(--sans);
+  font-weight: 500;
 }

@@ -43,6 +43,15 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     branchStyle: 'bullets',
   },
   {
+    id: 'funext',
+    label: 'funext',
+    category: 'intro',
+    help: 'Prove two functions equal by showing they agree on an input you name.',
+    slots: [{ id: 'names', kind: 'names', label: 'input name' }],
+    template: 'funext {names}',
+    branchStyle: 'bullets',
+  },
+  {
     id: 'apply',
     label: 'apply',
     category: 'apply',
