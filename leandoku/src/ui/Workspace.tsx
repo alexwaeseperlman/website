@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { factsFor } from '../core/course/facts';
 import type { Course, Level } from '../core/course/types';
 import { findBranch, walk } from '../core/document/edit';
@@ -25,6 +25,12 @@ interface Props {
 
 export function Workspace({ course, level, session, startup, nextLevel, onBack, onOpen, onEngineSettings }: Props) {
   const game = useProofGame(course, level, session);
+  // The last step is usually added far down the page, so bring the result
+  // into view when the proof completes, clear of the sticky top bar.
+  const provedRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (game.complete) provedRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [game.complete]);
   const [showFacts, setShowFacts] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
@@ -81,7 +87,7 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
       )}
 
       {game.complete && (
-        <section className="proved" role="status">
+        <section className="proved" role="status" ref={provedRef}>
           <strong>Proved.</strong> Lean accepted the whole proof, and it is now a fact you can use.
           {nextLevel && (
             <button type="button" className="primary" onClick={() => onOpen(nextLevel.id)}>
