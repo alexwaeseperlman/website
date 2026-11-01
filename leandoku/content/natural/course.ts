@@ -61,7 +61,7 @@ const levels: Level[] = [
     title: 'Zero on the left',
     revision: 1,
     prerequisites: ['natural.add_succ'],
-    intro: 'Now zero is on the left, and the definition cannot see past the unknown n. Prove it for zero, then for succ m assuming it holds for m.',
+    intro: 'Now zero is on the left, and the definition cannot see past the unknown n. Use induction: prove it for zero, then for succ n assuming it already holds for n.',
     theoremName: 'zero_add',
     header: 'theorem zero_add (n : Natural) : zero + n = n := by',
     policy: withInduction,
@@ -69,7 +69,7 @@ const levels: Level[] = [
       {
         tactic: 'induction',
         args: { target: local('n') },
-        cases: { zero: [], succ: ['m', 'ih'] },
+        cases: { zero: [], succ: ['n', 'ih'] },
         branches: [
           [{ tactic: 'rfl' }],
           [{ tactic: 'rw', args: { rules: rules('add_succ', 'ih') } }],
@@ -121,4 +121,21 @@ const levels: Level[] = [
   },
 ];
 
-export const naturalCourse: Course = { id: 'natural', title: 'Natural numbers', prelude, levels };
+const definitions = [
+  {
+    name: 'Natural',
+    source: `inductive Natural where
+  | zero : Natural
+  | succ : Natural → Natural`,
+  },
+  {
+    name: 'Natural.add',
+    source: `def add : Natural → Natural → Natural
+  | n, zero => n
+  | n, succ m => succ (add n m)
+
+instance : Add Natural := ⟨add⟩  -- so a + b means add a b`,
+  },
+];
+
+export const naturalCourse: Course = { id: 'natural', title: 'Natural numbers', prelude, definitions, levels };

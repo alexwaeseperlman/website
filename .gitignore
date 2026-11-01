@@ -4,3 +4,6 @@ public/_site/
 .jekyll-cache/
 public/.jekyll-cache/
 .DS_Store
+
+# Built by the deploy workflow from leandoku/
+public/leandoku/

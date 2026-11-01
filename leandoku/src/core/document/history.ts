@@ -19,6 +19,11 @@ export class History<T> {
     this.current = next;
   }
 
+  /** Swap the current value without a new undo entry (follow-up changes to the same action). */
+  replace(next: T): void {
+    this.current = next;
+  }
+
   undo(): T | undefined {
     const prev = this.past.pop();
     if (prev === undefined) return undefined;

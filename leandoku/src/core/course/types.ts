@@ -27,10 +27,18 @@ export interface Level {
   solution: ScriptStep[];
 }
 
+export interface Definition {
+  name: string;
+  /** The Lean source, exactly as it appears in the prelude. */
+  source: string;
+}
+
 export interface Course {
   id: string;
   title: string;
   /** Lean definitions shared by every level. */
   prelude: string;
+  /** Definitions the player can read and unfold. */
+  definitions: Definition[];
   levels: Level[];
 }

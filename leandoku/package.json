@@ -8,7 +8,10 @@
     "test": "vitest run",
     "test:lean": "LEANDOKU_LEAN_TESTS=1 vitest run tests/lean",
     "bridge:build": "cd lean && lake build",
-    "engine:serve": "node --experimental-strip-types server/native-engine.ts"
+    "engine:serve": "node --experimental-strip-types server/native-engine.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

@@ -32,7 +32,7 @@ private def ppGoal (mvarId : MVarId) : MetaM Goal := withDisplayOptions do
         | none => pure none
       hyps := hyps.push {
         id := toString ldecl.fvarId.name
-        name := toString ldecl.userName.simpMacroScopes ++ (if ldecl.userName.hasMacroScopes then "✝" else "")
+        name := toString ldecl.userName.eraseMacroScopes ++ (if ldecl.userName.hasMacroScopes then "✝" else "")
         inaccessible := ldecl.userName.hasMacroScopes
         type := toString type
         value? }

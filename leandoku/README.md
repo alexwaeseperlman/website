@@ -40,7 +40,25 @@ The Lean tests replay every level's reference solution the way a player
 would: commit one action, ask Lean, open branches only from the goals Lean
 reports, and require the result to be complete under the level's policy.
 
+To play with real checking, run the engine and the dev server together:
+
+```sh
+npm run engine:serve &   # Lean on 127.0.0.1:8787 (local pages only)
+npm run dev              # http://localhost:5173, proxies /engine to it
+```
+
+The engine elaborates arbitrary Lean, which can run code, so it listens on
+loopback only and refuses requests from any non-local origin.
+
+## Deployment
+
+The site's deploy workflow runs `npm run build` with
+`LEANDOKU_OUT_DIR=../public/leandoku`, so the game is served at
+`/leandoku/`. Until Lean runs in the browser, the published page lets you
+build proofs and says plainly that they are not checked.
+
 ## Status
 
-Milestone 1 (core + native bridge) is in. Next: the mobile workspace UI,
-then parameter probes, then the in-browser WASM engine.
+Done: core, native bridge, and the mobile UI (map, code pane, proof state,
+tactic composer). Next: Lean compiled to WebAssembly so the published page
+checks proofs, then parameter probes for `apply`/`exact`.

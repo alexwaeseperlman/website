@@ -89,8 +89,8 @@ describe.skipIf(!available)('Lean bridge', () => {
     expect(before[0]!.target).toBe('zero + n = n');
     const succ = ind.branches![1]!;
     const goal = ev.branches.get(succ.id)!.goal!;
-    expect(goal.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['m : Natural', 'ih : zero + m = m']);
-    expect(goal.target).toBe('zero + succ m = succ m');
+    expect(goal.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
+    expect(goal.target).toBe('zero + succ n = succ n');
   });
 
   it('marks the failing step and leaves the valid prefix intact', async () => {

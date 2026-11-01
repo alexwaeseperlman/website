@@ -19,6 +19,17 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: leandoku/package-lock.json
+      - name: Build Leandoku into public/leandoku
+        working-directory: leandoku
+        run: |
+          npm ci
+          LEANDOKU_OUT_DIR=../public/leandoku npm run build
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:

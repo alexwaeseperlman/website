@@ -36,7 +36,11 @@ export class BridgeProcess {
   private sysroot: string | undefined;
   private pending: { resolve: (v: unknown) => void; reject: (e: Error) => void }[] = [];
 
-  constructor(private readonly binary = BRIDGE_BINARY) {}
+  private readonly binary: string;
+
+  constructor(binary = BRIDGE_BINARY) {
+    this.binary = binary;
+  }
 
   private start(): ChildProcessWithoutNullStreams {
     if (!existsSync(this.binary)) throw new Error(`bridge binary missing at ${this.binary}; run npm run bridge:build`);
