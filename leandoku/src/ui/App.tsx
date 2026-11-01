@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { naturalCourse } from '../../content/natural/course';
-import { createEngine, engineEndpoint } from '../engine/config';
+import { chooseEngine, createEngine } from '../engine/config';
+import type { StartupProgress } from '../engine/wasm-client';
 import { Session } from '../session/session';
 import { loadProgress } from '../storage/storage';
 import { EngineSettings } from './EngineSettings';
@@ -17,14 +18,16 @@ function routeFromHash(): string | null {
 
 export function App() {
   const [levelId, setLevelId] = useState(routeFromHash);
-  const endpoint = useMemo(engineEndpoint, []);
+  const choice = useMemo(chooseEngine, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [progressTick, setProgressTick] = useState(0);
+  const [startup, setStartup] = useState<StartupProgress | null>(null);
 
   // One session (and one engine) for the whole visit; views never own it.
   const session = useMemo(
-    () => (endpoint ? new Session({ createEngine: () => createEngine(endpoint) }) : null),
-    [endpoint],
+    () =>
+      choice.kind === 'none' ? null : new Session({ createEngine: () => createEngine(choice, setStartup) }),
+    [choice],
   );
   useEffect(() => () => session?.dispose(), [session]);
 
@@ -52,6 +55,7 @@ export function App() {
           course={course}
           level={level}
           session={session}
+          startup={startup}
           nextLevel={course.levels[course.levels.indexOf(level) + 1]}
           onBack={() => open(null)}
           onOpen={open}
@@ -61,13 +65,15 @@ export function App() {
         <MapScreen
           course={course}
           progress={progress}
-          engineLabel={endpoint ? 'running on this computer' : 'not in the browser yet'}
+          engineLabel={
+            choice.kind === 'native' ? 'running on this computer' : choice.kind === 'wasm' ? 'in your browser' : 'not available'
+          }
           onOpen={open}
           onEngineSettings={() => setSettingsOpen(true)}
         />
       )}
       {settingsOpen && (
-        <EngineSettings connected={endpoint !== undefined} onClose={() => setSettingsOpen(false)} />
+        <EngineSettings choice={choice.kind} onClose={() => setSettingsOpen(false)} />
       )}
     </>
   );

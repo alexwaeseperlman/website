@@ -75,10 +75,39 @@ private def severityName : MessageSeverity → String
   | .warning => "warning"
   | .information => "info"
 
-private def axiomsOf (env : Environment) (name : Name) : IO (Array String) := do
-  let ctx : Core.Context := { fileName := "<proof>", fileMap := default }
-  let (axs, _) ← (collectAxioms name : CoreM _).toIO ctx { env }
-  pure (axs.map toString)
+/-- The source is elaborated in module mode, so its declarations are private. -/
+private def resolveDecl (env : Environment) (name : Name) : Option Name :=
+  if env.contains name then some name
+  else
+    let priv := mkPrivateName env name
+    if env.contains priv then some priv else none
+
+/--
+  Axioms that library declarations really are. Imports are loaded at the
+  `exported` level, where library theorems arrive without their proofs and
+  look like axioms, so `collectAxioms` cannot tell them apart. Instead we walk
+  only the declarations made in the checked source, and report a library
+  constant only when it is one of these.
+-/
+private def libraryAxioms : List Name :=
+  [``propext, ``Classical.choice, ``Quot.sound, ``sorryAx,
+   ``Lean.ofReduceBool, ``Lean.ofReduceNat, ``Lean.trustCompiler]
+
+private partial def axiomsOf (env : Environment) (name : Name) : IO (Array String) := do
+  let rec go (n : Name) (st : NameSet × Array Name) : NameSet × Array Name := Id.run do
+    let (seen, axs) := st
+    if seen.contains n then return st
+    let seen := seen.insert n
+    if (env.getModuleIdxFor? n).isSome then
+      return (seen, if libraryAxioms.contains n then axs.push n else axs)
+    match env.find? n with
+    | some (.axiomInfo _) => return (seen, axs.push n)
+    | some info =>
+      let refs := info.type.getUsedConstants ++ (info.value?.map (·.getUsedConstants)).getD #[]
+      refs.foldl (fun st r => go r st) (seen, axs)
+    | none => return (seen, axs)
+  let (_, axs) := go name ({}, #[])
+  pure (axs.map fun n => toString ((privateToUserName? n).getD n))
 
 /--
   Imported environments, keyed by the text of the file's header. Importing
@@ -92,20 +121,31 @@ private def importHeader (inputCtx : Parser.InputContext) (header : TSyntax ``Pa
   let key := toString header.raw.prettyPrint
   if let some (k, env) ← headerCache.get then
     if k == key then return (env, messages)
-  let (env, messages') ← processHeader header {} messages inputCtx
+  -- Import at the `exported` level (as a `module` file would) so the runtime
+  -- only needs each library module's `.olean` and `.ir`, not the private and
+  -- server parts. This keeps the browser download small. Declarations made in
+  -- the checked source then get private names, which `resolveDecl` handles.
+  let (env, messages') ← processHeaderCore (header.raw.getPos?.getD 0) (headerToImports header)
+    (isModule := true) {} messages inputCtx (mainModule := `Leandoku)
   if !messages'.hasErrors then headerCache.set (some (key, env))
   return (env, messages')
 
 def check (req : CheckRequest) : IO CheckResponse := do
   let inputCtx := Parser.mkInputContext req.source "<proof>"
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  let (env, messages) ← importHeader inputCtx header messages
-  let cmdState := { Command.mkState env messages {} with infoState.enabled := true }
+  let (env, headerMessages) ← importHeader inputCtx header messages
+  -- Elaboration starts a fresh message log, so header errors (such as a
+  -- library file that fails to load) must be carried over explicitly.
+  let messages : MessageLog := {}
+  -- Elaborate proofs synchronously so the final environment holds every
+  -- declaration (asynchronous proof elaboration can leave theorems pending).
+  let opts := Elab.async.set {} false
+  let cmdState := { Command.mkState env messages opts with infoState.enabled := true }
   let s ← IO.processCommands inputCtx parserState cmdState
   let cmd := s.commandState
   let map := inputCtx.fileMap
   let mut msgs := #[]
-  for m in cmd.messages.toList do
+  for m in headerMessages.toList ++ cmd.messages.toList do
     let stop := m.endPos.getD m.pos
     msgs := msgs.push {
       severity := severityName m.severity
@@ -118,8 +158,11 @@ def check (req : CheckRequest) : IO CheckResponse := do
     | none => pure none
     | some n =>
       let name := n.toName
-      if cmd.env.contains name then
-        pure (some { theoremName := n, exists_ := true, axioms := ← axiomsOf cmd.env name })
+      -- In a `module` file the environment may be in exporting mode; look at
+      -- everything the file declared, private parts included.
+      let env := cmd.env.setExporting false
+      if let some decl := resolveDecl env name then
+        pure (some { theoremName := n, exists_ := true, axioms := ← axiomsOf env decl })
       else
         pure (some { theoremName := n, exists_ := false, axioms := #[] })
   pure { requestId := req.requestId, messages := msgs, tactics, completion? }

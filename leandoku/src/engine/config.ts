@@ -1,16 +1,52 @@
-import { NativeHttpEngine } from './native-client';
 import type { Engine } from './engine';
+import { NativeHttpEngine } from './native-client';
+import { WasmEngine, type StartupProgress, type WasmAssets } from './wasm-client';
+
+export type EngineChoice =
+  | { kind: 'native'; endpoint: string }
+  | { kind: 'wasm'; assets: WasmAssets }
+  | { kind: 'none' };
 
 /**
- * Which engine the page uses. In development (`npm run dev`) the Vite server
- * proxies `/engine` to the native engine on this machine. The published page
- * has no engine until Lean runs in the browser, so it returns undefined there
- * and the game says so instead of pretending to check.
+ * Which engine the page uses.
+ *
+ * The published page runs Lean in the browser. The deploy workflow downloads
+ * the runtime built by CI into `public/runtime/<version>/` and passes the
+ * version as VITE_LEANDOKU_RUNTIME, so each build pins exactly one runtime
+ * and caches can never mix two.
+ *
+ * In development (`npm run dev`) the page uses the native engine through the
+ * `/engine` proxy, unless the URL has `?engine=wasm` and a runtime is present.
  */
-export function engineEndpoint(): string | undefined {
-  return import.meta.env.DEV ? '/engine' : undefined;
+export function chooseEngine(): EngineChoice {
+  const runtime = import.meta.env.VITE_LEANDOKU_RUNTIME as string | undefined;
+  const wantWasm = !import.meta.env.DEV || new URLSearchParams(location.search).get('engine') === 'wasm';
+  if (wantWasm && runtime) {
+    const base = new URL(`runtime/${runtime}/`, document.baseURI);
+    return {
+      kind: 'wasm',
+      assets: {
+        version: runtime,
+        runtimeUrl: new URL('leandoku-bridge.js', base).href,
+        libraryUrl: new URL('library.ldpk', base).href,
+      },
+    };
+  }
+  if (import.meta.env.DEV) return { kind: 'native', endpoint: '/engine' };
+  return { kind: 'none' };
 }
 
-export function createEngine(endpoint: string): Engine {
-  return new NativeHttpEngine(`${endpoint}/check`);
+export function createEngine(choice: EngineChoice, onProgress?: (p: StartupProgress | null) => void): Engine {
+  switch (choice.kind) {
+    case 'native':
+      return new NativeHttpEngine(`${choice.endpoint}/check`);
+    case 'wasm':
+      return new WasmEngine({
+        assets: choice.assets,
+        createWorker: () => new Worker(new URL('./wasm-worker.ts', import.meta.url), { type: 'module' }),
+        onProgress,
+      });
+    case 'none':
+      throw new Error('no engine');
+  }
 }

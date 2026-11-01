@@ -17,14 +17,17 @@ import { serialize, type LevelSource } from '../../src/core/serializer/serialize
 import { PROTOCOL_VERSION } from '../../src/engine/protocol';
 import { BRIDGE_BINARY } from '../../server/bridge-process';
 import { BridgeEngine } from '../../server/bridge-engine';
+import { WasmNodeEngine } from '../../server/wasm-node-engine';
 import { counterIds } from '../helpers';
 
+// LEANDOKU_WASM_RUNTIME=<dir> runs these against the browser runtime instead.
+const wasmDir = process.env.LEANDOKU_WASM_RUNTIME;
 const required = process.env.LEANDOKU_LEAN_TESTS === '1';
-const available = existsSync(BRIDGE_BINARY);
+const available = wasmDir ? existsSync(wasmDir) : existsSync(BRIDGE_BINARY);
 if (required && !available) throw new Error(`bridge binary missing at ${BRIDGE_BINARY}; run npm run bridge:build`);
 
 const catalog = defaultCatalog();
-const engine = available ? new BridgeEngine() : null;
+const engine = !available ? null : wasmDir ? new WasmNodeEngine(wasmDir) : new BridgeEngine();
 afterAll(() => engine?.dispose());
 
 let req = 0;

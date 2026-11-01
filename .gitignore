@@ -7,3 +7,4 @@ public/.jekyll-cache/
 
 # Built by the deploy workflow from leandoku/
 public/leandoku/
+leandoku/public/runtime/
