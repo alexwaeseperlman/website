@@ -42,11 +42,30 @@ export class MainThreadHost implements WorkerLike {
 const STACK_OVERFLOW = /call stack|stack size|too much recursion/i;
 const PREFER_MAIN = 'leandoku.engine.mainThread';
 
-export function prefersMainThread(): boolean {
+/**
+ * What the main-thread choice was learned on: this Lean build in this
+ * browser version. A browser update or a new runtime may fit in a worker
+ * again, so either one sends the next visit back to trying the worker.
+ */
+export function engineFingerprint(runtimeVersion: string): string {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  return `${runtimeVersion}|${ua}`;
+}
+
+/** True when this browser already overflowed a worker's stack on this build. */
+export function prefersMainThread(fingerprint: string): boolean {
   try {
-    return localStorage.getItem(PREFER_MAIN) === '1';
+    return localStorage.getItem(PREFER_MAIN) === fingerprint;
   } catch {
     return false;
+  }
+}
+
+function rememberMainThread(fingerprint: string): void {
+  try {
+    localStorage.setItem(PREFER_MAIN, fingerprint);
+  } catch {
+    // storage blocked: we just try the worker again next visit
   }
 }
 
@@ -54,7 +73,8 @@ export function prefersMainThread(): boolean {
  * A worker that moves to the main thread if Lean overflows the worker's call
  * stack: it replays the start message and any unanswered checks into a
  * MainThreadHost, so WasmEngine sees a slow answer instead of a crash. The
- * choice is remembered so later visits start on the main thread directly.
+ * choice is remembered for this browser version and Lean build only (see
+ * engineFingerprint), so the worker gets another chance after either changes.
  */
 export class FallbackWorker implements WorkerLike {
   private readonly events = new EventTarget();
@@ -63,7 +83,11 @@ export class FallbackWorker implements WorkerLike {
   private start: ToWorker | null = null;
   private pending = new Map<number, ToWorker>();
 
-  constructor(worker: WorkerLike, private readonly fallback: () => WorkerLike) {
+  constructor(
+    worker: WorkerLike,
+    private readonly fallback: () => WorkerLike,
+    private readonly fingerprint: string,
+  ) {
     this.current = worker;
     this.attach(worker);
   }
@@ -86,11 +110,7 @@ export class FallbackWorker implements WorkerLike {
 
   private moveToMainThread(): void {
     this.moved = true;
-    try {
-      localStorage.setItem(PREFER_MAIN, '1');
-    } catch {
-      // storage blocked: we just fall back again next visit
-    }
+    rememberMainThread(this.fingerprint);
     this.current.terminate();
     this.current = this.fallback();
     this.attach(this.current);

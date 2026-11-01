@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FallbackWorker, type WorkerLike } from '../src/engine/main-thread-host';
+import { FallbackWorker, prefersMainThread, type WorkerLike } from '../src/engine/main-thread-host';
 import type { FromWorker, ToWorker } from '../src/engine/wasm-protocol';
 
 class Fake implements WorkerLike {
@@ -26,7 +26,7 @@ describe('FallbackWorker', () => {
   it('moves to the fallback on a stack overflow and replays unanswered work', () => {
     const worker = new Fake();
     const main = new Fake();
-    const fw = new FallbackWorker(worker, () => main);
+    const fw = new FallbackWorker(worker, () => main, 'fp');
     const seen: FromWorker[] = [];
     fw.addEventListener('message', ((e: MessageEvent<FromWorker>) => seen.push(e.data)) as never);
     fw.postMessage(start);
@@ -44,12 +44,30 @@ describe('FallbackWorker', () => {
   it('passes other crashes through', () => {
     const worker = new Fake();
     const main = new Fake();
-    const fw = new FallbackWorker(worker, () => main);
+    const fw = new FallbackWorker(worker, () => main, 'fp');
     const seen: FromWorker[] = [];
     fw.addEventListener('message', ((e: MessageEvent<FromWorker>) => seen.push(e.data)) as never);
     fw.postMessage(start);
     worker.reply({ type: 'crashed', error: 'RuntimeError: unreachable' });
     expect(seen).toEqual([{ type: 'crashed', error: 'RuntimeError: unreachable' }]);
     expect(main.sent).toEqual([]);
+  });
+
+  it('remembers the main thread only for the same browser and Lean build', () => {
+    const store = new Map<string, string>();
+    const g = globalThis as { localStorage?: unknown };
+    const saved = g.localStorage;
+    g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) };
+    try {
+      const worker = new Fake();
+      const fw = new FallbackWorker(worker, () => new Fake(), 'build-1|Safari 18');
+      fw.postMessage(start);
+      worker.reply({ type: 'crashed', error: 'RangeError: Maximum call stack size exceeded.' });
+      expect(prefersMainThread('build-1|Safari 18')).toBe(true);
+      expect(prefersMainThread('build-2|Safari 18')).toBe(false);
+      expect(prefersMainThread('build-1|Safari 19')).toBe(false);
+    } finally {
+      g.localStorage = saved;
+    }
   });
 });

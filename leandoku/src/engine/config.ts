@@ -1,5 +1,5 @@
 import type { Engine } from './engine';
-import { FallbackWorker, MainThreadHost, prefersMainThread } from './main-thread-host';
+import { engineFingerprint, FallbackWorker, MainThreadHost, prefersMainThread } from './main-thread-host';
 import { NativeHttpEngine } from './native-client';
 import { WasmEngine, type StartupProgress, type WasmAssets } from './wasm-client';
 
@@ -41,18 +41,23 @@ export function createEngine(choice: EngineChoice, onProgress?: (p: StartupProgr
   switch (choice.kind) {
     case 'native':
       return new NativeHttpEngine(`${choice.endpoint}/check`);
-    case 'wasm':
+    case 'wasm': {
+      // Lean runs in a worker wherever the worker's stack is big enough;
+      // see FallbackWorker for the iPhone case.
+      const fingerprint = engineFingerprint(choice.assets.version);
       return new WasmEngine({
         assets: choice.assets,
         createWorker: () =>
-          prefersMainThread()
+          prefersMainThread(fingerprint)
             ? new MainThreadHost()
             : new FallbackWorker(
                 new Worker(new URL('./wasm-worker.ts', import.meta.url), { type: 'module' }),
                 () => new MainThreadHost(),
+                fingerprint,
               ),
         onProgress,
       });
+    }
     case 'none':
       throw new Error('no engine');
   }
