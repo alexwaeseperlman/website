@@ -1,0 +1,11 @@
+name = "leandoku"
+version = "0.1.0"
+defaultTargets = ["leandoku-bridge"]
+
+[[lean_lib]]
+name = "Bridge"
+
+[[lean_exe]]
+name = "leandoku-bridge"
+root = "Main"
+supportInterpreter = true

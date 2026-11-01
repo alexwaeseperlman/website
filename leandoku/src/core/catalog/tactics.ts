@@ -1,0 +1,123 @@
+import type { TacticSpec } from './types';
+
+/**
+ * Initial catalog entries. These are a starting vocabulary, not the limit of
+ * the editor: `raw` covers any tactic without a dedicated entry, and new
+ * entries need only be added here.
+ */
+export const BUILTIN_TACTICS: readonly TacticSpec[] = [
+  {
+    id: 'rfl',
+    label: 'rfl',
+    category: 'finish',
+    help: 'Close a goal whose two sides are equal by computation.',
+    slots: [],
+    template: 'rfl',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'exact',
+    label: 'exact',
+    category: 'finish',
+    help: 'Close the goal with a term of exactly its type.',
+    slots: [{ id: 'term', kind: 'term', label: 'proof' }],
+    template: 'exact {term}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'assumption',
+    label: 'assumption',
+    category: 'finish',
+    help: 'Close the goal with a hypothesis that matches it.',
+    slots: [],
+    template: 'assumption',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'intro',
+    label: 'intro',
+    category: 'intro',
+    help: 'Move a hypothesis or variable from the goal into the context.',
+    slots: [{ id: 'names', kind: 'names', label: 'names', optional: true }],
+    template: 'intro{ |names}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'apply',
+    label: 'apply',
+    category: 'apply',
+    help: 'Use a fact whose conclusion matches the goal; its premises become new goals.',
+    slots: [{ id: 'term', kind: 'term', label: 'fact' }],
+    template: 'apply {term}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'constructor',
+    label: 'constructor',
+    category: 'split',
+    help: 'Split a goal such as A ∧ B into one goal per part.',
+    slots: [],
+    template: 'constructor',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'rw',
+    label: 'rw',
+    category: 'rewrite',
+    help: 'Rewrite with equalities, left to right unless reversed.',
+    slots: [
+      { id: 'rules', kind: 'rules', label: 'equalities' },
+      { id: 'at', kind: 'location', label: 'where', optional: true },
+    ],
+    template: 'rw [{rules}]{ at |at}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'unfold',
+    label: 'unfold',
+    category: 'simplify',
+    help: 'Replace a definition by its body.',
+    slots: [
+      { id: 'defs', kind: 'definitions', label: 'definitions' },
+      { id: 'at', kind: 'location', label: 'where', optional: true },
+    ],
+    template: 'unfold {defs}{ at |at}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'show',
+    label: 'show',
+    category: 'simplify',
+    help: 'Restate the goal in an equal form Lean can check by computation.',
+    slots: [{ id: 'term', kind: 'term', label: 'goal' }],
+    template: 'show {term}',
+    branchStyle: 'bullets',
+  },
+  {
+    id: 'induction',
+    label: 'induction',
+    category: 'split',
+    help: 'Prove a statement for every value by proving each constructor case.',
+    slots: [{ id: 'target', kind: 'local', label: 'variable' }],
+    template: 'induction {target}',
+    branchStyle: 'alternatives',
+  },
+  {
+    id: 'cases',
+    label: 'cases',
+    category: 'split',
+    help: 'Split on how a value or hypothesis was built.',
+    slots: [{ id: 'target', kind: 'local', label: 'value' }],
+    template: 'cases {target}',
+    branchStyle: 'alternatives',
+  },
+  {
+    id: 'raw',
+    label: 'Lean',
+    category: 'other',
+    help: 'Type any tactic. Lean still checks it.',
+    slots: [{ id: 'text', kind: 'raw', label: 'tactic' }],
+    template: '{text}',
+    branchStyle: 'bullets',
+  },
+];
