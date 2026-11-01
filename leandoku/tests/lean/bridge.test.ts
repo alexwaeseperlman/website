@@ -13,7 +13,7 @@ import { emptyDocument, insertStep, locateStep, makeStep, setBranches, ROOT_BRAN
 import type { ProofDocument } from '../../src/core/document/types';
 import { evaluate, type Evaluation } from '../../src/core/evaluate/evaluate';
 import { checkPolicy } from '../../src/core/policy/policy';
-import { serialize, type LevelSource } from '../../src/core/serializer/serialize';
+import { armName, serialize, type LevelSource } from '../../src/core/serializer/serialize';
 import { PROTOCOL_VERSION } from '../../src/engine/protocol';
 import { BRIDGE_BINARY } from '../../server/bridge-process';
 import { BridgeEngine } from '../../server/bridge-engine';
@@ -60,7 +60,8 @@ async function replay(script: readonly ScriptStep[], level: LevelSource): Promis
       if (!s.branches) continue;
       const goals = r.goalsAfter!;
       expect(goals.length).toBe(s.branches.length);
-      doc = setBranches(doc, step.id, goals.map((g) => ({ tag: g.tag, names: s.cases?.[g.tag] ?? [] })), ids);
+      // Scripts may key cases by the full goal tag or just the constructor.
+      doc = setBranches(doc, step.id, goals.map((g) => ({ tag: g.tag, names: s.cases?.[g.tag] ?? s.cases?.[armName(g.tag)] ?? [] })), ids);
       last = await check(doc, level);
       const created = locateStep(doc, step.id)!.step.branches!;
       created.forEach((b, j) => expect(last.ev.branches.get(b.id)?.goal?.tag).toBe(goals[j]!.tag));
@@ -82,6 +83,29 @@ describe.skipIf(!available)('Lean bridge', () => {
   }
 
   const zeroAdd = naturalCourse.levels.find((l) => l.id === 'natural.zero_add')!;
+
+  it('names a nested case arm by its constructor, not its full goal tag', async () => {
+    const src: LevelSource = {
+      prelude: 'set_option autoImplicit false',
+      theoremName: 'regroup',
+      header: 'theorem regroup (P Q R : Prop) (h : (P ∧ Q) ∧ R) : P ∧ Q := by',
+    };
+    const inner: ScriptStep = {
+      tactic: 'cases',
+      args: { target: { kind: 'local', name: 'hpq' } },
+      cases: { intro: ['hp', 'hq'] },
+      branches: [[{ tactic: 'constructor', branches: [[{ tactic: 'assumption' }], [{ tactic: 'assumption' }]] }]],
+    };
+    const outer: ScriptStep = {
+      tactic: 'cases',
+      args: { target: { kind: 'local', name: 'h' } },
+      cases: { intro: ['hpq', 'hr'] },
+      branches: [[inner]],
+    };
+    const { ev, source } = await replay([outer], src);
+    expect(source).toContain('| intro hp hq =>');
+    expect(ev.status, source).toBe('complete');
+  });
 
   it('shows the real goals at every checkpoint, with case names from the player', async () => {
     const src = levelSource(naturalCourse, zeroAdd, catalog);

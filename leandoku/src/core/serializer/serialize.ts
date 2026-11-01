@@ -84,7 +84,7 @@ export function serialize(doc: ProofDocument, catalog: TacticCatalog, level: Lev
       lines.push(startLine() + text + (useAlternatives ? ' with' : ''));
       for (const child of children) {
         if (useAlternatives) {
-          const binders = [child.tag, ...child.names].join(' ');
+          const binders = [armName(child.tag), ...child.names].join(' ');
           lines.push(`${pad}| ${binders} =>`);
           emitBranch(child, indent + 4, '');
         } else {
@@ -96,4 +96,13 @@ export function serialize(doc: ProofDocument, catalog: TacticCatalog, level: Lev
 
   emitBranch(doc.root, 2, '');
   return { source: lines.join('\n') + '\n', steps, branches, headerLines: { start: headerStart, end: headerEnd } };
+}
+
+/**
+ * The `| name` of a `with` arm. Lean tags nested goals by path
+ * (`intro.intro` for a `cases` inside an `intro` arm), but an arm is named
+ * by the constructor alone, the last part of that path.
+ */
+export function armName(tag: string): string {
+  return tag.slice(tag.lastIndexOf('.') + 1);
 }
