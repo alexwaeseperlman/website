@@ -1,14 +1,31 @@
 import type { Course } from '../src/core/course/types';
+import type { Definition } from '../src/core/course/types';
+import * as equality from './chapters/equality';
+import * as euclid from './chapters/euclid';
+import * as groups from './chapters/groups';
+import * as linear from './chapters/linear';
+import * as logic from './chapters/logic';
+import * as maps from './chapters/maps';
 import * as naturals from './chapters/naturals';
 
 /**
  * The whole game. Each chapter file exports its `chapter`, `levels` and
- * `tutorials`; this file only puts them in order and holds the Lean shared
- * by every level.
+ * `tutorials`, and may export a `prelude` (Lean definitions its levels need)
+ * with matching `definitions`. This file puts them in order and joins the
+ * preludes after the shared one, so a chapter can use definitions from any
+ * chapter before it.
  */
-const chapters = [naturals];
+interface ChapterModule {
+  chapter: Course['chapters'][number];
+  levels: Course['levels'];
+  tutorials: Course['tutorials'];
+  prelude?: string;
+  definitions?: Definition[];
+}
 
-const prelude = `set_option autoImplicit false
+const chapters: ChapterModule[] = [naturals, logic, equality, maps, groups, euclid, linear];
+
+const basePrelude = `set_option autoImplicit false
 
 inductive Natural where
   | zero : Natural
@@ -28,7 +45,9 @@ end Natural
 
 open Natural`;
 
-const definitions = [
+const prelude = [basePrelude, ...chapters.flatMap((c) => (c.prelude ? [c.prelude] : []))].join('\n\n');
+
+const definitions: Definition[] = [
   {
     name: 'Natural',
     source: `inductive Natural where
@@ -49,7 +68,7 @@ export const course: Course = {
   id: 'proof-paths',
   title: 'Proof Paths',
   prelude,
-  definitions,
+  definitions: [...definitions, ...chapters.flatMap((c) => c.definitions ?? [])],
   chapters: chapters.map((c) => c.chapter),
   levels: chapters.flatMap((c) => c.levels),
   tutorials: chapters.flatMap((c) => c.tutorials),
