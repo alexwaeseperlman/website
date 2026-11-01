@@ -18,6 +18,96 @@ index 167a28c..2b19b7c 100644
      string(APPEND LEAN_EXTRA_CXX_FLAGS " -D LEAN_EMSCRIPTEN ${EMSCRIPTEN_SETTINGS}")
      string(APPEND LEAN_EXTRA_LINKER_FLAGS " ${EMSCRIPTEN_SETTINGS}")
  endif()
+diff --git a/src/library/ir_interpreter.cpp b/src/library/ir_interpreter.cpp
+index ee113ad..d0a8515 100644
+--- a/src/library/ir_interpreter.cpp
++++ b/src/library/ir_interpreter.cpp
+@@ -316,8 +316,17 @@ void print_value(tout const & ios, value const & v, type t) {
+   return print_value(const_cast<tout &>(ios), v, t);
+ }
+ 
++#ifdef LEAN_EMSCRIPTEN
++// A static wasm module has no dlsym; the embedder may supply a table of its
++// native symbols (e.g. module initializers) so imports do not fall back to
++// interpreting code that is already compiled in.
++extern "C" void * lean_emscripten_lookup_symbol(char const * sym) __attribute__((weak));
++#endif
++
+ void * lookup_symbol_in_cur_exe(char const * sym) {
+-#ifdef LEAN_WINDOWS
++#if defined(LEAN_EMSCRIPTEN)
++    return lean_emscripten_lookup_symbol ? lean_emscripten_lookup_symbol(sym) : nullptr;
++#elif defined(LEAN_WINDOWS)
+     std::vector<HMODULE> hmods(128);
+     DWORD bytes_needed;
+     lean_always_assert(EnumProcessModules(GetCurrentProcess(), &hmods[0], hmods.size() * sizeof(HMODULE), &bytes_needed));
+diff --git a/src/runtime/object.cpp b/src/runtime/object.cpp
+index 8e068ec..62d3445 100644
+--- a/src/runtime/object.cpp
++++ b/src/runtime/object.cpp
+@@ -703,8 +703,12 @@ class task_manager {
+             return;
+         }
+         if (prio > LEAN_MAX_PRIO) {
++#ifdef LEAN_MULTI_THREAD
+             spawn_dedicated_worker(t);
+             return;
++#else
++            prio = LEAN_MAX_PRIO;
++#endif
+         }
+         if (prio > m_max_prio)
+             m_max_prio = prio;
+@@ -909,6 +913,16 @@ public:
+         if (t->m_value)
+             return;
+         unique_lock<mutex> lock(m_mutex);
++#ifndef LEAN_MULTI_THREAD
++        // Single-threaded: there are no workers, so run queued tasks here
++        // until the one we need has a value.
++        while (!t->m_value) {
++            if (m_queues_size == 0)
++                lean_internal_panic("Task.get: the task can never finish (single-threaded runtime, nothing left to run)");
++            run_task(lock, dequeue());
++        }
++        return;
++#endif
+         if (t->m_value)
+             return;
+         // see `Task.get`
+@@ -929,6 +943,13 @@ public:
+         }
+     }
+ 
++    /* Single-threaded runtime: run every queued task. */
++    void run_pending() {
++        unique_lock<mutex> lock(m_mutex);
++        while (m_queues_size != 0)
++            run_task(lock, dequeue());
++    }
++
+     void deactivate_task(lean_task_object * t) {
+         unique_lock<mutex> lock(m_mutex);
+         if (object * v = t->m_value) {
+@@ -975,9 +996,18 @@ extern "C" LEAN_EXPORT void lean_init_task_manager_using(unsigned num_workers) {
+     if (num_workers > 0) {
+         g_task_manager = new task_manager(num_workers);
+     }
++#else
++    // No workers: tasks are queued and run by `Task.get` or `lean_run_pending_tasks`.
++    // Promises need a task manager, so single-threaded builds get one too.
++    (void)num_workers;
++    g_task_manager = new task_manager(0);
+ #endif
+ }
+ 
++extern "C" LEAN_EXPORT void lean_run_pending_tasks() {
++    if (g_task_manager) g_task_manager->run_pending();
++}
++
+ static unsigned get_lean_num_threads() {
+ #ifndef LEAN_EMSCRIPTEN
+     if (char const * num_threads = std::getenv("LEAN_NUM_THREADS")) {
 diff --git a/src/runtime/thread.h b/src/runtime/thread.h
 index ce72161..3e886df 100644
 --- a/src/runtime/thread.h
@@ -34,3 +124,42 @@ index ce72161..3e886df 100644
  };
  inline unsigned hardware_concurrency() { return 1; }
  }
+diff --git a/src/runtime/uv/dns.cpp b/src/runtime/uv/dns.cpp
+index e72c507..b46381f 100644
+--- a/src/runtime/uv/dns.cpp
++++ b/src/runtime/uv/dns.cpp
+@@ -161,7 +161,7 @@ extern "C" LEAN_EXPORT lean_obj_res lean_uv_dns_get_name(b_obj_arg addr, obj_arg
+ #else
+ 
+ // Std.Internal.IO.Async.DNS.getAddrInfo (host service : @& String) (family : UInt8) : IO (IO.Promise (Except IO.Error (Array IPAddr)))
+-extern "C" LEAN_EXPORT lean_obj_res lean_uv_dns_get_info(b_obj_arg name, b_obj_arg service, uint8_t family, int8_t protocol, obj_arg /* w */) {
++extern "C" LEAN_EXPORT lean_obj_res lean_uv_dns_get_info(b_obj_arg name, b_obj_arg service, uint8_t family, obj_arg /* w */) {
+     lean_always_assert(
+         false && ("Please build a version of Lean4 with libuv to invoke this.")
+     );
+diff --git a/src/runtime/uv/system.cpp b/src/runtime/uv/system.cpp
+index b312d44..a6704af 100644
+--- a/src/runtime/uv/system.cpp
++++ b/src/runtime/uv/system.cpp
+@@ -628,7 +628,7 @@ extern "C" LEAN_EXPORT lean_obj_res lean_uv_os_get_passwd(obj_arg /* w */) {
+ }
+ 
+ // Std.Internal.UV.System.osGetGroup : IO (Option GroupInfo)
+-extern "C" LEAN_EXPORT lean_obj_res lean_uv_os_get_group(obj_arg /* w */) {
++extern "C" LEAN_EXPORT lean_obj_res lean_uv_os_get_group(uint64_t gid, obj_arg /* w */) {
+     lean_always_assert(
+         false && ("Please build a version of Lean4 with libuv to invoke this.")
+     );
+diff --git a/src/stdlib.make.in b/src/stdlib.make.in
+index 6e4d97a..69fc65f 100644
+--- a/src/stdlib.make.in
++++ b/src/stdlib.make.in
+@@ -7,7 +7,7 @@ SHELL := $(LEAN_BASH) -eo pipefail
+ # any absolute path to the stdlib breaks the Makefile
+ export LEAN_PATH=
+ ifeq "${USE_LAKE}" "ON"
+-  export LEAN_CC=${CMAKE_C_COMPILER}
++  export LEAN_CC ?= ${CMAKE_C_COMPILER}
+ else
+   export LEAN_CC=${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}
+ endif

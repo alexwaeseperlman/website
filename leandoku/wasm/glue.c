@@ -13,6 +13,10 @@
 #include <stdio.h>
 #include <string.h>
 
+extern void lean_initialize(void);
+extern void lean_init_task_manager(void);
+extern void lean_run_pending_tasks(void); /* added by lean-emscripten.patch */
+extern lean_object *lean_io_error_to_string(lean_object *err); /* Init.System.IOError */
 extern lean_object *initialize_Bridge(uint8_t builtin, lean_object *w);
 extern lean_object *leandoku_setup(lean_object *sysroot, lean_object *w);
 extern lean_object *leandoku_handle(lean_object *line, lean_object *w);
@@ -52,6 +56,8 @@ EMSCRIPTEN_KEEPALIVE char *ld_start(const char *sysroot) {
   lean_set_panic_messages(true);
   lean_io_mark_end_initialization();
   if (!lean_io_result_is_ok(res)) return error_json(res);
+  /* Single-threaded: tasks queue up and run when awaited (see the patch). */
+  lean_init_task_manager();
   lean_dec_ref(res);
   res = leandoku_setup(lean_mk_string(sysroot), lean_io_mk_world());
   if (!lean_io_result_is_ok(res)) return error_json(res);
@@ -61,6 +67,7 @@ EMSCRIPTEN_KEEPALIVE char *ld_start(const char *sysroot) {
 
 EMSCRIPTEN_KEEPALIVE char *ld_check(const char *request) {
   lean_object *res = leandoku_handle(lean_mk_string(request), lean_io_mk_world());
+  lean_run_pending_tasks(); /* finish background work so nothing leaks into the next check */
   if (!lean_io_result_is_ok(res)) return error_json(res);
   lean_object *s = lean_io_result_get_value(res);
   char *out = copy_out(lean_string_cstr(s));

@@ -133,7 +133,10 @@ private def importHeader (inputCtx : Parser.InputContext) (header : TSyntax ``Pa
 def check (req : CheckRequest) : IO CheckResponse := do
   let inputCtx := Parser.mkInputContext req.source "<proof>"
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  let (env, messages) ← importHeader inputCtx header messages
+  let (env, headerMessages) ← importHeader inputCtx header messages
+  -- Elaboration starts a fresh message log, so header errors (such as a
+  -- library file that fails to load) must be carried over explicitly.
+  let messages : MessageLog := {}
   -- Elaborate proofs synchronously so the final environment holds every
   -- declaration (asynchronous proof elaboration can leave theorems pending).
   let opts := Elab.async.set {} false
@@ -142,7 +145,7 @@ def check (req : CheckRequest) : IO CheckResponse := do
   let cmd := s.commandState
   let map := inputCtx.fileMap
   let mut msgs := #[]
-  for m in cmd.messages.toList do
+  for m in headerMessages.toList ++ cmd.messages.toList do
     let stop := m.endPos.getD m.pos
     msgs := msgs.push {
       severity := severityName m.severity
