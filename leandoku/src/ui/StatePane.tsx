@@ -1,4 +1,5 @@
 import type { Checkpoint } from '../core/play/play';
+import { Lean } from './Lean';
 import type { Goal } from '../engine/protocol';
 
 interface Props {
@@ -42,7 +43,7 @@ export function StatePane({ checkpoint, stale, offline, onPick }: Props) {
           {goals.slice(1).map((g) => (
             <div key={g.id} className="target is-later">
               <span className="turnstile">⊢</span>
-              <span>{g.target}</span>
+              <span><Lean text={g.target} /></span>
             </div>
           ))}
         </div>
@@ -59,19 +60,19 @@ function GoalView({ goal, onPick }: { goal: Goal; onPick: (name: string) => void
           <div key={h.id} className="hyp is-inaccessible">
             <span className="hyp-name">{h.name}</span>
             <span className="hyp-colon">:</span>
-            <span className="hyp-type">{h.type}</span>
+            <span className="hyp-type"><Lean text={h.type} /></span>
           </div>
         ) : (
           <button key={h.id} type="button" className="hyp is-tappable" onClick={() => onPick(h.name)} title={`Use ${h.name}`}>
             <span className="hyp-name">{h.name}</span>
             <span className="hyp-colon">:</span>
-            <span className="hyp-type">{h.type}</span>
+            <span className="hyp-type"><Lean text={h.type} /></span>
           </button>
         ),
       )}
       <div className="target">
         <span className="turnstile">⊢</span>
-        <span>{goal.target}</span>
+        <span><Lean text={goal.target} /></span>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import type { Fact } from '../core/course/facts';
+import { Lean } from './Lean';
 import type { Definition } from '../core/course/types';
 
 interface Props {
@@ -38,7 +39,7 @@ export function FactsSheet({ facts, definitions, onClose, onUse }: Props) {
                 Use
               </button>
             </div>
-            <pre className="fact-source">{f.statement}</pre>
+            <pre className="fact-source"><Lean text={f.statement} /></pre>
           </div>
         ))}
         {library.length > 0 && <h3>From Lean's library</h3>}
@@ -50,7 +51,7 @@ export function FactsSheet({ facts, definitions, onClose, onUse }: Props) {
                 Use
               </button>
             </div>
-            <pre className="fact-source">{f.statement}</pre>
+            <pre className="fact-source"><Lean text={f.statement} /></pre>
           </div>
         ))}
       </div>

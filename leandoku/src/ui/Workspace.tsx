@@ -36,7 +36,8 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
   const [pick, setPick] = useState<{ name: string; n: number } | null>(null);
   const offer = (name: string) => setPick((p) => ({ name, n: (p?.n ?? 0) + 1 }));
   const chapter = course.chapters.find((c) => c.id === level.chapter);
-  const [showIntro, setShowIntro] = useState(true);
+  // The intro matters when starting out; on a proof in progress it is just in the way.
+  const [showIntro, setShowIntro] = useState(() => game.doc.root.steps.length === 0);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
 
   const ev = game.checked?.ev ?? null;
