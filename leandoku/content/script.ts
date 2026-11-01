@@ -30,3 +30,25 @@ export const casesAnd = (h: string, a: string, b: string, rest: ScriptStep[]): S
 
 /** A step that leaves several goals, solved in Lean's order. */
 export const split = (s: ScriptStep, ...branches: ScriptStep[][]): ScriptStep => ({ ...s, branches });
+
+export const exact = (t: string) => step('exact', { term: term(t) });
+export const funext = (...ns: string[]) => step('funext', { names: names(...ns) });
+
+/** `unfold A B` on the goal, or `unfold A at h`. */
+export const unfold = (defs: string[], at?: string): ScriptStep =>
+  step('unfold', at ? { defs: { kind: 'definitions', names: defs }, at: { kind: 'location', hyp: at } } : { defs: { kind: 'definitions', names: defs } });
+
+/** `rw [...] at h`. */
+export const rwAt = (h: string, ...rs: string[]): ScriptStep => step('rw', { rules: rules(...rs), at: { kind: 'location', hyp: h } });
+
+/** `induction x with | tag names => ...` or `cases x with ...`, one arm per entry in Lean's order. */
+export const byCases = (
+  tactic: 'induction' | 'cases',
+  target: string,
+  arms: [tag: string, names: string[], steps: ScriptStep[]][],
+): ScriptStep => ({
+  tactic,
+  args: { target: local(target) },
+  cases: Object.fromEntries(arms.map(([tag, ns]) => [tag, ns])),
+  branches: arms.map(([, , steps]) => steps),
+});
