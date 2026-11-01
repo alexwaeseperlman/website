@@ -19,8 +19,15 @@ export type TacticAvailability =
   /** Supported by the editor, but this level does not allow it. */
   | { state: 'locked' };
 
+/**
+ * Tactics every level allows because they only name things and prove
+ * nothing: after `induction n` Lean hides the new names (n✝, ih✝), and
+ * `rename_i` is how a plain proof gets them back.
+ */
+const ALWAYS_ALLOWED = new Set(['rename_i']);
+
 export function tacticAvailability(policy: LevelPolicy, tacticId: string): TacticAvailability {
-  if (policy.tactics === 'all' || policy.tactics.includes(tacticId)) return { state: 'available' };
+  if (policy.tactics === 'all' || ALWAYS_ALLOWED.has(tacticId) || policy.tactics.includes(tacticId)) return { state: 'available' };
   return { state: 'locked' };
 }
 

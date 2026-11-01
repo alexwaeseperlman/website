@@ -100,4 +100,40 @@ export function firstOpenPoint(doc: ProofDocument, ev: Evaluation | null): Inser
   return found ?? { branch: doc.root.id, index: doc.root.steps.length };
 }
 
+/** A goal still to prove, and where to add the step that works on it. */
+export interface OpenGoal {
+  at: InsertPoint;
+  goal: Goal;
+}
+
+/**
+ * Every goal still open, in the order Lean would have you prove them: the
+ * goals at the end of each unfinished branch, in document order. Together
+ * they are Lean's goal list, even though each case of a split is written
+ * in its own block.
+ */
+export function openGoals(doc: ProofDocument, ev: Evaluation | null): OpenGoal[] {
+  const out: OpenGoal[] = [];
+  walk(doc.root, (b) => {
+    if (b.steps.at(-1)?.branches?.length) return;
+    const at = { branch: b.id, index: b.steps.length };
+    for (const goal of checkpointAt(doc, ev, at).goals ?? []) out.push({ at, goal });
+  });
+  return out;
+}
+
+/**
+ * Names to offer for `rename_i` at a point whose goal has unnamed (✝)
+ * hypotheses: after `induction n`, the new number is named after n and the
+ * hypothesis `ih`. Empty when everything already has a name.
+ */
+export function renameSuggestion(doc: ProofDocument, at: InsertPoint, goal: Goal | null): string[] {
+  if (!goal?.hyps.some((h) => h.inaccessible)) return [];
+  let parent: Step | undefined;
+  walk(doc.root, (b) => {
+    for (const s of b.steps) if (s.branches?.some((c) => c.id === at.branch)) parent = s;
+  });
+  return defaultCaseNames(parent ?? ({ tactic: '', args: {} } as unknown as Step), goal);
+}
+
 export type { BranchId };

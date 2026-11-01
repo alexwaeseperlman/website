@@ -32,6 +32,7 @@ export const casesAnd = (h: string, a: string, b: string, rest: ScriptStep[]): S
 export const split = (s: ScriptStep, ...branches: ScriptStep[][]): ScriptStep => ({ ...s, branches });
 
 export const exact = (t: string) => step('exact', { term: term(t) });
+export const renameI = (...ns: string[]) => step('rename_i', { names: names(...ns) });
 export const funext = (...ns: string[]) => step('funext', { names: names(...ns) });
 
 /** `unfold A B` on the goal, or `unfold A at h`. */
@@ -41,14 +42,26 @@ export const unfold = (defs: string[], at?: string): ScriptStep =>
 /** `rw [...] at h`. */
 export const rwAt = (h: string, ...rs: string[]): ScriptStep => step('rw', { rules: rules(...rs), at: { kind: 'location', hyp: h } });
 
-/** `induction x with | tag names => ...` or `cases x with ...`, one arm per entry in Lean's order. */
+/**
+ * `cases x with | tag names => ...`, one arm per entry in Lean's order. For
+ * induction, which this course writes plainly, each case is a bullet that
+ * starts by naming what Lean introduced: `induction x`, then
+ * `· rename_i names` and the steps.
+ */
 export const byCases = (
   tactic: 'induction' | 'cases',
   target: string,
   arms: [tag: string, names: string[], steps: ScriptStep[]][],
-): ScriptStep => ({
-  tactic,
-  args: { target: local(target) },
-  cases: Object.fromEntries(arms.map(([tag, ns]) => [tag, ns])),
-  branches: arms.map(([, , steps]) => steps),
-});
+): ScriptStep =>
+  tactic === 'induction'
+    ? {
+        tactic,
+        args: { target: local(target) },
+        branches: arms.map(([, ns, steps]) => (ns.length ? [renameI(...ns), ...steps] : steps)),
+      }
+    : {
+        tactic,
+        args: { target: local(target) },
+        cases: Object.fromEntries(arms.map(([tag, ns]) => [tag, ns])),
+        branches: arms.map(([, , steps]) => steps),
+      };

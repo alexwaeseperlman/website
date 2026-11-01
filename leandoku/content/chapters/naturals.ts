@@ -1,5 +1,5 @@
 import type { Chapter, Level, Tutorial } from '../../src/core/course/types';
-import { local, rfl, rw } from '../script';
+import { local, renameI, rfl, rw } from '../script';
 
 export const chapter: Chapter = {
   id: 'naturals',
@@ -49,8 +49,7 @@ export const levels: Level[] = [
       {
         tactic: 'induction',
         args: { target: local('n') },
-        cases: { zero: [], succ: ['n', 'ih'] },
-        branches: [[rfl], [rw('add_succ', 'ih')]],
+        branches: [[rfl], [renameI('n', 'ih'), rw('add_succ', 'ih')]],
       },
     ],
   },
@@ -68,8 +67,7 @@ export const levels: Level[] = [
       {
         tactic: 'induction',
         args: { target: local('m') },
-        cases: { zero: [], succ: ['k', 'ih'] },
-        branches: [[rfl], [rw('add_succ', 'add_succ', 'ih')]],
+        branches: [[rfl], [renameI('k', 'ih'), rw('add_succ', 'add_succ', 'ih')]],
       },
     ],
   },
@@ -87,8 +85,7 @@ export const levels: Level[] = [
       {
         tactic: 'induction',
         args: { target: local('c') },
-        cases: { zero: [], succ: ['k', 'ih'] },
-        branches: [[rfl], [rw('add_succ', 'add_succ', 'add_succ', 'ih')]],
+        branches: [[rfl], [renameI('k', 'ih'), rw('add_succ', 'add_succ', 'add_succ', 'ih')]],
       },
     ],
   },
@@ -106,8 +103,7 @@ export const levels: Level[] = [
       {
         tactic: 'induction',
         args: { target: local('b') },
-        cases: { zero: [], succ: ['k', 'ih'] },
-        branches: [[rw('add_zero', 'zero_add')], [rw('add_succ', 'succ_add', 'ih')]],
+        branches: [[rw('add_zero', 'zero_add')], [renameI('k', 'ih'), rw('add_succ', 'succ_add', 'ih')]],
       },
     ],
   },
@@ -180,12 +176,16 @@ export const tutorials: Tutorial[] = [
         text: "zero + n doesn't compute. Addition looks at its second number to decide what to do, and here that is n, which could be any number.",
       },
       {
-        text: 'induction n splits the proof in two, one case for each way a Natural can be built. In the zero case you prove the statement for zero. In the succ case you get a number n and a hypothesis ih saying the statement holds for n, and you prove it for succ n.',
+        text: 'induction n replaces the goal with two goals, one for each way a Natural can be built. First you prove the statement for zero. Then you prove it for succ n, and there you may assume it already holds for n.',
       },
-      { code: '-- case zero\n⊢ zero + zero = zero\n\n-- case succ\nn : Natural\nih : zero + n = n\n⊢ zero + succ n = succ n' },
       {
-        text: 'Those two cases cover every number: zero directly, then 1 from 0, 2 from 1, and so on.',
+        text: "Lean doesn't name the new number or that assumption, because you never chose names for them. It marks them with ✝, and a name with ✝ can't be typed. rename_i gives them names, in order:",
       },
+      { code: 'induction n\n· rfl\n· rename_i n ih\n  -- n : Natural\n  -- ih : zero + n = n\n  -- ⊢ zero + succ n = succ n' },
+      {
+        text: 'The dots mark where each goal starts. Those two goals cover every number: zero directly, then 1 from 0, 2 from 1, and so on.',
+      },
+      { aside: 'Tap a ✝ hypothesis in the proof state and the app fills in rename_i for you.' },
     ],
   },
   {

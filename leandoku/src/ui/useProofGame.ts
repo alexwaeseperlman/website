@@ -7,7 +7,7 @@ import { deleteStep, emptyDocument, insertStep, locateStep, makeStep } from '../
 import { History } from '../core/document/history';
 import type { InsertPoint, ProofDocument, StepId } from '../core/document/types';
 import { evaluate, type Evaluation } from '../core/evaluate/evaluate';
-import { autoBranch, firstOpenPoint, validSelection } from '../core/play/play';
+import { autoBranch, checkpointAt, firstOpenPoint, validSelection } from '../core/play/play';
 import { checkPolicy } from '../core/policy/policy';
 import { serialize, type Serialized } from '../core/serializer/serialize';
 import type { Session } from '../session/session';
@@ -40,6 +40,8 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
   const [saved, setSaved] = useState(true);
   const [retries, setRetries] = useState(0);
   const firstResult = useRef(true);
+  // Set by addStep: once Lean answers, a finished goal hands over to the next one.
+  const advance = useRef(false);
 
   // The source for the current document, recomputed even without an engine so
   // the code pane always shows exactly what would be checked.
@@ -73,7 +75,13 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
       if (firstResult.current) {
         firstResult.current = false;
         setSelection(firstOpenPoint(doc, ev));
+      } else if (advance.current) {
+        setSelection((s) => {
+          const cp = checkpointAt(doc, ev, s);
+          return cp.goals?.length === 0 && !cp.split ? firstOpenPoint(doc, ev) : s;
+        });
       }
+      advance.current = false;
       if (ev.status === 'complete' && checkPolicy(doc, level.policy).length === 0) {
         markComplete(level.id, level.revision);
       }
@@ -96,6 +104,7 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     (tactic: string, args: Record<string, SlotValue>) => {
       const step = makeStep(tactic, args);
       const next = insertStep(doc, selection, step);
+      advance.current = true;
       apply(next, { branch: selection.branch, index: selection.index + 1 });
     },
     [doc, selection, apply],

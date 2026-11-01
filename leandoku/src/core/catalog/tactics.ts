@@ -43,6 +43,15 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     branchStyle: 'bullets',
   },
   {
+    id: 'rename_i',
+    label: 'rename_i',
+    category: 'intro',
+    help: 'Name the hypotheses Lean shows with ✝, such as the new number and ih after induction.',
+    slots: [{ id: 'names', kind: 'names', label: 'names, in order' }],
+    template: 'rename_i {names}',
+    branchStyle: 'bullets',
+  },
+  {
     id: 'funext',
     label: 'funext',
     category: 'intro',
@@ -106,10 +115,10 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     id: 'induction',
     label: 'induction',
     category: 'split',
-    help: 'Prove a statement for every value by proving each constructor case.',
+    help: 'Prove a statement for every value: one goal for each way the value is built.',
     slots: [{ id: 'target', kind: 'local', label: 'variable' }],
     template: 'induction {target}',
-    branchStyle: 'alternatives',
+    branchStyle: 'bullets',
   },
   {
     id: 'cases',

@@ -17,6 +17,8 @@ interface Props {
   disabled: string | null;
   /** A name tapped in the proof state; `n` changes on every tap. */
   pick: { name: string; n: number } | null;
+  /** Names for the goal's unnamed (✝) hypotheses; empty when there are none. */
+  renameNames: string[];
   onAdd: (tactic: string, args: Record<string, SlotValue>) => void;
 }
 
@@ -35,7 +37,7 @@ const CATEGORY_LABEL: Record<TacticCategory, string> = {
  * One composer for every tactic: pick a tactic, fill its slots from what is
  * on screen, then add it. Nothing enters the proof until it is complete.
  */
-export function Composer({ catalog, policy, goal, facts, definitions, disabled, pick, onAdd }: Props) {
+export function Composer({ catalog, policy, goal, facts, definitions, disabled, pick, renameNames, onAdd }: Props) {
   const [tactic, setTacticState] = useState<string | null>(null);
   const [args, setArgs] = useState<Record<string, SlotValue>>({});
   const [hint, setHint] = useState<string | null>(null);
@@ -45,11 +47,13 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
     setArgs(initial);
     setHint(null);
   };
-  const palette = paletteFor(catalog, policy).sort(
+  // rename_i only means something while Lean is hiding names.
+  const palette = paletteFor(catalog, policy).filter((p) => p.spec.id !== 'rename_i' || renameNames.length > 0).sort(
     (a, b) => CATEGORY_ORDER.indexOf(a.spec.category) - CATEGORY_ORDER.indexOf(b.spec.category),
   );
   const allowed = new Set(palette.filter((p) => p.availability.state === 'available').map((p) => p.spec.id));
-  const suggested = suggestTactics(goal, allowed);
+  const naming: Record<string, SlotValue> = { names: { kind: 'names', names: renameNames } };
+  const suggested = [...(renameNames.length ? ['rename_i'] : []), ...suggestTactics(goal, allowed)];
   const spec = tactic ? catalog.get(tactic) : undefined;
   const preview = tactic ? catalog.render(tactic, args) : null;
 
@@ -59,6 +63,11 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
   useEffect(() => {
     if (!pick || pick.n === lastPick.current) return;
     lastPick.current = pick.n;
+    // A ✝ name can't be typed; tapping one offers to name it instead.
+    if (goal?.hyps.some((h) => h.name === pick.name && h.inaccessible)) {
+      if (renameNames.length) setTactic('rename_i', naming);
+      return;
+    }
     if (spec) {
       const next = fillWithName(spec, args, pick.name);
       if (next) setArgs(next);
@@ -93,7 +102,7 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
       type="button"
       className={`chip tactic-chip ${tactic === id ? 'is-on' : ''} ${suggested.includes(id) ? 'is-suggested' : ''}`}
       title={`${group}: ${help}${suggested.includes(id) ? ' Fits this goal.' : ''}`}
-      onClick={() => setTactic(tactic === id ? null : id)}
+      onClick={() => setTactic(tactic === id ? null : id, id === 'rename_i' ? naming : {})}
     >
       {label}
     </button>

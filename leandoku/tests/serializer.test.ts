@@ -16,11 +16,11 @@ describe('serializer', () => {
     expect(out.headerLines).toEqual({ start: 3, end: 3 });
   });
 
-  it('writes induction cases as named alternatives with a source map', () => {
+  it('writes cases arms as named alternatives with a source map', () => {
     const doc = scriptToDocument(
       [
         {
-          tactic: 'induction',
+          tactic: 'cases',
           args: { target: { kind: 'local', name: 'n' } },
           cases: { zero: [], succ: ['m', 'ih'] },
           branches: [[{ tactic: 'rfl' }], []],
@@ -32,17 +32,35 @@ describe('serializer', () => {
     const out = serialize(doc, catalog, level);
     expect(out.source.split('\n').slice(2)).toEqual([
       'theorem t (n : Nat) : n = n := by',
-      '  induction n with',
+      '  cases n with',
       '  | zero =>',
       '      rfl',
       '  | succ m ih =>',
       '      sorry',
       '',
     ]);
-    // s1 = induction step, s2/s3 = branches, s4 = rfl
+    // s1 = cases step, s2/s3 = branches, s4 = rfl
     expect(out.steps.get('s1')).toEqual({ line: 4, col: 2 });
     expect(out.steps.get('s4')).toEqual({ line: 6, col: 6 });
     expect(out.branches.get('s3')).toEqual({ line: 8, col: 6 });
+  });
+
+  it('writes induction plainly, one bullet per goal', () => {
+    const doc = scriptToDocument(
+      [
+        {
+          tactic: 'induction',
+          args: { target: { kind: 'local', name: 'n' } },
+          branches: [[{ tactic: 'rfl' }], [{ tactic: 'rename_i', args: { names: { kind: 'names', names: ['m', 'ih'] } } }]],
+        },
+      ],
+      catalog,
+      counterIds(),
+    );
+    const out = serialize(doc, catalog, { ...level, prelude: '' });
+    expect(out.source).toBe(
+      ['theorem t (n : Nat) : n = n := by', '  induction n', '  · rfl', '  · rename_i m ih', ''].join('\n'),
+    );
   });
 
   it('writes other splits as bullets', () => {
