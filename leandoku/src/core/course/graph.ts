@@ -11,6 +11,18 @@ export function validateCourse(course: Course): string[] {
   for (const l of course.levels) {
     for (const p of l.prerequisites) if (!ids.has(p)) problems.push(`${l.id} requires unknown level ${p}`);
   }
+  const chapters = new Set(course.chapters.map((c) => c.id));
+  for (const l of course.levels) {
+    if (!chapters.has(l.chapter)) problems.push(`${l.id} is in unknown chapter ${l.chapter}`);
+  }
+  const tutorialIds = new Set<string>();
+  const definitions = new Set(course.definitions.map((d) => d.name));
+  for (const t of course.tutorials) {
+    if (tutorialIds.has(t.id) || ids.has(t.id)) problems.push(`duplicate id ${t.id}`);
+    tutorialIds.add(t.id);
+    if (!ids.has(t.before)) problems.push(`tutorial ${t.id} comes before unknown level ${t.before}`);
+    for (const d of t.definitions ?? []) if (!definitions.has(d)) problems.push(`tutorial ${t.id} shows unknown definition ${d}`);
+  }
   // Detect cycles with a depth-first search.
   const state = new Map<string, 'visiting' | 'done'>();
   const byId = new Map(course.levels.map((l) => [l.id, l]));

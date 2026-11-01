@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { naturalCourse } from '../../content/natural/course';
+import { course } from '../../content/course';
 import { chooseEngine, createEngine } from '../engine/config';
 import type { StartupProgress } from '../engine/wasm-client';
 import { Session } from '../session/session';
@@ -8,7 +8,6 @@ import { EngineSettings } from './EngineSettings';
 import { MapScreen } from './MapScreen';
 import { Workspace } from './Workspace';
 
-const course = naturalCourse;
 
 /** `#/level/<id>` opens a level; anything else shows the map. */
 function routeFromHash(): string | null {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { naturalCourse } from '../content/natural/course';
+import { course as naturalCourse } from '../content/course';
 import { defaultCatalog } from '../src/core/catalog/registry';
 import { levelSource, scriptToDocument } from '../src/core/course/environment';
 import { unlockedLevels, validateCourse } from '../src/core/course/graph';

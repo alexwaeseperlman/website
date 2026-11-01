@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';
-import { naturalCourse } from '../../content/natural/course';
+import { course as naturalCourse } from '../../content/course';
 import { defaultCatalog } from '../../src/core/catalog/registry';
 import { levelSource } from '../../src/core/course/environment';
 import type { ScriptStep } from '../../src/core/course/types';
