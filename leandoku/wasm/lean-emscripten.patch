@@ -1,0 +1,20 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 167a28c..2b19b7c 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -129,8 +129,13 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Emscripten")
+ 
+     # From https://emscripten.org/docs/compiling/WebAssembly.html#backends:
+     # > The simple and safe thing is to pass all -s flags at both compile and link time.
+-    set(EMSCRIPTEN_SETTINGS "-s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions -pthread -flto")
+-    string(APPEND LEANC_EXTRA_CC_FLAGS " -pthread")
++    if(MULTI_THREAD)
++      set(EMSCRIPTEN_SETTINGS "-s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions -pthread -flto")
++      string(APPEND LEANC_EXTRA_CC_FLAGS " -pthread")
++    else()
++      # Leandoku: single-threaded build, so the page needs no cross-origin isolation.
++      set(EMSCRIPTEN_SETTINGS "-s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions")
++    endif()
+     string(APPEND LEAN_EXTRA_CXX_FLAGS " -D LEAN_EMSCRIPTEN ${EMSCRIPTEN_SETTINGS}")
+     string(APPEND LEAN_EXTRA_LINKER_FLAGS " ${EMSCRIPTEN_SETTINGS}")
+ endif()

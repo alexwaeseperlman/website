@@ -33,6 +33,37 @@ function crash(error: unknown): void {
 self.addEventListener('error', (e) => crash(e.error ?? e.message));
 self.addEventListener('unhandledrejection', (e) => crash(e.reason));
 
+const CACHE = 'leandoku-runtime';
+
+/**
+ * Asset URLs carry the runtime version, so a cached copy is never stale.
+ * The Cache API keeps these large files more reliably than the HTTP cache.
+ * Copies from other versions are deleted once this one is stored.
+ */
+async function cachedFetch(url: string, stage: 'download-runtime' | 'download-library'): Promise<Uint8Array> {
+  let cache: Cache | undefined;
+  try {
+    cache = await caches.open(CACHE);
+    const hit = await cache.match(url);
+    if (hit) return new Uint8Array(await hit.arrayBuffer());
+  } catch {
+    cache = undefined; // storage blocked (private mode); just download
+  }
+  const data = await fetchWithProgress(url, stage);
+  if (cache) {
+    try {
+      await cache.put(url, new Response(data));
+      const file = url.slice(url.lastIndexOf('/'));
+      for (const req of await cache.keys()) {
+        if (req.url !== url && req.url.endsWith(file)) await cache.delete(req);
+      }
+    } catch {
+      // out of quota: fine, next visit downloads again
+    }
+  }
+  return data;
+}
+
 async function fetchWithProgress(url: string, stage: 'download-runtime' | 'download-library'): Promise<Uint8Array> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`${url}: HTTP ${res.status}`);
@@ -75,10 +106,10 @@ async function start(runtimeUrl: string, libraryUrl: string): Promise<void> {
     import(/* @vite-ignore */ new URL(runtimeUrl, self.location.href).href) as Promise<{
       default: (opts: object) => Promise<BridgeModule>;
     }>,
-    fetchWithProgress(wasmUrl, 'download-runtime'),
+    cachedFetch(wasmUrl, 'download-runtime'),
   ]);
   post({ type: 'progress', stage: 'download-library' });
-  const packed = await fetchWithProgress(libraryUrl, 'download-library');
+  const packed = await cachedFetch(libraryUrl, 'download-library');
 
   post({ type: 'progress', stage: 'load-library' });
   const m = await factory({

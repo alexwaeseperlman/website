@@ -4,6 +4,7 @@ import type { Course, Level } from '../core/course/types';
 import { findBranch, walk } from '../core/document/edit';
 import type { InsertPoint } from '../core/document/types';
 import { checkpointAt } from '../core/play/play';
+import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
 import { CodePane } from './CodePane';
 import { Composer } from './Composer';
@@ -15,13 +16,14 @@ interface Props {
   course: Course;
   level: Level;
   session: Session | null;
+  startup: StartupProgress | null;
   nextLevel: Level | undefined;
   onBack: () => void;
   onOpen: (id: string) => void;
   onEngineSettings: () => void;
 }
 
-export function Workspace({ course, level, session, nextLevel, onBack, onOpen, onEngineSettings }: Props) {
+export function Workspace({ course, level, session, startup, nextLevel, onBack, onOpen, onEngineSettings }: Props) {
   const game = useProofGame(course, level, session);
   const [showFacts, setShowFacts] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
@@ -52,7 +54,7 @@ export function Workspace({ course, level, session, nextLevel, onBack, onOpen, o
         </button>
       </header>
 
-      <EngineBanner state={game.engine} onRetry={game.retry} onSettings={onEngineSettings} />
+      <EngineBanner state={game.engine} startup={startup} onRetry={game.retry} onSettings={onEngineSettings} />
 
       {showIntro && (
         <section className="intro">
@@ -173,12 +175,31 @@ function FirstError({
   );
 }
 
+const STAGE_LABEL: Record<StartupProgress['stage'], string> = {
+  'download-runtime': 'Downloading Lean',
+  'download-library': 'Downloading the Lean library',
+  'load-library': 'Unpacking the library',
+  'start-lean': 'Starting Lean',
+};
+
+function mb(n: number): string {
+  return (n / 1e6).toFixed(n < 10e6 ? 1 : 0);
+}
+
+function startupText(p: StartupProgress): string {
+  const label = STAGE_LABEL[p.stage];
+  if (p.loaded === undefined) return `${label}…`;
+  return p.total ? `${label}: ${mb(p.loaded)} of ${mb(p.total)} MB` : `${label}: ${mb(p.loaded)} MB`;
+}
+
 function EngineBanner({
   state,
+  startup,
   onRetry,
   onSettings,
 }: {
   state: ReturnType<typeof useProofGame>['engine'];
+  startup: StartupProgress | null;
   onRetry: () => void;
   onSettings: () => void;
 }) {
@@ -186,11 +207,22 @@ function EngineBanner({
     case 'ready':
       return null;
     case 'checking':
+      if (startup) {
+        return (
+          <div className="banner banner-quiet" role="status">
+            {startupText(startup)}
+            {startup.loaded !== undefined && startup.total ? (
+              <progress value={startup.loaded} max={startup.total} />
+            ) : null}
+            <div className="banner-note">This happens once; your browser keeps Lean for next time.</div>
+          </div>
+        );
+      }
       return <div className="banner banner-quiet">Lean is checking…</div>;
     case 'offline':
       return (
         <div className="banner">
-          Lean does not run in the browser yet, so steps here are not checked.{' '}
+          Lean is not available on this page, so steps here are not checked.{' '}
           <button type="button" className="link" onClick={onSettings}>
             Why, and how to play now
           </button>

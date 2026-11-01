@@ -3,7 +3,7 @@
  * bridge imports at the module system's `exported` level, so each module needs
  * only its `.olean` and `.ir` parts.
  *
- *   node --experimental-strip-types wasm/pack-library.ts <lib/lean dir> <out.pack.gz> [Module ...]
+ *   node --experimental-strip-types wasm/pack-library.ts <lib/lean dir> <out.ldpk> [Module ...]
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -11,7 +11,7 @@ import { packLibrary, type PackedFile } from '../src/engine/library-pack.ts';
 
 const [libDir, outFile, ...modules] = process.argv.slice(2);
 if (!libDir || !outFile) {
-  console.error('usage: pack-library.ts <lib/lean dir> <out.pack.gz> [Module ...]');
+  console.error('usage: pack-library.ts <lib/lean dir> <out.ldpk> [Module ...]');
   process.exit(2);
 }
 const roots = modules.length > 0 ? modules : ['Init'];
