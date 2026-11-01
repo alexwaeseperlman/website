@@ -232,7 +232,7 @@ export const tutorials: Tutorial[] = [
       },
       { code: euclidRun },
       {
-        text: '`induction run` follows the algorithm. In the done case you check the answer when it stops. In the step case you get `ih`, saying the rest of the run was right, and you show this step keeps it right.',
+        text: '`induction run` follows the algorithm. In the done case you check the answer when it stops. In the step case you get `ih`, saying the rest of the run was right, and you show this step keeps it right. As with numbers, start each case with rename_i to name what it gives you.',
       },
       {
         aside: 'That every run actually stops is `euclid_terminates`, which is given. Its proof uses a kind of induction this game does not cover yet. You can read it in the definitions list.',

@@ -77,11 +77,17 @@ function GoalView({ goal, onPick }: { goal: Goal; onPick: (name: string) => void
     <div className="goal">
       {goal.hyps.map((h) =>
         h.inaccessible ? (
-          <div key={h.id} className="hyp is-inaccessible">
+          <button
+            key={h.id}
+            type="button"
+            className="hyp is-inaccessible is-tappable"
+            onClick={() => onPick(h.name)}
+            title="Lean hides this name. Tap to name it with rename_i."
+          >
             <span className="hyp-name">{h.name}</span>
             <span className="hyp-colon">:</span>
             <span className="hyp-type"><Lean text={h.type} /></span>
-          </div>
+          </button>
         ) : (
           <button key={h.id} type="button" className="hyp is-tappable" onClick={() => onPick(h.name)} title={`Use ${h.name}`}>
             <span className="hyp-name">{h.name}</span>

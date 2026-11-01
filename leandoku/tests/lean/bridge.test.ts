@@ -107,7 +107,7 @@ describe.skipIf(!available)('Lean bridge', () => {
     expect(ev.status, source).toBe('complete');
   });
 
-  it('shows the real goals at every checkpoint, with case names from the player', async () => {
+  it('shows the real goals at every checkpoint, with names from rename_i', async () => {
     const src = levelSource(naturalCourse, zeroAdd, catalog);
     const { doc, ev } = await replay(zeroAdd.solution, src);
     const ind = doc.root.steps[0]!;
@@ -115,9 +115,13 @@ describe.skipIf(!available)('Lean bridge', () => {
     expect(before).toHaveLength(1);
     expect(before[0]!.target).toBe('zero + n = n');
     const succ = ind.branches![1]!;
+    // Plain induction leaves the new number and hypothesis unnamed…
     const goal = ev.branches.get(succ.id)!.goal!;
-    expect(goal.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
-    expect(goal.target).toBe('zero + succ n = succ n');
+    expect(goal.hyps.every((h) => h.inaccessible)).toBe(true);
+    // …until rename_i names them.
+    const named = ev.steps.get(succ.steps[0]!.id)!.goalsAfter![0]!;
+    expect(named.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
+    expect(named.target).toBe('zero + succ n = succ n');
   });
 
   it('marks the failing step and leaves the valid prefix intact', async () => {
@@ -138,12 +142,14 @@ describe.skipIf(!available)('Lean bridge', () => {
     const ids = counterIds();
     const ind = makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids);
     let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, ind);
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ', names: ['m', 'ih'] }], ids);
+    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ' }], ids);
     const [zero, succ] = locateStep(doc, ind.id)!.step.branches!;
+    const rename = makeStep('rename_i', { names: { kind: 'names', names: ['m', 'ih'] } }, ids);
     const wrong = makeStep('rw', { rules: { kind: 'rules', rules: [{ term: 'ih', reverse: false }] } }, ids);
     const right = makeStep('rw', { rules: { kind: 'rules', rules: [{ term: 'add_succ', reverse: false }, { term: 'ih', reverse: false }] } }, ids);
     doc = insertStep(doc, { branch: zero!.id, index: 0 }, wrong);
-    doc = insertStep(doc, { branch: succ!.id, index: 0 }, right);
+    doc = insertStep(doc, { branch: succ!.id, index: 0 }, rename);
+    doc = insertStep(doc, { branch: succ!.id, index: 1 }, right);
     const { ev } = await check(doc, src);
     expect(ev.steps.get(wrong.id)!.status).toBe('error');
     expect(ev.steps.get(right.id)!.status).toBe('ok');
@@ -155,9 +161,9 @@ describe.skipIf(!available)('Lean bridge', () => {
     const ids = counterIds();
     const ind = makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids);
     let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, ind);
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ', names: ['m', 'ih'] }], ids);
+    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ' }], ids);
     const { ev, source } = await check(doc, src);
-    expect(source).toContain('| succ m ih =>');
+    expect(source).toContain('  induction n\n  · sorry\n  · sorry');
     expect(ev.status).toBe('incomplete');
     expect(ev.steps.get(ind.id)!.status).toBe('ok');
   });

@@ -31,7 +31,7 @@ const TACTICS = new Set([
   'rfl', 'rw', 'rewrite', 'exact', 'apply', 'intro', 'intros', 'cases', 'rcases', 'obtain', 'induction',
   'constructor', 'assumption', 'funext', 'unfold', 'simp', 'simp_all', 'left', 'right', 'exists', 'use',
   'refine', 'specialize', 'contradiction', 'exfalso', 'trivial', 'decide', 'omega', 'next', 'case',
-  'symm', 'congr', 'ext', 'repeat', 'first', 'try', 'all_goals', 'any_goals', 'exact?', 'change',
+  'symm', 'congr', 'ext', 'repeat', 'first', 'try', 'all_goals', 'any_goals', 'exact?', 'change', 'rename_i',
 ]);
 
 /** Keywords that are followed by the name they declare. */

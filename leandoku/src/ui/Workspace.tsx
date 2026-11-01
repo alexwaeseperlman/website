@@ -4,7 +4,7 @@ import type { Course, Level } from '../core/course/types';
 import { tutorialsBefore, type CourseNode } from '../core/course/nodes';
 import { findBranch, walk } from '../core/document/edit';
 import type { InsertPoint } from '../core/document/types';
-import { checkpointAt, openGoals } from '../core/play/play';
+import { checkpointAt, openGoals, renameSuggestion } from '../core/play/play';
 import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
 import { CodePane } from './CodePane';
@@ -168,6 +168,7 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
         definitions={course.definitions}
         disabled={addBlocked}
         pick={pick}
+        renameNames={renameSuggestion(game.doc, game.selection, checkpoint.goals?.[0] ?? null)}
         onAdd={game.addStep}
       />
 
