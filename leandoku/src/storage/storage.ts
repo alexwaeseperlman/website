@@ -48,6 +48,16 @@ export function markComplete(levelId: string, revision: number): boolean {
   return write('progress', { ...loadProgress(), [levelId]: revision });
 }
 
+/** Tutorials the player has read, by id. */
+export function loadReadTutorials(): Set<string> {
+  return new Set(read<string[]>('tutorials.read') ?? []);
+}
+
+export function markTutorialRead(id: string): void {
+  const done = loadReadTutorials();
+  if (!done.has(id)) write('tutorials.read', [...done, id]);
+}
+
 export function loadSetting(key: string): string | undefined {
   return read<string>(`setting.${key}`);
 }

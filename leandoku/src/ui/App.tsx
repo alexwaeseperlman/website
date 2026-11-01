@@ -3,15 +3,17 @@ import { course } from '../../content/course';
 import { chooseEngine, createEngine } from '../engine/config';
 import type { StartupProgress } from '../engine/wasm-client';
 import { Session } from '../session/session';
-import { loadProgress } from '../storage/storage';
+import { courseNodes, nextNode, tutorialsBefore } from '../core/course/nodes';
+import { loadProgress, loadReadTutorials } from '../storage/storage';
 import { EngineSettings } from './EngineSettings';
 import { MapScreen } from './MapScreen';
+import { TutorialScreen } from './TutorialScreen';
 import { Workspace } from './Workspace';
 
 
-/** `#/level/<id>` opens a level; anything else shows the map. */
+/** `#/level/<id>` opens a level, `#/learn/<id>` a tutorial; anything else shows the map. */
 function routeFromHash(): string | null {
-  const m = /^#\/level\/(.+)$/.exec(location.hash);
+  const m = /^#\/(?:level|learn)\/(.+)$/.exec(location.hash);
   return m ? decodeURIComponent(m[1]!) : null;
 }
 
@@ -39,35 +41,55 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  const open = (id: string | null) => {
-    location.hash = id ? `#/level/${encodeURIComponent(id)}` : '#/';
+  const go = (id: string | null) => {
+    if (!id) location.hash = '#/';
+    else if (course.tutorials.some((t) => t.id === id)) location.hash = `#/learn/${encodeURIComponent(id)}`;
+    else location.hash = `#/level/${encodeURIComponent(id)}`;
+  };
+  /** From the map: a level whose tutorials are unread opens on the first of them. */
+  const openFromMap = (id: string) => {
+    const read = loadReadTutorials();
+    go(tutorialsBefore(course, id).find((t) => !read.has(t.id))?.id ?? id);
   };
 
-  const level = course.levels.find((l) => l.id === levelId);
+  const node = courseNodes(course).find((n) => (n.kind === 'level' ? n.level.id : n.tutorial.id) === levelId);
+  const level = node?.kind === 'level' ? node.level : undefined;
   const progress = useMemo(() => loadProgress(), [progressTick, levelId]);
+  const readTutorials = useMemo(() => loadReadTutorials(), [progressTick, levelId]);
 
   return (
     <>
-      {level ? (
+      {node?.kind === 'tutorial' ? (
+        <TutorialScreen
+          key={node.tutorial.id}
+          tutorial={node.tutorial}
+          chapter={node.chapter}
+          definitions={course.definitions}
+          next={nextNode(course, node.tutorial.id)}
+          onBack={() => go(null)}
+          onOpen={go}
+        />
+      ) : level ? (
         <Workspace
           key={level.id}
           course={course}
           level={level}
           session={session}
           startup={startup}
-          nextLevel={course.levels[course.levels.indexOf(level) + 1]}
-          onBack={() => open(null)}
-          onOpen={open}
+          next={nextNode(course, level.id)}
+          onBack={() => go(null)}
+          onOpen={go}
           onEngineSettings={() => setSettingsOpen(true)}
         />
       ) : (
         <MapScreen
           course={course}
           progress={progress}
+          readTutorials={readTutorials}
           engineLabel={
             choice.kind === 'native' ? 'running on this computer' : choice.kind === 'wasm' ? 'in your browser' : 'not available'
           }
-          onOpen={open}
+          onOpen={openFromMap}
           onEngineSettings={() => setSettingsOpen(true)}
         />
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { factsFor } from '../core/course/facts';
 import type { Course, Level } from '../core/course/types';
+import { tutorialsBefore, type CourseNode } from '../core/course/nodes';
 import { findBranch, walk } from '../core/document/edit';
 import type { InsertPoint } from '../core/document/types';
 import { checkpointAt } from '../core/play/play';
@@ -17,13 +18,13 @@ interface Props {
   level: Level;
   session: Session | null;
   startup: StartupProgress | null;
-  nextLevel: Level | undefined;
+  next: CourseNode | undefined;
   onBack: () => void;
   onOpen: (id: string) => void;
   onEngineSettings: () => void;
 }
 
-export function Workspace({ course, level, session, startup, nextLevel, onBack, onOpen, onEngineSettings }: Props) {
+export function Workspace({ course, level, session, startup, next, onBack, onOpen, onEngineSettings }: Props) {
   const game = useProofGame(course, level, session);
   // The last step is usually added far down the page, so bring the result
   // into view when the proof completes, clear of the sticky top bar.
@@ -32,6 +33,9 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
     if (game.complete) provedRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [game.complete]);
   const [showFacts, setShowFacts] = useState(false);
+  const [pick, setPick] = useState<{ name: string; n: number } | null>(null);
+  const offer = (name: string) => setPick((p) => ({ name, n: (p?.n ?? 0) + 1 }));
+  const chapter = course.chapters.find((c) => c.id === level.chapter);
   const [showIntro, setShowIntro] = useState(true);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
 
@@ -51,7 +55,10 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
         <button type="button" className="icon-button" onClick={onBack} aria-label="Back to levels">
           ←
         </button>
-        <h1 className="bar-title">{level.title}</h1>
+        <h1 className="bar-title">
+          {chapter && <span className="bar-kicker">{chapter.title}</span>}
+          {level.title}
+        </h1>
         <button type="button" className="icon-button" onClick={game.undo} disabled={!game.canUndo} aria-label="Undo">
           ↶
         </button>
@@ -66,6 +73,11 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
         <section className="intro">
           <p>{level.intro}</p>
           <div className="intro-actions">
+            {tutorialsBefore(course, level.id).map((t) => (
+              <button key={t.id} type="button" className="link" onClick={() => onOpen(t.id)}>
+                {t.title}
+              </button>
+            ))}
             <button type="button" className="link" onClick={() => setShowFacts(true)}>
               Definitions and facts
             </button>
@@ -89,9 +101,13 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
       {game.complete && (
         <section className="proved" role="status" ref={provedRef}>
           <strong>Proved.</strong> Lean accepted the whole proof, and it is now a fact you can use.
-          {nextLevel && (
-            <button type="button" className="primary" onClick={() => onOpen(nextLevel.id)}>
-              Next: {nextLevel.title}
+          {next && (
+            <button
+              type="button"
+              className="primary"
+              onClick={() => onOpen(next.kind === 'level' ? next.level.id : next.tutorial.id)}
+            >
+              Next: {next.kind === 'level' ? next.level.title : next.tutorial.title}
             </button>
           )}
         </section>
@@ -117,7 +133,12 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
             </button>
           )}
         </div>
-        <StatePane checkpoint={checkpoint} stale={stale && game.engine.kind === 'checking'} offline={offline} />
+        <StatePane
+          checkpoint={checkpoint}
+          stale={stale && game.engine.kind === 'checking'}
+          offline={offline}
+          onPick={offer}
+        />
         {checkpoint.goals === null && !stepResult?.errors.length && ev && (
           <FirstError ev={ev} doc={game.doc} onSelect={game.setSelection} />
         )}
@@ -140,13 +161,22 @@ export function Workspace({ course, level, session, startup, nextLevel, onBack, 
         facts={facts}
         definitions={course.definitions}
         disabled={addBlocked}
+        pick={pick}
         onAdd={game.addStep}
       />
 
       {!game.saved && <p className="note">This browser is not saving drafts (storage is unavailable).</p>}
 
       {showFacts && (
-        <FactsSheet facts={facts} definitions={course.definitions} onClose={() => setShowFacts(false)} />
+        <FactsSheet
+          facts={facts}
+          definitions={course.definitions}
+          onClose={() => setShowFacts(false)}
+          onUse={(name) => {
+            setShowFacts(false);
+            offer(name);
+          }}
+        />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TacticCatalog } from '../core/catalog/registry';
+import { fillWithName, stageHypothesis, suggestTactics } from '../core/catalog/suggest';
 import type { SlotSpec, SlotValue, TacticCategory } from '../core/catalog/types';
 import type { Fact } from '../core/course/facts';
 import type { Definition } from '../core/course/types';
@@ -13,50 +14,109 @@ interface Props {
   facts: Fact[];
   definitions: Definition[];
   disabled: string | null;
+  /** A name tapped in the proof state; `n` changes on every tap. */
+  pick: { name: string; n: number } | null;
   onAdd: (tactic: string, args: Record<string, SlotValue>) => void;
 }
 
 const CATEGORY_ORDER: TacticCategory[] = ['finish', 'intro', 'rewrite', 'apply', 'split', 'simplify', 'other'];
+const CATEGORY_LABEL: Record<TacticCategory, string> = {
+  finish: 'Finish',
+  intro: 'Assume',
+  rewrite: 'Rewrite',
+  apply: 'Use a fact',
+  split: 'Split',
+  simplify: 'Unfold',
+  other: 'Other',
+};
 
 /**
  * One composer for every tactic: pick a tactic, fill its slots from what is
  * on screen, then add it. Nothing enters the proof until it is complete.
  */
-export function Composer({ catalog, policy, goal, facts, definitions, disabled, onAdd }: Props) {
-  const [tactic, setTactic] = useState<string | null>(null);
+export function Composer({ catalog, policy, goal, facts, definitions, disabled, pick, onAdd }: Props) {
+  const [tactic, setTacticState] = useState<string | null>(null);
   const [args, setArgs] = useState<Record<string, SlotValue>>({});
+  const [hint, setHint] = useState<string | null>(null);
+  const setTactic = (id: string | null, initial: Record<string, SlotValue> = {}) => {
+    setTacticState(id);
+    setArgs(initial);
+    setHint(null);
+  };
   const palette = paletteFor(catalog, policy).sort(
     (a, b) => CATEGORY_ORDER.indexOf(a.spec.category) - CATEGORY_ORDER.indexOf(b.spec.category),
   );
+  const allowed = new Set(palette.filter((p) => p.availability.state === 'available').map((p) => p.spec.id));
+  const suggested = suggestTactics(goal, allowed);
   const spec = tactic ? catalog.get(tactic) : undefined;
   const preview = tactic ? catalog.render(tactic, args) : null;
 
+  // A name tapped in the proof state goes into the open tactic, or opens
+  // the tactic that uses it most directly.
+  const lastPick = useRef(pick?.n);
   useEffect(() => {
-    setArgs({});
-  }, [tactic]);
+    if (!pick || pick.n === lastPick.current) return;
+    lastPick.current = pick.n;
+    if (spec) {
+      const next = fillWithName(spec, args, pick.name);
+      if (next) setArgs(next);
+      else setHint(`${spec.label} doesn't take a name. Close it to use ${pick.name} another way.`);
+      return;
+    }
+    const hyp = goal?.hyps.find((h) => h.name === pick.name);
+    const fact = facts.find((f) => f.name === pick.name);
+    const staged = goal && (hyp ?? fact) ? stageHypothesis({ name: pick.name, type: hyp?.type ?? conclusionOf(fact!.statement) }, goal, allowed) : null;
+    if (staged) setTactic(staged.tactic, staged.args);
+    else setHint(`Pick a tactic first, then tap ${pick.name} to use it there.`);
+  }, [pick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const locals = goal?.hyps.filter((h) => !h.inaccessible) ?? [];
+  const groups = CATEGORY_ORDER.map((c) => ({
+    category: c,
+    items: palette.filter((p) => p.spec.category === c && p.availability.state === 'available'),
+  })).filter((g) => g.items.length > 0);
+  const locked = palette.filter((p) => p.availability.state === 'locked');
+
+  const chip = (id: string, label: string, help: string) => (
+    <button
+      key={id}
+      type="button"
+      className={`chip tactic-chip ${tactic === id ? 'is-on' : ''} ${suggested.includes(id) ? 'is-suggested' : ''}`}
+      title={suggested.includes(id) ? `${help} Fits this goal.` : help}
+      onClick={() => setTactic(tactic === id ? null : id)}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <section className="composer" aria-label="Add a tactic">
-      <div className="palette" role="toolbar">
-        {palette.map(({ spec: s, availability }) => {
-          const locked = availability.state === 'locked';
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={`chip tactic-chip ${tactic === s.id ? 'is-on' : ''} ${locked ? 'is-locked' : ''}`}
-              disabled={locked}
-              title={locked ? 'Not available in this level' : s.help}
-              onClick={() => setTactic(tactic === s.id ? null : s.id)}
-            >
-              {locked && <span aria-hidden="true">🔒 </span>}
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
+      {groups.map((g) => (
+        <div key={g.category} className="palette-group">
+          <span className="palette-label">{CATEGORY_LABEL[g.category]}</span>
+          <div className="palette" role="toolbar">
+            {g.items.map(({ spec: s }) => chip(s.id, s.label, s.help))}
+          </div>
+        </div>
+      ))}
+      {suggested.length > 0 && !tactic && (
+        <p className="palette-key">
+          <span className="chip-dot" aria-hidden="true" /> fits the current goal
+        </p>
+      )}
+      {locked.length > 0 && (
+        <details className="palette-locked">
+          <summary>Not in this level ({locked.length})</summary>
+          <div className="palette">
+            {locked.map(({ spec: s }) => (
+              <span key={s.id} className="chip tactic-chip is-locked">
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
+      {hint && <p className="builder-note">{hint}</p>}
 
       {spec && (
         <div className="builder">
@@ -66,7 +126,7 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
               key={slot.id}
               slot={slot}
               value={args[slot.id]}
-              locals={locals.map((h) => h.name)}
+              locals={locals}
               facts={facts}
               definitions={definitions}
               onChange={(v) =>
@@ -80,7 +140,10 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
             />
           ))}
           <div className="builder-actions">
-            <code className="builder-preview">{preview ?? `${spec.label} …`}</code>
+            <div className="builder-preview">
+              <span className="builder-preview-label">Lean</span>
+              <code>{preview ?? `${spec.label} …`}</code>
+            </div>
             <button
               type="button"
               className="primary"
@@ -93,6 +156,9 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
             >
               Add
             </button>
+            <button type="button" className="link" onClick={() => setTactic(null)}>
+              Cancel
+            </button>
           </div>
           {disabled && <p className="builder-note">{disabled}</p>}
         </div>
@@ -104,7 +170,7 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
 interface SlotProps {
   slot: SlotSpec;
   value: SlotValue | undefined;
-  locals: string[];
+  locals: { name: string; type: string }[];
   facts: Fact[];
   definitions: Definition[];
   onChange: (v: SlotValue | undefined) => void;
@@ -122,7 +188,7 @@ function SlotEditor({ slot, value, locals, facts, definitions, onChange }: SlotP
       return (
         <div className="slot">
           {label}
-          <Chips
+          <Options
             options={locals}
             selected={value?.kind === 'local' ? [value.name] : []}
             onPick={(name) => onChange({ kind: 'local', name })}
@@ -135,8 +201,8 @@ function SlotEditor({ slot, value, locals, facts, definitions, onChange }: SlotP
       return (
         <div className="slot">
           {label}
-          <Chips
-            options={[...locals, ...facts.map((f) => f.name)]}
+          <Options
+            options={[...locals, ...facts.map((f) => ({ name: f.name, type: f.statement }))]}
             selected={[text]}
             onPick={(t) => onChange({ kind: 'term', text: t })}
           />
@@ -175,11 +241,11 @@ function SlotEditor({ slot, value, locals, facts, definitions, onChange }: SlotP
               ))}
             </ol>
           )}
-          <Chips
-            options={[...locals, ...facts.map((f) => f.name)]}
+          <Options
+            options={[...locals, ...facts.map((f) => ({ name: f.name, type: f.statement }))].filter((o) => o.type.includes('=') || o.type.includes('↔'))}
             selected={[]}
             onPick={(term) => set([...rules, { term, reverse: false }])}
-            empty="No equalities available yet."
+            empty="No equations available yet."
           />
         </div>
       );
@@ -190,7 +256,7 @@ function SlotEditor({ slot, value, locals, facts, definitions, onChange }: SlotP
         <div className="slot">
           {label}
           <Chips
-            options={['goal', ...locals]}
+            options={['goal', ...locals.map((l) => l.name)]}
             selected={[hyp ?? 'goal']}
             onPick={(o) => onChange(o === 'goal' ? undefined : { kind: 'location', hyp: o })}
           />
@@ -267,4 +333,44 @@ function Chips(props: { options: string[]; selected: string[]; onPick: (o: strin
       ))}
     </div>
   );
+}
+
+/** Names to pick from, each with its type or statement so the choice is informed. */
+function Options(props: {
+  options: { name: string; type: string }[];
+  selected: string[];
+  onPick: (name: string) => void;
+  empty?: string;
+}) {
+  const seen = new Set<string>();
+  const unique = props.options.filter((o) => !seen.has(o.name) && seen.add(o.name));
+  if (unique.length === 0) return props.empty ? <p className="slot-empty">{props.empty}</p> : null;
+  return (
+    <div className="options">
+      {unique.map((o) => (
+        <button
+          key={o.name}
+          type="button"
+          className={`option ${props.selected.includes(o.name) ? 'is-on' : ''}`}
+          onClick={() => props.onPick(o.name)}
+        >
+          <span className="option-name">{o.name}</span>
+          <span className="option-type">{o.type}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** `(n : Natural) : n + zero = n` → `n + zero = n`, for guessing how a fact is used. */
+function conclusionOf(statement: string): string {
+  let depth = 0;
+  let last = -1;
+  for (let i = 0; i < statement.length; i++) {
+    const c = statement[i]!;
+    if ('([{⟨'.includes(c)) depth++;
+    else if (')]}⟩'.includes(c)) depth--;
+    else if (c === ':' && depth === 0 && statement[i + 1] !== '=') last = i;
+  }
+  return last < 0 ? statement : statement.slice(last + 1).trim();
 }
