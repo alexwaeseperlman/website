@@ -3,6 +3,7 @@ import { apply, assumption, intro, rw, split, unfold } from '../script';
 
 export const chapter: Chapter = {
   id: 'maps',
+  needs: ['equality'], // compose
   title: 'Maps and products',
   blurb: 'Functions that respect an operation, whatever the operation is. Compose them, pair them up, then both.',
 };

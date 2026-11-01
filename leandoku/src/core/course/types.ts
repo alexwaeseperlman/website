@@ -41,6 +41,14 @@ export interface Chapter {
   title: string;
   /** One or two sentences on the map. */
   blurb: string;
+  /**
+   * Lean this chapter's levels need beyond the course prelude. It is only
+   * compiled for levels that use it: every check re-elaborates the whole
+   * source, and on iPhone the stack is tight.
+   */
+  prelude?: string;
+  /** Chapters whose preludes this one builds on. */
+  needs?: string[];
 }
 
 /** A paragraph, a Lean snippet shown as-is, or an aside. */
@@ -69,7 +77,7 @@ export interface Definition {
 export interface Course {
   id: string;
   title: string;
-  /** Lean definitions shared by every level. */
+  /** Lean shared by every level; chapters add their own on top. */
   prelude: string;
   /** Definitions the player can read and unfold. */
   definitions: Definition[];

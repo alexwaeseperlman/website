@@ -216,6 +216,7 @@ const STAGE_LABEL: Record<StartupProgress['stage'], string> = {
   'download-library': 'Downloading the Lean library',
   'load-library': 'Unpacking the library',
   'start-lean': 'Starting Lean',
+  'warm-up': 'Getting Lean up to speed',
 };
 
 function mb(n: number): string {

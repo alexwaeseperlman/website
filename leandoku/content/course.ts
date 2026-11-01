@@ -11,9 +11,9 @@ import * as naturals from './chapters/naturals';
 /**
  * The whole game. Each chapter file exports its `chapter`, `levels` and
  * `tutorials`, and may export a `prelude` (Lean definitions its levels need)
- * with matching `definitions`. This file puts them in order and joins the
- * preludes after the shared one, so a chapter can use definitions from any
- * chapter before it.
+ * with matching `definitions`. A level's source holds the shared prelude plus
+ * only its own chapter's prelude and those the chapter `needs`, so a check
+ * never elaborates definitions it cannot use.
  */
 interface ChapterModule {
   chapter: Course['chapters'][number];
@@ -45,7 +45,6 @@ end Natural
 
 open Natural`;
 
-const prelude = [basePrelude, ...chapters.flatMap((c) => (c.prelude ? [c.prelude] : []))].join('\n\n');
 
 const definitions: Definition[] = [
   {
@@ -67,9 +66,9 @@ instance : Add Natural := ⟨add⟩  -- so a + b means add a b`,
 export const course: Course = {
   id: 'proof-paths',
   title: 'Proof Paths',
-  prelude,
+  prelude: basePrelude,
   definitions: [...definitions, ...chapters.flatMap((c) => c.definitions ?? [])],
-  chapters: chapters.map((c) => c.chapter),
+  chapters: chapters.map((c) => ({ ...c.chapter, ...(c.prelude ? { prelude: c.prelude } : {}) })),
   levels: chapters.flatMap((c) => c.levels),
   tutorials: chapters.flatMap((c) => c.tutorials),
 };

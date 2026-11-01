@@ -15,6 +15,9 @@ export function validateCourse(course: Course): string[] {
   for (const l of course.levels) {
     if (!chapters.has(l.chapter)) problems.push(`${l.id} is in unknown chapter ${l.chapter}`);
   }
+  for (const c of course.chapters) {
+    for (const n of c.needs ?? []) if (!chapters.has(n)) problems.push(`chapter ${c.id} needs unknown chapter ${n}`);
+  }
   const tutorialIds = new Set<string>();
   const definitions = new Set(course.definitions.map((d) => d.name));
   for (const t of course.tutorials) {

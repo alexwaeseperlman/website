@@ -1,6 +1,6 @@
 /** Messages between the page and the Lean worker (`wasm-worker.ts`). */
 
-export type StartupStage = 'download-runtime' | 'download-library' | 'load-library' | 'start-lean';
+export type StartupStage = 'download-runtime' | 'download-library' | 'load-library' | 'start-lean' | 'warm-up';
 
 export type ToWorker =
   | { type: 'start'; runtimeUrl: string; libraryUrl: string }

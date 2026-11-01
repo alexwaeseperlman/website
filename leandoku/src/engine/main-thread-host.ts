@@ -23,7 +23,7 @@ export class MainThreadHost implements WorkerLike {
   constructor() {
     this.host = createHost((m) => {
       queueMicrotask(() => this.host && this.events.dispatchEvent(new MessageEvent('message', { data: m })));
-    }, document.baseURI);
+    }, document.baseURI, { warmUp: true });
   }
 
   postMessage(msg: ToWorker): void {

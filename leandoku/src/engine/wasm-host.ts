@@ -94,14 +94,96 @@ export interface Host {
   crash(error: unknown): void;
 }
 
-export function createHost(post: Post, baseHref: string): Host {
+export interface HostOptions {
+  /**
+   * Run a few small proofs before reporting ready. Safari compiles wasm
+   * first with a baseline compiler whose call frames are several times
+   * larger than its optimizing compiler's; deep elaboration on a cold
+   * runtime can overflow a tight stack (the page's main thread on iPhone)
+   * that a warmed-up one fits in comfortably.
+   */
+  warmUp?: boolean;
+}
+
+/** Proofs that touch the common tactics without nesting deeply. */
+const WARM_UP = `theorem warm_and (P Q : Prop) (h : P ∧ Q) : Q ∧ P := by
+  cases h with
+  | intro hp hq =>
+    constructor
+    · assumption
+    · exact hp
+theorem warm_imp (P Q R : Prop) (f : P → Q) (g : Q → R) : P → R := by
+  intro hp
+  apply g
+  apply f
+  assumption
+theorem warm_eq (a b c : Nat) (h : a = b) (h' : b = c) : a = c := by
+  rw [h, h']
+theorem warm_ind (n : Nat) : 0 + n = n := by
+  induction n with
+  | zero => rfl
+  | succ k ih => rw [Nat.add_succ, ih]`;
+const WARM_UP_ROUNDS = 4;
+
+const STACK_OVERFLOW = /call stack|stack size|too much recursion/i;
+/** Fresh instances a check may get after overflowing the stack. */
+const OVERFLOW_RETRIES = 3;
+
+interface Runtime {
+  factory: (opts: object) => Promise<BridgeModule>;
+  module: WebAssembly.Module;
+  files: { path: string; data: Uint8Array }[];
+}
+
+export function createHost(post: Post, baseHref: string, options: HostOptions = {}): Host {
+  let runtime: Runtime | null = null;
   let mod: BridgeModule | null = null;
   let crashed = false;
+  // Checks run one at a time, after startup, in the order they arrive.
+  let queue: Promise<unknown> = Promise.resolve();
 
   function crash(error: unknown): void {
     if (crashed) return;
     crashed = true;
     post({ type: 'crashed', error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) });
+  }
+
+  /**
+   * A fresh Lean heap from the already-compiled module. Reusing the module
+   * keeps the engine's optimized code, so a new instance starts warm.
+   */
+  async function boot(rt: Runtime): Promise<BridgeModule> {
+    const m = await rt.factory({
+      instantiateWasm: (imports: WebAssembly.Imports, done: (i: WebAssembly.Instance, m: WebAssembly.Module) => void) => {
+        WebAssembly.instantiate(rt.module, imports).then((inst) => done(inst, rt.module), crash);
+        return {};
+      },
+      print: () => undefined,
+      printErr: (s: string) => console.warn('[lean]', s),
+      onAbort: (what: unknown) => crash(`Lean aborted: ${String(what)}`),
+    });
+    for (const f of rt.files) {
+      const path = `${SYSROOT}/lib/lean/${f.path}`;
+      m.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
+      m.FS.writeFile(path, f.data);
+    }
+    const started = JSON.parse(callString(m, 'ld_start', SYSROOT)) as { ok?: boolean; error?: string };
+    if (!started.ok) throw new Error(`Lean failed to start: ${started.error ?? 'unknown error'}`);
+    return m;
+  }
+
+  /** Run `f` against a live heap, replacing the heap after a stack overflow. */
+  async function withRetry<T>(f: (m: BridgeModule) => T): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return f(mod!);
+      } catch (err) {
+        if (attempt >= OVERFLOW_RETRIES || !STACK_OVERFLOW.test(String(err))) throw err;
+        mod = null;
+        await new Promise((r) => setTimeout(r, 0)); // let the old heap go
+        mod = await boot(runtime!);
+      }
+    }
   }
 
   async function start(runtimeUrl: string, libraryUrl: string): Promise<void> {
@@ -121,23 +203,19 @@ export function createHost(post: Post, baseHref: string): Host {
     const packed = await cachedFetch(post, libraryUrl, 'download-library');
 
     post({ type: 'progress', stage: 'load-library' });
-    const m = await factory({
-      wasmBinary,
-      print: () => undefined,
-      printErr: (s: string) => console.warn('[lean]', s),
-      onAbort: (what: unknown) => crash(`Lean aborted: ${String(what)}`),
-    });
-    const files = await unpackLibrary(packed);
-    for (const f of files) {
-      const path = `${SYSROOT}/lib/lean/${f.path}`;
-      m.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
-      m.FS.writeFile(path, f.data);
-    }
+    const [module, files] = await Promise.all([WebAssembly.compile(wasmBinary), unpackLibrary(packed)]);
+    runtime = { factory, module, files };
 
     post({ type: 'progress', stage: 'start-lean' });
-    const started = JSON.parse(callString(m, 'ld_start', SYSROOT)) as { ok?: boolean; error?: string };
-    if (!started.ok) throw new Error(`Lean failed to start: ${started.error ?? 'unknown error'}`);
-    mod = m;
+    mod = await boot(runtime);
+    if (options.warmUp) {
+      post({ type: 'progress', stage: 'warm-up' });
+      const request = JSON.stringify({ version: 1, requestId: 'warm-up', source: WARM_UP, theoremName: 'warm_ind' });
+      for (let i = 0; i < WARM_UP_ROUNDS; i++) {
+        await withRetry((m) => callString(m, 'ld_check', request));
+        await new Promise((r) => setTimeout(r, 0)); // keep the page responsive
+      }
+    }
     post({ type: 'ready', identity: `wasm:${runtimeUrl}` });
   }
 
@@ -145,15 +223,17 @@ export function createHost(post: Post, baseHref: string): Host {
     crash,
     handle(msg) {
       if (crashed) return;
-      try {
-        if (msg.type === 'start') {
-          start(msg.runtimeUrl, msg.libraryUrl).catch(crash);
-        } else if (msg.type === 'check') {
-          if (!mod) throw new Error('check before Lean started');
-          post({ type: 'result', id: msg.id, response: callString(mod, 'ld_check', msg.request) });
-        }
-      } catch (err) {
-        crash(err);
+      if (msg.type === 'start') {
+        queue = start(msg.runtimeUrl, msg.libraryUrl);
+        queue.catch(crash);
+      } else if (msg.type === 'check') {
+        queue = queue
+          .then(async () => {
+            if (crashed) return;
+            if (!mod) throw new Error('check before Lean started');
+            post({ type: 'result', id: msg.id, response: await withRetry((m) => callString(m, 'ld_check', msg.request)) });
+          })
+          .catch(crash);
       }
     },
   };
