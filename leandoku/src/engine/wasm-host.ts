@@ -94,36 +94,28 @@ export interface Host {
   crash(error: unknown): void;
 }
 
-export interface HostOptions {
-  /**
-   * Run a few small proofs before reporting ready. Safari compiles wasm
-   * first with a baseline compiler whose call frames are several times
-   * larger than its optimizing compiler's; deep elaboration on a cold
-   * runtime can overflow a tight stack (the page's main thread on iPhone)
-   * that a warmed-up one fits in comfortably.
-   */
-  warmUp?: boolean;
+/** A proof to check, and discard, while warming up. */
+export interface WarmUpCheck {
+  source: string;
+  theoremName: string;
 }
 
-/** Proofs that touch the common tactics without nesting deeply. */
-const WARM_UP = `theorem warm_and (P Q : Prop) (h : P ∧ Q) : Q ∧ P := by
-  cases h with
-  | intro hp hq =>
-    constructor
-    · assumption
-    · exact hp
-theorem warm_imp (P Q R : Prop) (f : P → Q) (g : Q → R) : P → R := by
-  intro hp
-  apply g
-  apply f
-  assumption
-theorem warm_eq (a b c : Nat) (h : a = b) (h' : b = c) : a = c := by
-  rw [h, h']
-theorem warm_ind (n : Nat) : 0 + n = n := by
-  induction n with
-  | zero => rfl
-  | succ k ih => rw [Nat.add_succ, ih]`;
-const WARM_UP_ROUNDS = 4;
+export interface HostOptions {
+  /**
+   * Shallow proofs to check a few times before reporting ready. Safari
+   * compiles wasm first with a baseline compiler whose call frames are
+   * several times larger than its optimizing compiler's, so deep
+   * elaboration on a cold runtime overflows a tight stack (the page's main
+   * thread on iPhone) that a warmed-up one fits in comfortably. The proofs
+   * should use the course's own definitions: warming up on unrelated Lean
+   * leaves the paths the levels take cold.
+   */
+  warmUp?: WarmUpCheck[];
+}
+
+const WARM_UP_ROUNDS = 3;
+/** Fresh instances the warm-up may use up before giving up on warming. */
+const WARM_UP_REBOOTS = 4;
 
 const STACK_OVERFLOW = /call stack|stack size|too much recursion/i;
 /** Fresh instances a check may get after overflowing the stack. */
@@ -208,12 +200,24 @@ export function createHost(post: Post, baseHref: string, options: HostOptions = 
 
     post({ type: 'progress', stage: 'start-lean' });
     mod = await boot(runtime);
-    if (options.warmUp) {
+    if (options.warmUp?.length) {
       post({ type: 'progress', stage: 'warm-up' });
-      const request = JSON.stringify({ version: 1, requestId: 'warm-up', source: WARM_UP, theoremName: 'warm_ind' });
-      for (let i = 0; i < WARM_UP_ROUNDS; i++) {
-        await withRetry((m) => callString(m, 'ld_check', request));
-        await new Promise((r) => setTimeout(r, 0)); // keep the page responsive
+      let reboots = 0;
+      warming: for (let i = 0; i < WARM_UP_ROUNDS; i++) {
+        for (const { source, theoremName } of options.warmUp) {
+          const request = JSON.stringify({ version: 1, requestId: 'warm-up', source, theoremName });
+          try {
+            callString(mod, 'ld_check', request);
+          } catch (err) {
+            // Overflowing here still warmed some code; carry on with a fresh heap.
+            if (!STACK_OVERFLOW.test(String(err))) throw err;
+            mod = null;
+            await new Promise((r) => setTimeout(r, 0));
+            mod = await boot(runtime);
+            if (++reboots >= WARM_UP_REBOOTS) break warming;
+          }
+          await new Promise((r) => setTimeout(r, 0)); // keep the page responsive
+        }
       }
     }
     post({ type: 'ready', identity: `wasm:${runtimeUrl}` });

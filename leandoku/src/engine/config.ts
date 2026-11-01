@@ -2,6 +2,7 @@ import type { Engine } from './engine';
 import { engineFingerprint, FallbackWorker, MainThreadHost, prefersMainThread } from './main-thread-host';
 import { NativeHttpEngine } from './native-client';
 import { WasmEngine, type StartupProgress, type WasmAssets } from './wasm-client';
+import type { WarmUpCheck } from './wasm-host';
 
 export type EngineChoice =
   | { kind: 'native'; endpoint: string }
@@ -37,7 +38,15 @@ export function chooseEngine(): EngineChoice {
   return { kind: 'none' };
 }
 
-export function createEngine(choice: EngineChoice, onProgress?: (p: StartupProgress | null) => void): Engine {
+/**
+ * `warmUp` is only used when Lean ends up on the page's main thread (iPhone);
+ * see HostOptions.warmUp.
+ */
+export function createEngine(
+  choice: EngineChoice,
+  onProgress?: (p: StartupProgress | null) => void,
+  warmUp: () => WarmUpCheck[] = () => [],
+): Engine {
   switch (choice.kind) {
     case 'native':
       return new NativeHttpEngine(`${choice.endpoint}/check`);
@@ -49,10 +58,10 @@ export function createEngine(choice: EngineChoice, onProgress?: (p: StartupProgr
         assets: choice.assets,
         createWorker: () =>
           prefersMainThread(fingerprint)
-            ? new MainThreadHost()
+            ? new MainThreadHost(warmUp())
             : new FallbackWorker(
                 new Worker(new URL('./wasm-worker.ts', import.meta.url), { type: 'module' }),
-                () => new MainThreadHost(),
+                () => new MainThreadHost(warmUp()),
                 fingerprint,
               ),
         onProgress,
