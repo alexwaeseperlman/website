@@ -1,4 +1,5 @@
 import type { Engine } from './engine';
+import { FallbackWorker, MainThreadHost, prefersMainThread } from './main-thread-host';
 import { NativeHttpEngine } from './native-client';
 import { WasmEngine, type StartupProgress, type WasmAssets } from './wasm-client';
 
@@ -43,7 +44,13 @@ export function createEngine(choice: EngineChoice, onProgress?: (p: StartupProgr
     case 'wasm':
       return new WasmEngine({
         assets: choice.assets,
-        createWorker: () => new Worker(new URL('./wasm-worker.ts', import.meta.url), { type: 'module' }),
+        createWorker: () =>
+          prefersMainThread()
+            ? new MainThreadHost()
+            : new FallbackWorker(
+                new Worker(new URL('./wasm-worker.ts', import.meta.url), { type: 'module' }),
+                () => new MainThreadHost(),
+              ),
         onProgress,
       });
     case 'none':

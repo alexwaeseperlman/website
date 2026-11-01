@@ -1,6 +1,7 @@
 import { EngineUnavailableError, type Engine } from './engine';
 import { parseCheckResponse, type CheckRequest, type CheckResponse } from './protocol';
 import type { FromWorker, StartupStage, ToWorker } from './wasm-protocol';
+import type { WorkerLike } from './main-thread-host';
 
 export interface WasmAssets {
   /** The emscripten ES module (`leandoku-bridge.js`); its `.wasm` sits beside it. */
@@ -19,7 +20,7 @@ export interface StartupProgress {
 
 export interface WasmEngineOptions {
   assets: WasmAssets;
-  createWorker: () => Worker;
+  createWorker: () => WorkerLike;
   onProgress?: (p: StartupProgress | null) => void;
   /** Download plus first import. Generous: phones on slow networks. */
   startupTimeoutMs?: number;
@@ -42,7 +43,7 @@ interface Pending {
  */
 export class WasmEngine implements Engine {
   readonly identity: string;
-  private worker: Worker | null;
+  private worker: WorkerLike | null;
   private ready: Promise<void>;
   private pending = new Map<number, Pending>();
   private nextId = 0;
@@ -79,7 +80,7 @@ export class WasmEngine implements Engine {
             break;
         }
       });
-      worker.addEventListener('error', (e) => {
+      worker.addEventListener('error', (e: ErrorEvent) => {
         clearTimeout(timer);
         this.fail(new EngineUnavailableError(`Lean worker failed: ${e.message || 'could not load'}`));
       });
