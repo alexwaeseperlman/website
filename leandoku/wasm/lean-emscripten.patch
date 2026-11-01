@@ -18,3 +18,19 @@ index 167a28c..2b19b7c 100644
      string(APPEND LEAN_EXTRA_CXX_FLAGS " -D LEAN_EMSCRIPTEN ${EMSCRIPTEN_SETTINGS}")
      string(APPEND LEAN_EXTRA_LINKER_FLAGS " ${EMSCRIPTEN_SETTINGS}")
  endif()
+diff --git a/src/runtime/thread.h b/src/runtime/thread.h
+index ce72161..3e886df 100644
+--- a/src/runtime/thread.h
++++ b/src/runtime/thread.h
+@@ -181,9 +181,11 @@ public:
+ template<typename T> class unique_lock {
+ public:
+     unique_lock(T const &) {}
++    template<typename Tag> unique_lock(T const &, Tag) {}
+     ~unique_lock() {}
+     void lock() {}
+     void unlock() {}
++    T * release() { return nullptr; }
+ };
+ inline unsigned hardware_concurrency() { return 1; }
+ }

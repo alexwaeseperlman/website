@@ -1,0 +1,75 @@
+name: Leandoku runtime
+
+# Builds Lean and the Leandoku bridge to WebAssembly and publishes them as the
+# release `leandoku-runtime-<version>`, where <version> hashes every input
+# (see leandoku/wasm/runtime-key.sh). A version is built once; later runs
+# find the release and stop. The deploy workflow calls this first and copies
+# the release into the site, so the page and its runtime always match.
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: Runtime version the page should use
+        value: ${{ jobs.runtime.outputs.version }}
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.key.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime version
+        id: key
+        working-directory: leandoku
+        run: |
+          v=$(./wasm/runtime-key.sh)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "leandoku-runtime-$v" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install build tools
+        if: steps.key.outputs.exists != 'true'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang cmake ccache gcc-multilib g++-multilib libuv1-dev:i386 pkgconf:i386
+          git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 3.1.44
+          "$HOME/emsdk/emsdk" activate 3.1.44
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.exists != 'true'
+        with:
+          node-version: 22
+      - name: Restore compiler cache
+        if: steps.key.outputs.exists != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: leandoku-ccache-${{ hashFiles('leandoku/lean/lean-toolchain', 'leandoku/wasm/lean-emscripten.patch') }}-${{ github.run_id }}
+          restore-keys: leandoku-ccache-${{ hashFiles('leandoku/lean/lean-toolchain', 'leandoku/wasm/lean-emscripten.patch') }}-
+      - name: Build
+        if: steps.key.outputs.exists != 'true'
+        working-directory: leandoku
+        run: |
+          export CCACHE_DIR="$HOME/.cache/ccache" CCACHE_MAXSIZE=5G
+          source "$HOME/emsdk/emsdk_env.sh"
+          ./wasm/build-runtime.sh "$RUNNER_TEMP/lean-wasm" "$RUNNER_TEMP/runtime"
+          node --experimental-strip-types wasm/smoke-test.ts "$RUNNER_TEMP/runtime"
+      - name: Publish
+        if: steps.key.outputs.exists != 'true'
+        run: |
+          v=${{ steps.key.outputs.version }}
+          gh release create "leandoku-runtime-$v" --target "$GITHUB_SHA" \
+            --title "Leandoku runtime $v" \
+            --notes "Lean compiled to WebAssembly with the Leandoku bridge. Built by the Leandoku runtime workflow." \
+            "$RUNNER_TEMP"/runtime/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge.wasm "$RUNNER_TEMP"/runtime/library.ldpk

@@ -46,7 +46,9 @@ if [ ! -f "$build/CMakeCache.txt" ]; then
     -DSTAGE0_CMAKE_AR=/usr/bin/ar -DSTAGE0_CMAKE_RANLIB=/usr/bin/ranlib \
     -DSTAGE0_CMAKE_LIBRARY_PATH=/usr/lib/i386-linux-gnu/ \
     -DSTAGE0_PKG_CONFIG_EXECUTABLE=/usr/bin/i386-linux-gnu-pkg-config \
-    "-DSTAGE0_LEAN_EXTRA_CXX_FLAGS=-m32" "-DSTAGE0_LEANC_OPTS=-m32")
+    "-DSTAGE0_LEAN_EXTRA_CXX_FLAGS=-m32" "-DSTAGE0_LEANC_OPTS=-m32" \
+    -DUSE_MIMALLOC=ON -DSTAGE1_USE_MIMALLOC=OFF \
+    "-DSTAGE1_CMAKE_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake")
 fi
 make -C "$build" -j"$jobs" stage1
 
