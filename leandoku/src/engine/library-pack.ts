@@ -18,7 +18,7 @@ interface HeaderEntry {
   sha256: string;
 }
 
-async function gunzip(data: Uint8Array): Promise<Uint8Array> {
+export async function gunzip(data: Uint8Array): Promise<Uint8Array> {
   const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
@@ -28,8 +28,9 @@ async function sha256(data: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function unpackLibrary(gzipped: Uint8Array): Promise<PackedFile[]> {
-  const raw = await gunzip(gzipped);
+export async function unpackLibrary(packed: Uint8Array): Promise<PackedFile[]> {
+  // Usually gzipped; a server may already have decoded it in transit.
+  const raw = packed[0] === 0x1f && packed[1] === 0x8b ? await gunzip(packed) : packed;
   const magic = new TextDecoder().decode(raw.subarray(0, MAGIC.length));
   if (magic !== MAGIC) throw new Error('library pack: bad magic');
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);

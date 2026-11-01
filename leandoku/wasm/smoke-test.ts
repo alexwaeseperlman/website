@@ -5,13 +5,14 @@
  *   node --experimental-strip-types wasm/smoke-test.ts <runtime dir>
  */
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { unpackLibrary } from '../src/engine/library-pack.ts';
 
 const dir = path.resolve(process.argv[2] ?? 'dist-runtime');
 const { default: factory } = await import(pathToFileURL(path.join(dir, 'leandoku-bridge.js')).href);
-const m = await factory({ wasmBinary: readFileSync(path.join(dir, 'leandoku-bridge.wasm')) });
+const m = await factory({ wasmBinary: gunzipSync(readFileSync(path.join(dir, 'leandoku-bridge.wasm.gz'))) });
 
 const call = (name: string, arg: string): string => {
   const ptr = m.ccall(name, 'number', ['string'], [arg]);

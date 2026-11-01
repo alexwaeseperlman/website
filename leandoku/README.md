@@ -54,11 +54,30 @@ loopback only and refuses requests from any non-local origin.
 
 The site's deploy workflow runs `npm run build` with
 `LEANDOKU_OUT_DIR=../public/leandoku`, so the game is served at
-`/leandoku/`. Until Lean runs in the browser, the published page lets you
-build proofs and says plainly that they are not checked.
+`/leandoku/`.
+
+## Lean in the browser
+
+The published page runs the bridge as WebAssembly in a Web Worker
+(`src/engine/wasm-client.ts`, `src/engine/wasm-worker.ts`). It is
+single-threaded, so the page needs no cross-origin isolation.
+
+- `wasm/build-runtime.sh <work> <out>` builds it: Lean v4.24.0 from source
+  with `wasm/lean-emscripten.patch` (a native 32-bit stage0, then Lean's
+  libraries through emscripten), the bridge's C, and a symbol table that
+  replaces `dlsym` (`wasm/gen-symbols.py`). Output: `leandoku-bridge.js`,
+  `leandoku-bridge.wasm.gz` (21 MB) and `library.ldpk` (Init's `.olean` and
+  `.ir` files, 25 MB). It takes one to two hours from scratch.
+- `wasm/runtime-key.sh` hashes every input. The *Leandoku runtime* workflow
+  publishes each version once as the release `leandoku-runtime-<key>`;
+  deploy downloads it into `public/runtime/<key>/` and pins the page to it
+  with `VITE_LEANDOKU_RUNTIME`.
+- `LEANDOKU_WASM_RUNTIME=<out> npm run test:lean` runs the Lean tests against
+  the browser runtime, and `wasm/smoke-test.ts <out>` is a quick check.
+- Locally: copy a runtime into `public/runtime/local/` and run
+  `VITE_LEANDOKU_RUNTIME=local npm run dev`, then open `/?engine=wasm`.
 
 ## Status
 
-Done: core, native bridge, and the mobile UI (map, code pane, proof state,
-tactic composer). Next: Lean compiled to WebAssembly so the published page
-checks proofs, then parameter probes for `apply`/`exact`.
+Done: core, native bridge, mobile UI, and Lean in the browser. Next:
+parameter probes for `apply`/`exact`.

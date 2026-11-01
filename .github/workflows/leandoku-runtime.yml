@@ -61,7 +61,8 @@ jobs:
         if: steps.key.outputs.exists != 'true'
         working-directory: leandoku
         run: |
-          export CCACHE_DIR="$HOME/.cache/ccache" CCACHE_MAXSIZE=5G
+          # 16 GB runner: cap each compile so parallel jobs cannot exhaust memory.
+          export CCACHE_DIR="$HOME/.cache/ccache" CCACHE_MAXSIZE=5G LEANDOKU_CC_MEM_KB=3500000
           source "$HOME/emsdk/emsdk_env.sh"
           ./wasm/build-runtime.sh "$RUNNER_TEMP/lean-wasm" "$RUNNER_TEMP/runtime"
           node --experimental-strip-types wasm/smoke-test.ts "$RUNNER_TEMP/runtime"
@@ -72,4 +73,4 @@ jobs:
           gh release create "leandoku-runtime-$v" --target "$GITHUB_SHA" \
             --title "Leandoku runtime $v" \
             --notes "Lean compiled to WebAssembly with the Leandoku bridge. Built by the Leandoku runtime workflow." \
-            "$RUNNER_TEMP"/runtime/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge.wasm "$RUNNER_TEMP"/runtime/library.ldpk
+            "$RUNNER_TEMP"/runtime/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge.wasm.gz "$RUNNER_TEMP"/runtime/library.ldpk

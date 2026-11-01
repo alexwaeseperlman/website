@@ -4,7 +4,7 @@
  * heap; after any trap the page discards the worker and starts a new one,
  * so a damaged runtime never answers another request.
  */
-import { unpackLibrary } from './library-pack';
+import { gunzip, unpackLibrary } from './library-pack';
 import type { FromWorker, ToWorker } from './wasm-protocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -34,6 +34,8 @@ self.addEventListener('error', (e) => crash(e.error ?? e.message));
 self.addEventListener('unhandledrejection', (e) => crash(e.reason));
 
 const CACHE = 'leandoku-runtime';
+
+const isGzip = (b: Uint8Array) => b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
 
 /**
  * Asset URLs carry the runtime version, so a cached copy is never stale.
@@ -79,7 +81,7 @@ async function fetchWithProgress(url: string, stage: 'download-runtime' | 'downl
     loaded += value.length;
     if (loaded - lastReport > 512 * 1024) {
       lastReport = loaded;
-      post({ type: 'progress', stage, loaded, total });
+      post({ type: 'progress', stage, loaded, total: total && loaded <= total ? total : undefined });
     }
   }
   const out = new Uint8Array(loaded);
@@ -101,13 +103,17 @@ function callString(m: BridgeModule, name: string, arg: string): string {
 
 async function start(runtimeUrl: string, libraryUrl: string): Promise<void> {
   post({ type: 'progress', stage: 'download-runtime' });
-  const wasmUrl = new URL(runtimeUrl.replace(/\.js$/, '.wasm'), self.location.href).href;
-  const [{ default: factory }, wasmBinary] = await Promise.all([
+  // Shipped gzipped: smaller, and under GitHub Pages' per-file size limit.
+  const wasmUrl = new URL(runtimeUrl.replace(/\.js$/, '.wasm.gz'), self.location.href).href;
+  const [{ default: factory }, wasmGz] = await Promise.all([
     import(/* @vite-ignore */ new URL(runtimeUrl, self.location.href).href) as Promise<{
       default: (opts: object) => Promise<BridgeModule>;
     }>,
     cachedFetch(wasmUrl, 'download-runtime'),
   ]);
+  // Some servers mark .gz files as gzip-encoded, and then fetch has already
+  // decompressed them; only gunzip what is still gzip.
+  const wasmBinary = isGzip(wasmGz) ? await gunzip(wasmGz) : wasmGz;
   post({ type: 'progress', stage: 'download-library' });
   const packed = await cachedFetch(libraryUrl, 'download-library');
 

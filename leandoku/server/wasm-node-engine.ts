@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { EngineUnavailableError, type Engine } from '../src/engine/engine';
@@ -30,7 +31,7 @@ export class WasmNodeEngine implements Engine {
     const { default: factory } = (await import(pathToFileURL(path.join(this.dir, 'leandoku-bridge.js')).href)) as {
       default: (o: object) => Promise<BridgeModule>;
     };
-    const m = await factory({ wasmBinary: readFileSync(path.join(this.dir, 'leandoku-bridge.wasm')), print: () => {} });
+    const m = await factory({ wasmBinary: gunzipSync(readFileSync(path.join(this.dir, 'leandoku-bridge.wasm.gz'))), print: () => {} });
     for (const f of await unpackLibrary(new Uint8Array(readFileSync(path.join(this.dir, 'library.ldpk'))))) {
       const p = `/lean/lib/lean/${f.path}`;
       m.FS.mkdirTree(p.slice(0, p.lastIndexOf('/')));

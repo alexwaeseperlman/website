@@ -85,5 +85,6 @@ emcc -O2 -fwasm-exceptions -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=256MB \
   "$stage1/libuv/src/libuv/libuv.a" -lm \
   -o "$out/leandoku-bridge.js"
 
+gzip -9 -f "$out/leandoku-bridge.wasm"
 node --experimental-strip-types "$root/wasm/pack-library.ts" "$stage1/lib/lean" "$out/library.ldpk" Init
 ls -la "$out"
