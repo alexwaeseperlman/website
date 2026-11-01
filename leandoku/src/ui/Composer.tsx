@@ -5,6 +5,7 @@ import type { SlotSpec, SlotValue, TacticCategory } from '../core/catalog/types'
 import type { Fact } from '../core/course/facts';
 import type { Definition } from '../core/course/types';
 import { paletteFor, type LevelPolicy } from '../core/policy/policy';
+import { Lean } from './Lean';
 import type { Goal } from '../engine/protocol';
 
 interface Props {
@@ -38,6 +39,7 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
   const [tactic, setTacticState] = useState<string | null>(null);
   const [args, setArgs] = useState<Record<string, SlotValue>>({});
   const [hint, setHint] = useState<string | null>(null);
+  const [showLocked, setShowLocked] = useState(false);
   const setTactic = (id: string | null, initial: Record<string, SlotValue> = {}) => {
     setTacticState(id);
     setArgs(initial);
@@ -70,6 +72,14 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
     else setHint(`Pick a tactic first, then tap ${pick.name} to use it there.`);
   }, [pick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // On a phone the tray covers the bottom of the page; keep the proof state
+  // (the last thing above the tray) in view while a tactic is being built.
+  useEffect(() => {
+    if (tactic && !matchMedia('(min-width: 1000px)').matches) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    }
+  }, [tactic]);
+
   const locals = goal?.hyps.filter((h) => !h.inaccessible) ?? [];
   const groups = CATEGORY_ORDER.map((c) => ({
     category: c,
@@ -77,12 +87,12 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
   })).filter((g) => g.items.length > 0);
   const locked = palette.filter((p) => p.availability.state === 'locked');
 
-  const chip = (id: string, label: string, help: string) => (
+  const chip = (id: string, label: string, help: string, group: string) => (
     <button
       key={id}
       type="button"
       className={`chip tactic-chip ${tactic === id ? 'is-on' : ''} ${suggested.includes(id) ? 'is-suggested' : ''}`}
-      title={suggested.includes(id) ? `${help} Fits this goal.` : help}
+      title={`${group}: ${help}${suggested.includes(id) ? ' Fits this goal.' : ''}`}
       onClick={() => setTactic(tactic === id ? null : id)}
     >
       {label}
@@ -91,35 +101,52 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
 
   return (
     <section className="composer" aria-label="Add a tactic">
-      {groups.map((g) => (
-        <div key={g.category} className="palette-group">
-          <span className="palette-label">{CATEGORY_LABEL[g.category]}</span>
-          <div className="palette" role="toolbar">
-            {g.items.map(({ spec: s }) => chip(s.id, s.label, s.help))}
-          </div>
-        </div>
-      ))}
-      {suggested.length > 0 && !tactic && (
-        <p className="palette-key">
-          <span className="chip-dot" aria-hidden="true" /> fits the current goal
-        </p>
-      )}
-      {locked.length > 0 && (
-        <details className="palette-locked">
-          <summary>Not in this level ({locked.length})</summary>
-          <div className="palette">
-            {locked.map(({ spec: s }) => (
-              <span key={s.id} className="chip tactic-chip is-locked">
-                {s.label}
-              </span>
-            ))}
-          </div>
-        </details>
-      )}
+      <div className="palette" role="toolbar">
+        {groups.map((g, i) => [
+          i > 0 && <span key={`sep-${g.category}`} className="palette-sep" aria-hidden="true" />,
+          ...g.items.map(({ spec: s }) => chip(s.id, s.label, s.help, CATEGORY_LABEL[g.category])),
+        ])}
+        {locked.length > 0 && (
+          <button
+            type="button"
+            className="chip palette-more"
+            aria-expanded={showLocked}
+            onClick={() => setShowLocked((v) => !v)}
+          >
+            {showLocked ? 'Hide locked' : `${locked.length} locked`}
+          </button>
+        )}
+        {showLocked &&
+          locked.map(({ spec: s }) => (
+            <span key={s.id} className="chip tactic-chip is-locked" title="Not available in this level">
+              {s.label}
+            </span>
+          ))}
+      </div>
       {hint && <p className="builder-note">{hint}</p>}
 
       {spec && (
         <div className="builder">
+          <div className="builder-actions">
+            <code className="builder-preview" aria-label="Lean">
+              <Lean text={preview ?? `${spec.label} …`} />
+            </code>
+            <button
+              type="button"
+              className="primary"
+              disabled={preview === null || disabled !== null}
+              title={disabled ?? undefined}
+              onClick={() => {
+                onAdd(spec.id, args);
+                setTactic(null);
+              }}
+            >
+              Add
+            </button>
+            <button type="button" className="icon-button" aria-label="Cancel" onClick={() => setTactic(null)}>
+              ✕
+            </button>
+          </div>
           <p className="builder-help">{spec.help}</p>
           {spec.slots.map((slot) => (
             <SlotEditor
@@ -139,27 +166,6 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
               }
             />
           ))}
-          <div className="builder-actions">
-            <div className="builder-preview">
-              <span className="builder-preview-label">Lean</span>
-              <code>{preview ?? `${spec.label} …`}</code>
-            </div>
-            <button
-              type="button"
-              className="primary"
-              disabled={preview === null || disabled !== null}
-              title={disabled ?? undefined}
-              onClick={() => {
-                onAdd(spec.id, args);
-                setTactic(null);
-              }}
-            >
-              Add
-            </button>
-            <button type="button" className="link" onClick={() => setTactic(null)}>
-              Cancel
-            </button>
-          </div>
           {disabled && <p className="builder-note">{disabled}</p>}
         </div>
       )}
@@ -355,7 +361,7 @@ function Options(props: {
           onClick={() => props.onPick(o.name)}
         >
           <span className="option-name">{o.name}</span>
-          <span className="option-type">{o.type}</span>
+          <span className="option-type"><Lean text={o.type} /></span>
         </button>
       ))}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { CourseNode } from '../core/course/nodes';
 import type { Chapter, Definition, Tutorial } from '../core/course/types';
+import { Lean } from './Lean';
 import { markTutorialRead } from '../storage/storage';
 
 interface Props {
@@ -45,7 +46,7 @@ export function TutorialScreen({ tutorial, chapter, definitions, next, onBack, o
         {tutorial.blocks.map((b, i) =>
           'code' in b ? (
             <pre key={i} className="tutorial-code">
-              {b.code}
+              <Lean text={b.code} />
             </pre>
           ) : 'aside' in b ? (
             <p key={i} className="tutorial-aside">

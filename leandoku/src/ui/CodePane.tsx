@@ -1,6 +1,7 @@
 import { walk } from '../core/document/edit';
 import type { BranchId, InsertPoint, ProofDocument, StepId } from '../core/document/types';
 import type { Evaluation, StepStatus } from '../core/evaluate/evaluate';
+import { Lean } from './Lean';
 import type { Serialized } from '../core/serializer/serialize';
 
 interface LineInfo {
@@ -76,7 +77,7 @@ export function CodePane({ doc, ser, ev, stale, selection, onSelect }: Props) {
               <span className="code-num" aria-hidden="true">
                 {i + 1}
               </span>
-              <code>{line.text || ' '}</code>
+              <code>{line.text ? <Lean text={line.text} /> : ' '}</code>
             </div>
             {end && (
               <button

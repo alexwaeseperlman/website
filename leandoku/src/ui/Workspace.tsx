@@ -4,7 +4,7 @@ import type { Course, Level } from '../core/course/types';
 import { tutorialsBefore, type CourseNode } from '../core/course/nodes';
 import { findBranch, walk } from '../core/document/edit';
 import type { InsertPoint } from '../core/document/types';
-import { checkpointAt } from '../core/play/play';
+import { checkpointAt, openGoals } from '../core/play/play';
 import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
 import { CodePane } from './CodePane';
@@ -36,12 +36,16 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
   const [pick, setPick] = useState<{ name: string; n: number } | null>(null);
   const offer = (name: string) => setPick((p) => ({ name, n: (p?.n ?? 0) + 1 }));
   const chapter = course.chapters.find((c) => c.id === level.chapter);
-  const [showIntro, setShowIntro] = useState(true);
+  // The intro matters when starting out; on a proof in progress it is just in the way.
+  const [showIntro, setShowIntro] = useState(() => game.doc.root.steps.length === 0);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
 
   const ev = game.checked?.ev ?? null;
   const stale = !game.upToDate;
   const checkpoint = checkpointAt(game.doc, ev, game.selection);
+  const others = openGoals(game.doc, ev).filter(
+    (o) => o.at.branch !== game.selection.branch || o.at.index !== game.selection.index,
+  );
   const branch = findBranch(game.doc, game.selection.branch);
   const selectedStep = checkpoint.next;
   const stepResult = selectedStep ? ev?.steps.get(selectedStep.id) : undefined;
@@ -137,7 +141,9 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
           checkpoint={checkpoint}
           stale={stale && game.engine.kind === 'checking'}
           offline={offline}
+          others={others}
           onPick={offer}
+          onJump={game.setSelection}
         />
         {checkpoint.goals === null && !stepResult?.errors.length && ev && (
           <FirstError ev={ev} doc={game.doc} onSelect={game.setSelection} />
