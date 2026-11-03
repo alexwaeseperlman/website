@@ -44,14 +44,13 @@ const euclidCorrect = `structure EuclidCorrect (E : EuclideanSystem) : Prop wher
 
 const terminates = `/-- Given: every run stops. Each remainder is smaller than the last, and
 \`smaller\` has no infinite descending chains. -/
-theorem euclid_terminates (E : EuclideanSystem) (a b : E.Carrier) : ∃ g, EuclidRun E a b g := by
-  induction a using E.wellFounded.induction generalizing b with
-  | h a ih =>
-    by_cases ha : a = E.zero
-    · rw [ha]
-      exact ⟨b, EuclidRun.done b⟩
-    · cases ih (E.rem b a) (E.remainder_smaller ha) a with
-      | intro g run => exact ⟨g, EuclidRun.step a b g ha run⟩`;
+theorem euclid_terminates (E : EuclideanSystem) (a b : E.Carrier) : ∃ g, EuclidRun E a b g :=
+  E.wellFounded.induction (C := fun a => ∀ b, ∃ g, EuclidRun E a b g) a
+    (fun a ih b => (Classical.em (a = E.zero)).elim
+      (fun ha => ha ▸ ⟨b, EuclidRun.done b⟩)
+      (fun ha => (ih (E.rem b a) (E.remainder_smaller ha) a).elim
+        fun g run => ⟨g, EuclidRun.step a b g ha run⟩))
+    b`;
 
 export const prelude = [system, commonDivisor, mutuallyDivides, isGCD, euclidRun, euclidCorrect, terminates].join('\n\n');
 
