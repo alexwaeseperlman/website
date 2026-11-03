@@ -70,7 +70,11 @@ jobs:
         if: steps.key.outputs.exists != 'true'
         run: |
           v=${{ steps.key.outputs.version }}
+          # A copy with function names, for reading stack traces; the deploy skips it.
+          cp "$RUNNER_TEMP"/runtime/names/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge-names.js
+          cp "$RUNNER_TEMP"/runtime/names/leandoku-bridge.wasm.gz "$RUNNER_TEMP"/runtime/leandoku-bridge-names.wasm.gz
           gh release create "leandoku-runtime-$v" --target "$GITHUB_SHA" \
             --title "Leandoku runtime $v" \
             --notes "Lean compiled to WebAssembly with the Leandoku bridge. Built by the Leandoku runtime workflow." \
-            "$RUNNER_TEMP"/runtime/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge.wasm.gz "$RUNNER_TEMP"/runtime/library.ldpk
+            "$RUNNER_TEMP"/runtime/leandoku-bridge.js "$RUNNER_TEMP"/runtime/leandoku-bridge.wasm.gz "$RUNNER_TEMP"/runtime/library.ldpk \
+            "$RUNNER_TEMP"/runtime/leandoku-bridge-names.js "$RUNNER_TEMP"/runtime/leandoku-bridge-names.wasm.gz

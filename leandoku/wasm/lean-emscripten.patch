@@ -41,6 +41,21 @@ index 4a0fd95..a2ac7c9 100644
      let tac := stx[0]
      /-
      Each `goEven` step creates three promises under incrementality and reuses their older versions
+diff --git a/src/Lean/Util/Profile.lean b/src/Lean/Util/Profile.lean
+index 9600b35..8e95c36 100644
+--- a/src/Lean/Util/Profile.lean
++++ b/src/Lean/Util/Profile.lean
+@@ -40,6 +40,10 @@ def profiler.threshold.getSecs (o : Options) : Float :=
+ def profileit {α : Type} (category : @& String) (opts : @& Options) (fn : Unit → α) (decl := Name.anonymous) : α := fn ()
+ 
+ unsafe def profileitIOUnsafe {ε α : Type} (category : String) (opts : Options) (act : EIO ε α) (decl := Name.anonymous) : EIO ε α :=
++  -- Leandoku: with the profiler off, run `act` directly. Going through
++  -- `profileit` costs several stack frames around every tactic and
++  -- elaborator, and Safari gives WebAssembly a small stack.
++  if !profiler.get opts then act else
+   match profileit (decl := decl) category opts fun _ => unsafeEIO act with
+   | Except.ok a    => pure a
+   | Except.error e => throw e
 diff --git a/src/library/ir_interpreter.cpp b/src/library/ir_interpreter.cpp
 index ee113ad..d0a8515 100644
 --- a/src/library/ir_interpreter.cpp

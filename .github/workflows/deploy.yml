@@ -40,7 +40,8 @@ jobs:
           VITE_LEANDOKU_RUNTIME: ${{ needs.leandoku-runtime.outputs.version }}
         run: |
           npm ci
-          gh release download "leandoku-runtime-$VITE_LEANDOKU_RUNTIME" --dir "public/runtime/$VITE_LEANDOKU_RUNTIME"
+          gh release download "leandoku-runtime-$VITE_LEANDOKU_RUNTIME" --dir "public/runtime/$VITE_LEANDOKU_RUNTIME" \
+            -p leandoku-bridge.js -p leandoku-bridge.wasm.gz -p library.ldpk
           LEANDOKU_OUT_DIR=../public/leandoku npm run build
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1

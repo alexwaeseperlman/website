@@ -84,15 +84,23 @@ LLVM_NM="$EMSDK/upstream/bin/llvm-nm" python3 "$here/gen-symbols.py" "$objs/symb
   --lib "$stage1/lib/lean/libInit.a" --lib "$stage1/lib/lean/libStd.a" --lib "$stage1/lib/lean/libLean.a" \
   $(for o in "$objs"/[A-Z]*.o; do echo --lib "$o"; done)
 
-emcc -O2 -fwasm-exceptions -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=256MB \
-  -s STACK_SIZE=8MB -s MODULARIZE=1 -s EXPORT_ES6=1 -s ENVIRONMENT=web,worker,node \
-  -s EXPORTED_FUNCTIONS=_malloc,_free \
-  -s EXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,FS \
-  -DLEAN_EMSCRIPTEN -I "$stage1/include" \
-  "$objs"/[A-Z]*.o "$objs/symbols.c" "$here/glue.c" "$here/stubs.c" \
-  -L "$stage1/lib/lean" -lLean -lStd -lInit -lleanrt -lleancpp \
-  "$stage1/libuv/src/libuv/libuv.a" -lm \
-  -o "$out/leandoku-bridge.js"
+link() {
+  emcc -O2 -fwasm-exceptions -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=256MB \
+    -s STACK_SIZE=8MB -s MODULARIZE=1 -s EXPORT_ES6=1 -s ENVIRONMENT=web,worker,node \
+    -s EXPORTED_FUNCTIONS=_malloc,_free \
+    -s EXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,FS \
+    -DLEAN_EMSCRIPTEN -I "$stage1/include" \
+    "$objs"/[A-Z]*.o "$objs/symbols.c" "$here/glue.c" "$here/stubs.c" \
+    -L "$stage1/lib/lean" -lLean -lStd -lInit -lleanrt -lleancpp \
+    "$stage1/libuv/src/libuv/libuv.a" -lm \
+    "$@"
+}
+link -o "$out/leandoku-bridge.js"
+# The same build with function names kept, for reading stack traces (for
+# example when measuring how deep a check goes). Not deployed.
+mkdir -p "$out/names"
+link --profiling-funcs -o "$out/names/leandoku-bridge.js"
+gzip -9 -f "$out/names/leandoku-bridge.wasm"
 
 gzip -9 -f "$out/leandoku-bridge.wasm"
 node --experimental-strip-types "$root/wasm/pack-library.ts" "$stage1/lib/lean" "$out/library.ldpk" Init
