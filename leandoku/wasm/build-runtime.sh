@@ -25,6 +25,14 @@ work="$(mkdir -p "$1" && cd "$1" && pwd)"
 out="$(mkdir -p "$2" && cd "$2" && pwd)"
 jobs="${JOBS:-$(nproc)}"
 
+# Every emscripten compile and link (the stage1 libraries, the bridge and the
+# final link) may use WebAssembly tail calls. Lean code is deeply recursive
+# and Safari gives WebAssembly a small stack; tail calls let a call in tail
+# position reuse its caller's frame. Safari 18.2, Chrome 112 and Firefox 121
+# support them. (ccache does not hash this variable; its cache key changes
+# with lean-emscripten.patch, which changed when this was added.)
+export EMCC_CFLAGS="-mtail-call${EMCC_CFLAGS:+ $EMCC_CFLAGS}"
+
 toolchain="$(cat "$root/lean/lean-toolchain")"   # leanprover/lean4:v4.24.0
 tag="${toolchain#*:}"
 
@@ -32,6 +40,7 @@ src="$work/lean4"
 if [ ! -d "$src" ]; then
   git clone -q --depth 1 --branch "$tag" https://github.com/leanprover/lean4 "$src"
   git -C "$src" apply "$here/lean-emscripten.patch"
+  python3 "$here/tail-apply.py" "$src"
 fi
 
 build="$work/build"
