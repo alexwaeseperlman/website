@@ -5,5 +5,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 git ls-files -- lean/lean-toolchain lean/lakefile.toml lean/lake-manifest.json 'lean/*.lean' 'lean/**/*.lean' \
-  wasm/lean-emscripten.patch wasm/build-runtime.sh wasm/glue.c wasm/stubs.c wasm/gen-symbols.py wasm/emcc-capped.sh wasm/tail-apply.py wasm/pack-library.ts src/engine/library-pack.ts \
+  wasm/lean-emscripten.patch wasm/build-runtime.sh wasm/glue.c wasm/stubs.c wasm/gen-symbols.py wasm/emcc-capped.sh wasm/tail-apply.py wasm/tail-calls.mjs wasm/pack-library.ts src/engine/library-pack.ts \
   | sort -u | xargs sha256sum | sha256sum | cut -c1-12

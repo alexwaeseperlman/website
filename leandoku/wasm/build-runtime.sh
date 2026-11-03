@@ -28,8 +28,9 @@ jobs="${JOBS:-$(nproc)}"
 # Every emscripten compile and link (the stage1 libraries, the bridge and the
 # final link) may use WebAssembly tail calls. Lean code is deeply recursive
 # and Safari gives WebAssembly a small stack; tail calls let a call in tail
-# position reuse its caller's frame. Safari 18.2, Chrome 112 and Firefox 121
-# support them. (ccache does not hash this variable; its cache key changes
+# position reuse its caller's frame. clang emits few of them on its own, so
+# tail-calls.mjs also rewrites "call, then return" after linking. Safari 18.2,
+# Chrome 112 and Firefox 121 support them. (ccache does not hash this variable; its cache key changes
 # with lean-emscripten.patch, which changed when this was added.)
 export EMCC_CFLAGS="-mtail-call${EMCC_CFLAGS:+ $EMCC_CFLAGS}"
 
@@ -96,10 +97,12 @@ link() {
     "$@"
 }
 link -o "$out/leandoku-bridge.js"
+node "$here/tail-calls.mjs" "$out/leandoku-bridge.wasm" "$out/leandoku-bridge.wasm"
 # The same build with function names kept, for reading stack traces (for
 # example when measuring how deep a check goes). Not deployed.
 mkdir -p "$out/names"
 link --profiling-funcs -o "$out/names/leandoku-bridge.js"
+node "$here/tail-calls.mjs" "$out/names/leandoku-bridge.wasm" "$out/names/leandoku-bridge.wasm"
 gzip -9 -f "$out/names/leandoku-bridge.wasm"
 
 gzip -9 -f "$out/leandoku-bridge.wasm"
