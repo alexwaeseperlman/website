@@ -9,25 +9,37 @@
     Image upload:
     <input type="file" id="file" />
     Nodes: <input type="number" id="nodes" value="1500" min="20" max="5000" style="width: 60px" />
-    <select id="kind"><option value="path">One line</option><option value="graph">Full graph</option></select>
+    <select id="kind"><option value="graphite">One line, pencil</option><option value="path">One line</option><option value="graph">Full graph</option></select>
+    <button id="gcode" disabled>Download G-code</button>
     <br />
     <canvas id="canvas"></canvas>
     <img id="line-art-image" style="display:none;" alt="" />
 </body>
 <script type="module">
     import { lineArt, graphView } from './line_art.js?v=20261025j';
+    import { faceGcode } from './gcode.js?v=20261026b';
     let worker = null;
     const fileInput = document.getElementById("file");
     const nodesInput = document.getElementById("nodes");
     const kindInput = document.getElementById("kind");
     const lineArtImage = document.getElementById("line-art-image");
     const canvas = document.getElementById("canvas");
+    const gcodeButton = document.getElementById("gcode");
+    // the finished path, for the G-code download (one-line faces only)
+    let finished = null;
+    gcodeButton.addEventListener("click", () => {
+        const { nodes, edges, width, height } = finished;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([faceGcode(nodes, edges, width, height)], { type: "text/plain" }));
+        link.download = "one-line-face.gcode";
+        link.click();
+    });
     fileInput.addEventListener("change", (e) => {
         lineArtImage.src = URL.createObjectURL(e.target.files[0]);
     });
     nodesInput.addEventListener("change", () => lineArtImage.src && lineArtImage.onload());
     kindInput.addEventListener("change", () => {
-        nodesInput.value = kindInput.value === "path" ? 1500 : 300;
+        nodesInput.value = kindInput.value === "graph" ? 300 : 1500;
         lineArtImage.src && lineArtImage.onload();
     });
 
@@ -35,7 +47,14 @@
         if (worker) worker.terminate();
         const width = lineArtImage.naturalWidth, height = lineArtImage.naturalHeight;
         const view = graphView(canvas, width, height);
-        [worker] = lineArt(lineArtImage, (nodes, edges, widths, done, iteration, dot) => view.update(nodes, edges, widths, dot), { nodes: +nodesInput.value, kind: kindInput.value });
+        gcodeButton.disabled = true;
+        [worker] = lineArt(lineArtImage, (nodes, edges, widths, done, iteration, dot, image, ridge, profile, scale) => {
+            view.update(nodes, edges, widths, dot, image, scale);
+            if (done && kindInput.value !== "graph") {
+                finished = { nodes, edges, width, height };
+                gcodeButton.disabled = false;
+            }
+        }, { nodes: +nodesInput.value, kind: kindInput.value });
     };
 </script>
 
