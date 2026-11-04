@@ -141,7 +141,13 @@ def check (req : CheckRequest) : IO CheckResponse := do
   -- declaration (asynchronous proof elaboration can leave theorems pending).
   let opts := Elab.async.set {} false
   let cmdState := { Command.mkState env messages opts with infoState.enabled := true }
-  let s ← IO.processCommands inputCtx parserState cmdState
+  -- The plain (non-incremental) frontend: there is nothing to reuse between
+  -- requests, and the incremental one runs every tactic inside snapshot and
+  -- promise bookkeeping that nests deeply enough to overflow Safari's small
+  -- WebAssembly stack. Without it, our patched Lean also runs tactic
+  -- sequences in a loop rather than by recursion (see lean-emscripten.patch).
+  let ((), s) ← (Frontend.processCommands.run { inputCtx }).run
+    { commandState := cmdState, parserState, cmdPos := parserState.pos }
   let cmd := s.commandState
   let map := inputCtx.fileMap
   let mut msgs := #[]

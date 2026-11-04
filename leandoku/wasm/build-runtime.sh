@@ -25,6 +25,15 @@ work="$(mkdir -p "$1" && cd "$1" && pwd)"
 out="$(mkdir -p "$2" && cd "$2" && pwd)"
 jobs="${JOBS:-$(nproc)}"
 
+# Every emscripten compile and link (the stage1 libraries, the bridge and the
+# final link) may use WebAssembly tail calls. Lean code is deeply recursive
+# and Safari gives WebAssembly a small stack; tail calls let a call in tail
+# position reuse its caller's frame. clang emits few of them on its own, so
+# tail-calls.mjs also rewrites "call, then return" after linking. Safari 18.2,
+# Chrome 112 and Firefox 121 support them. (ccache does not hash this variable; its cache key changes
+# with lean-emscripten.patch, which changed when this was added.)
+export EMCC_CFLAGS="-mtail-call${EMCC_CFLAGS:+ $EMCC_CFLAGS}"
+
 toolchain="$(cat "$root/lean/lean-toolchain")"   # leanprover/lean4:v4.24.0
 tag="${toolchain#*:}"
 
@@ -32,6 +41,7 @@ src="$work/lean4"
 if [ ! -d "$src" ]; then
   git clone -q --depth 1 --branch "$tag" https://github.com/leanprover/lean4 "$src"
   git -C "$src" apply "$here/lean-emscripten.patch"
+  python3 "$here/tail-apply.py" "$src"
 fi
 
 build="$work/build"
@@ -75,15 +85,25 @@ LLVM_NM="$EMSDK/upstream/bin/llvm-nm" python3 "$here/gen-symbols.py" "$objs/symb
   --lib "$stage1/lib/lean/libInit.a" --lib "$stage1/lib/lean/libStd.a" --lib "$stage1/lib/lean/libLean.a" \
   $(for o in "$objs"/[A-Z]*.o; do echo --lib "$o"; done)
 
-emcc -O2 -fwasm-exceptions -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=256MB \
-  -s STACK_SIZE=8MB -s MODULARIZE=1 -s EXPORT_ES6=1 -s ENVIRONMENT=web,worker,node \
-  -s EXPORTED_FUNCTIONS=_malloc,_free \
-  -s EXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,FS \
-  -DLEAN_EMSCRIPTEN -I "$stage1/include" \
-  "$objs"/[A-Z]*.o "$objs/symbols.c" "$here/glue.c" "$here/stubs.c" \
-  -L "$stage1/lib/lean" -lLean -lStd -lInit -lleanrt -lleancpp \
-  "$stage1/libuv/src/libuv/libuv.a" -lm \
-  -o "$out/leandoku-bridge.js"
+link() {
+  emcc -O2 -fwasm-exceptions -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=256MB \
+    -s STACK_SIZE=8MB -s MODULARIZE=1 -s EXPORT_ES6=1 -s ENVIRONMENT=web,worker,node \
+    -s EXPORTED_FUNCTIONS=_malloc,_free \
+    -s EXPORTED_RUNTIME_METHODS=ccall,UTF8ToString,FS \
+    -DLEAN_EMSCRIPTEN -I "$stage1/include" \
+    "$objs"/[A-Z]*.o "$objs/symbols.c" "$here/glue.c" "$here/stubs.c" \
+    -L "$stage1/lib/lean" -lLean -lStd -lInit -lleanrt -lleancpp \
+    "$stage1/libuv/src/libuv/libuv.a" -lm \
+    "$@"
+}
+link -o "$out/leandoku-bridge.js"
+node "$here/tail-calls.mjs" "$out/leandoku-bridge.wasm" "$out/leandoku-bridge.wasm"
+# The same build with function names kept, for reading stack traces (for
+# example when measuring how deep a check goes). Not deployed.
+mkdir -p "$out/names"
+link --profiling-funcs -o "$out/names/leandoku-bridge.js"
+node "$here/tail-calls.mjs" "$out/names/leandoku-bridge.wasm" "$out/names/leandoku-bridge.wasm"
+gzip -9 -f "$out/names/leandoku-bridge.wasm"
 
 gzip -9 -f "$out/leandoku-bridge.wasm"
 node --experimental-strip-types "$root/wasm/pack-library.ts" "$stage1/lib/lean" "$out/library.ldpk" Init
