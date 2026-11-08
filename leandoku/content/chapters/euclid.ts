@@ -1,5 +1,5 @@
 import type { Chapter, Definition, Level, Tutorial } from '../../src/core/course/types';
-import { apply, assumption, byCases, casesAnd, constructor, exact, intro, rw, split, unfold } from '../script';
+import { apply, assumption, casesAnd, constructor, exact, induction, intro, renameI, rw, split, unfold } from '../script';
 
 export const chapter: Chapter = {
   id: 'euclid',
@@ -78,7 +78,7 @@ export const levels: Level[] = [
     policy: { tactics: ['unfold', 'constructor', 'apply', 'exact'], facts: [] },
     solution: [
       unfold(['MutuallyDivides']),
-      split(constructor, [apply('hh.greatest'), exact('hg.common')], [apply('hg.greatest'), exact('hh.common')]),
+      ...split(constructor, [apply('hh.greatest'), exact('hg.common')], [apply('hg.greatest'), exact('hh.common')]),
     ],
   }),
   level({
@@ -94,10 +94,10 @@ export const levels: Level[] = [
       { name: 'E.divides_refl', statement: '(d) : E.divides d d' },
     ],
     solution: [
-      split(
+      ...split(
         constructor,
-        [unfold(['CommonDivisor']), split(constructor, [apply('E.divides_zero')], [apply('E.divides_refl')])],
-        [intro('d', 'hd'), unfold(['CommonDivisor'], 'hd'), casesAnd('hd', 'h0', 'hb', [assumption])],
+        [unfold(['CommonDivisor']), ...split(constructor, [apply('E.divides_zero')], [apply('E.divides_refl')])],
+        [intro('d', 'hd'), unfold(['CommonDivisor'], 'hd'), ...casesAnd('hd', 'h0', 'hb', [assumption])],
       ),
     ],
   }),
@@ -113,10 +113,10 @@ export const levels: Level[] = [
     library: [{ name: 'E.divides_rem_iff', statement: '(h : E.divides d a) : E.divides d (E.rem b a) ↔ E.divides d b' }],
     solution: [
       unfold(['CommonDivisor']),
-      split(
+      ...split(
         constructor,
-        [intro('h'), casesAnd('h', 'hda', 'hdb', [split(constructor, [rw('E.divides_rem_iff hda'), assumption], [assumption])])],
-        [intro('h'), casesAnd('h', 'hdr', 'hda', [split(constructor, [assumption], [rw('← E.divides_rem_iff hda'), assumption])])],
+        [intro('h'), ...casesAnd('h', 'hda', 'hdb', [...split(constructor, [rw('E.divides_rem_iff hda'), assumption], [assumption])])],
+        [intro('h'), ...casesAnd('h', 'hdr', 'hda', [...split(constructor, [assumption], [rw('← E.divides_rem_iff hda'), assumption])])],
       ),
     ],
   }),
@@ -130,11 +130,11 @@ export const levels: Level[] = [
     IsGCD E g a b ↔ IsGCD E g (E.rem b a) a := by`,
     policy: { tactics: ['constructor', 'intro', 'apply', 'rw', 'exact'], facts: 'all' },
     solution: [
-      split(
+      ...split(
         constructor,
         [
           intro('hg'),
-          split(
+          ...split(
             constructor,
             [rw('← common_step'), exact('hg.common')],
             [intro('d', 'hd'), apply('hg.greatest'), rw('common_step'), exact('hd')],
@@ -142,7 +142,7 @@ export const levels: Level[] = [
         ],
         [
           intro('hg'),
-          split(
+          ...split(
             constructor,
             [rw('common_step'), exact('hg.common')],
             [intro('d', 'hd'), apply('hg.greatest'), rw('← common_step'), exact('hd')],
@@ -160,10 +160,14 @@ export const levels: Level[] = [
     header: 'theorem euclid_sound (E : EuclideanSystem) (a b g : E.Carrier) (run : EuclidRun E a b g) : IsGCD E g a b := by',
     policy: { tactics: ['induction', 'apply', 'rw', 'exact'], facts: 'all' },
     solution: [
-      byCases('induction', 'run', [
-        ['done', ['b'], [apply('gcd_zero')]],
-        ['step', ['a', 'b', 'g', 'ha', 'next', 'ih'], [rw('gcd_step'), exact('ih')]],
-      ]),
+      induction('run'),
+      // done
+      renameI('b'),
+      apply('gcd_zero'),
+      // step
+      renameI('a', 'b', 'g', 'ha', 'next', 'ih'),
+      rw('gcd_step'),
+      exact('ih'),
     ],
   }),
   level({
@@ -175,7 +179,7 @@ export const levels: Level[] = [
     header: `theorem euclid_agree (E : EuclideanSystem) (a b g h : E.Carrier)
     (r1 : EuclidRun E a b g) (r2 : EuclidRun E a b h) : MutuallyDivides E g h := by`,
     policy: { tactics: ['apply', 'exact'], facts: 'all' },
-    solution: [split(apply('gcd_agree E g h a b'), [apply('euclid_sound'), exact('r1')], [apply('euclid_sound'), exact('r2')])],
+    solution: [...split(apply('gcd_agree E g h a b'), [apply('euclid_sound'), exact('r1')], [apply('euclid_sound'), exact('r2')])],
   }),
   level({
     id: 'euclid.correct',
@@ -186,7 +190,7 @@ export const levels: Level[] = [
     header: 'theorem euclid_correct (E : EuclideanSystem) : EuclidCorrect E := by',
     policy: { tactics: ['constructor', 'apply'], facts: 'all' },
     library: [{ name: 'euclid_terminates', statement: '(E : EuclideanSystem) (a b : E.Carrier) : ∃ g, EuclidRun E a b g' }],
-    solution: [split(constructor, [apply('euclid_terminates')], [apply('euclid_sound')], [apply('euclid_agree')])],
+    solution: [...split(constructor, [apply('euclid_terminates')], [apply('euclid_sound')], [apply('euclid_agree')])],
   }),
 ];
 

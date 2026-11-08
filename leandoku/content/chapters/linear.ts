@@ -63,7 +63,7 @@ export const levels: Level[] = [
       { name: 'hg.map_smul', statement: '(a x) : g (V.smul a x) = W.smul a (g x)' },
     ],
     solution: [
-      split(
+      ...split(
         constructor,
         [unfold(['compose']), rw('hf.map_zero', 'hg.map_zero')],
         [intro('x', 'y'), unfold(['compose']), rw('hf.map_add', 'hg.map_add')],
@@ -90,10 +90,10 @@ export const levels: Level[] = [
       { name: 'hS.smul_mem', statement: '(a x) (hx : S x) : S (W.smul a x)' },
     ],
     solution: [
-      split(
+      ...split(
         constructor,
         [unfold(['preimage']), rw('hf.map_zero'), exact('hS.zero_mem')],
-        [intro('x', 'y', 'hx', 'hy'), unfold(['preimage']), rw('hf.map_add'), split(apply('hS.add_mem'), [exact('hx')], [exact('hy')])],
+        [intro('x', 'y', 'hx', 'hy'), unfold(['preimage']), rw('hf.map_add'), ...split(apply('hS.add_mem'), [exact('hx')], [exact('hy')])],
         [intro('a', 'x', 'hx'), unfold(['preimage']), rw('hf.map_smul'), apply('hS.smul_mem'), exact('hx')],
       ),
     ],
@@ -113,10 +113,10 @@ export const levels: Level[] = [
       { name: '(laws i).smul_mem', statement: '(a x) (hx : S i x) : S i (V.smul a x)' },
     ],
     solution: [
-      split(
+      ...split(
         constructor,
         [intro('i'), exact('(laws i).zero_mem')],
-        [intro('x', 'y', 'hx', 'hy', 'i'), split(apply('(laws i).add_mem'), [exact('hx i')], [exact('hy i')])],
+        [intro('x', 'y', 'hx', 'hy', 'i'), ...split(apply('(laws i).add_mem'), [exact('hx i')], [exact('hy i')])],
         [intro('a', 'x', 'hx', 'i'), apply('(laws i).smul_mem'), exact('hx i')],
       ),
     ],
@@ -134,7 +134,7 @@ export const levels: Level[] = [
     SubspaceLaws K U (preimage (compose g f) (inter S)) := by`,
     policy: { tactics: ['apply', 'assumption'], facts: 'all' },
     solution: [
-      split(apply('preimage_subspace'), [split(apply('comp_linear'), [assumption], [assumption])], [apply('inter_subspace'), assumption]),
+      ...split(apply('preimage_subspace'), [...split(apply('comp_linear'), [assumption], [assumption])], [apply('inter_subspace'), assumption]),
     ],
   }),
 ];

@@ -1,5 +1,4 @@
 import type { TacticCatalog } from '../catalog/registry';
-import { walk } from '../document/edit';
 import type { ProofDocument, StepId } from '../document/types';
 
 /**
@@ -48,12 +47,10 @@ export interface PolicyViolation {
  */
 export function checkPolicy(doc: ProofDocument, policy: LevelPolicy): PolicyViolation[] {
   const out: PolicyViolation[] = [];
-  walk(doc.root, (b) => {
-    for (const step of b.steps) {
-      if (tacticAvailability(policy, step.tactic).state !== 'available') {
-        out.push({ step: step.id, reason: `"${step.tactic}" is not available in this level` });
-      }
+  for (const step of doc.steps) {
+    if (tacticAvailability(policy, step.tactic).state !== 'available') {
+      out.push({ step: step.id, reason: `"${step.tactic}" is not available in this level` });
     }
-  });
+  }
   return out;
 }

@@ -1,82 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { makeStep } from '../src/core/document/edit';
-import { defaultCaseNames } from '../src/core/play/play';
-
-const hyp = (name: string, inaccessible = true) => ({ id: name, name, inaccessible, type: 'T' });
-
-describe('default case names', () => {
-  it('names the new variable after the induction target and the hypothesis ih', () => {
-    const step = makeStep('induction', { target: { kind: 'local', name: 'n' } });
-    expect(defaultCaseNames(step, { id: 'g', tag: 'succ', target: 'P', hyps: [hyp('a✝'), hyp('a_ih✝')] })).toEqual(['n', 'ih']);
-  });
-
-  it('avoids names already in the goal', () => {
-    const step = makeStep('induction', { target: { kind: 'local', name: 'n' } });
-    const goal = { id: 'g', tag: 'succ', target: 'P', hyps: [hyp('ih', false), hyp('n', false), hyp('a✝'), hyp('a_ih✝')] };
-    expect(defaultCaseNames(step, goal)).toEqual(['n1', 'ih1']);
-  });
-});
-
-import { defaultCatalog } from '../src/core/catalog/registry';
-import { ROOT_BRANCH, emptyDocument, insertStep, setBranches } from '../src/core/document/edit';
-import { autoBranch } from '../src/core/play/play';
+import { emptyDocument, insertStep, makeStep } from '../src/core/document/edit';
 import type { Evaluation } from '../src/core/evaluate/evaluate';
+import { checkpointAt, hiddenNames } from '../src/core/play/play';
+import type { Goal } from '../src/engine/protocol';
 
-describe('auto branching', () => {
-  const catalog = defaultCatalog();
-  const goal = (tag: string) => ({ id: tag, tag, target: 'P', hyps: [] });
-  const evWith = (id: string, after: ReturnType<typeof goal>[]): Evaluation => ({
-    status: 'incomplete',
-    steps: new Map([[id, { status: 'ok', goalsBefore: [goal('')], goalsAfter: after, errors: [] }]]),
-    branches: new Map(),
-    headerErrors: [],
-    unsolved: [],
-    otherErrors: [],
-  });
+const goal = (tag: string, hyps: Goal['hyps'] = []): Goal => ({ id: tag, tag, target: `P ${tag}`, hyps });
 
-  it('opens one branch per goal a split leaves', () => {
-    const s = makeStep('constructor');
-    const doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, s);
-    const next = autoBranch(doc, evWith(s.id, [goal('left'), goal('right')]), catalog);
-    expect(next.root.steps[0]!.branches?.map((b) => b.tag)).toEqual(['left', 'right']);
-  });
-
-  it('leaves written-out cases alone even though Lean then reports no goals after the step', () => {
+describe('checkpoints', () => {
+  it("shows Lean's whole goal list after a step that leaves several goals", () => {
     const s = makeStep('induction', { target: { kind: 'local', name: 'n' } });
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, s);
-    doc = setBranches(doc, s.id, [{ tag: 'zero' }, { tag: 'succ' }]);
-    expect(autoBranch(doc, evWith(s.id, []), catalog)).toBe(doc);
-  });
-});
-
-import { firstOpenPoint, openGoals } from '../src/core/play/play';
-
-describe('open goals across cases', () => {
-  const goal = (tag: string) => ({ id: tag, tag, target: `P ${tag}`, hyps: [] });
-
-  it("lists every case's goal in order, like Lean's goal list", () => {
-    const s = makeStep('induction', { target: { kind: 'local', name: 'n' } });
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, s);
-    doc = setBranches(doc, s.id, [{ tag: 'zero' }, { tag: 'succ' }]);
-    const [zero, succ] = doc.root.steps[0]!.branches!;
-    const r = makeStep('rfl');
-    doc = insertStep(doc, { branch: zero!.id, index: 0 }, r);
-    const ev: Evaluation = {
+    const doc = insertStep(emptyDocument(), 0, s);
+    const ev = {
       status: 'incomplete',
-      steps: new Map([
-        [s.id, { status: 'ok', goalsBefore: [goal('')], goalsAfter: [], errors: [] }],
-        [r.id, { status: 'ok', goalsBefore: [goal('zero')], goalsAfter: [], errors: [] }],
-      ]),
-      branches: new Map([
-        [zero!.id, { goal: goal('zero') }],
-        [succ!.id, { goal: goal('succ') }],
-      ]),
+      steps: new Map([[s.id, { status: 'ok', goalsBefore: [goal('')], goalsAfter: [goal('zero'), goal('succ')], errors: [] }]]),
+      placeholderGoals: null,
       headerErrors: [],
       unsolved: [],
       otherErrors: [],
     } as unknown as Evaluation;
-    // zero is finished by rfl, so only succ is left, and that is where the cursor goes next.
-    expect(openGoals(doc, ev).map((o) => o.goal.tag)).toEqual(['succ']);
-    expect(firstOpenPoint(doc, ev)).toEqual({ branch: succ!.id, index: 0 });
+    expect(checkpointAt(doc, ev, 0).goals?.map((g) => g.tag)).toEqual(['']);
+    expect(checkpointAt(doc, ev, 1).goals?.map((g) => g.tag)).toEqual(['zero', 'succ']);
+  });
+
+  it('uses the goals at the placeholder of an empty proof', () => {
+    const ev = { steps: new Map(), placeholderGoals: [goal('')] } as unknown as Evaluation;
+    expect(checkpointAt(emptyDocument(), ev, 0).goals).toEqual([goal('')]);
+  });
+});
+
+describe('hidden names', () => {
+  it("offers Lean's own names for the hypotheses it hides, in order", () => {
+    const hyps = [
+      { id: 'a', name: 'm', inaccessible: false, type: 'Natural' },
+      { id: 'b', name: 'n✝', inaccessible: true, type: 'Natural' },
+      { id: 'c', name: 'n_ih✝', inaccessible: true, type: 'P n' },
+    ];
+    expect(hiddenNames(goal('succ', hyps))).toEqual(['n', 'n_ih']);
+    expect(hiddenNames(null)).toEqual([]);
   });
 });

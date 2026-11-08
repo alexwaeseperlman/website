@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  EditError,
-  ROOT_BRANCH,
-  deleteStep,
-  emptyDocument,
-  findBranch,
-  insertStep,
-  locateStep,
-  makeStep,
-  setBranches,
-  updateStep,
-} from '../src/core/document/edit';
+import { EditError, deleteStep, emptyDocument, indexOfStep, insertStep, makeStep, updateStep } from '../src/core/document/edit';
 import { History } from '../src/core/document/history';
 import { counterIds } from './helpers';
 
@@ -19,59 +8,39 @@ describe('proof document', () => {
     const ids = counterIds();
     const a = makeStep('intro', {}, ids);
     const b = makeStep('rfl', {}, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, a);
-    doc = insertStep(doc, { branch: ROOT_BRANCH, index: 1 }, b);
+    let doc = insertStep(emptyDocument(), 0, a);
+    doc = insertStep(doc, 1, b);
     doc = deleteStep(doc, a.id);
-    expect(doc.root.steps.map((s) => s.id)).toEqual([b.id]);
-    expect(locateStep(doc, b.id)?.index).toBe(0);
+    expect(doc.steps.map((s) => s.id)).toEqual([b.id]);
+    expect(indexOfStep(doc, b.id)).toBe(0);
   });
 
   it('inserts at the selected boundary', () => {
     const ids = counterIds();
-    const a = makeStep('intro', {}, ids);
-    const b = makeStep('rfl', {}, ids);
-    const c = makeStep('assumption', {}, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, a);
-    doc = insertStep(doc, { branch: ROOT_BRANCH, index: 1 }, b);
-    doc = insertStep(doc, { branch: ROOT_BRANCH, index: 1 }, c);
-    expect(doc.root.steps.map((s) => s.tactic)).toEqual(['intro', 'assumption', 'rfl']);
+    let doc = insertStep(emptyDocument(), 0, makeStep('intro', {}, ids));
+    doc = insertStep(doc, 1, makeStep('rfl', {}, ids));
+    doc = insertStep(doc, 1, makeStep('assumption', {}, ids));
+    expect(doc.steps.map((s) => s.tactic)).toEqual(['intro', 'assumption', 'rfl']);
+  });
+
+  it('adds steps after a tactic that leaves several goals, as plain Lean does', () => {
+    const ids = counterIds();
+    let doc = insertStep(emptyDocument(), 0, makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids));
+    doc = insertStep(doc, 1, makeStep('rfl', {}, ids));
+    expect(doc.steps.map((s) => s.tactic)).toEqual(['induction', 'rfl']);
+  });
+
+  it('rejects an insertion point outside the proof', () => {
+    expect(() => insertStep(emptyDocument(), 1, makeStep('rfl', {}, counterIds()))).toThrow(EditError);
   });
 
   it('bumps the revision on every edit', () => {
     const doc0 = emptyDocument();
-    const doc1 = insertStep(doc0, { branch: ROOT_BRANCH, index: 0 }, makeStep('rfl', {}, counterIds()));
+    const doc1 = insertStep(doc0, 0, makeStep('rfl', {}, counterIds()));
     expect(doc1.revision).toBe(doc0.revision + 1);
-  });
-
-  it('keeps work inside branches when Lean reports the same cases again', () => {
-    const ids = counterIds();
-    const ind = makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, ind);
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ', names: ['m', 'ih'] }], ids);
-    const succ = locateStep(doc, ind.id)!.step.branches![1]!;
-    doc = insertStep(doc, { branch: succ.id, index: 0 }, makeStep('rfl', {}, ids));
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ' }], ids);
-    const after = locateStep(doc, ind.id)!.step.branches!;
-    expect(after[1]!.id).toBe(succ.id);
-    expect(after[1]!.names).toEqual(['m', 'ih']);
-    expect(findBranch(doc, succ.id)!.steps).toHaveLength(1);
-  });
-
-  it('does not allow steps after a step that split the goal', () => {
-    const ids = counterIds();
-    const c = makeStep('constructor', {}, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, c);
-    doc = setBranches(doc, c.id, [{ tag: 'left' }, { tag: 'right' }], ids);
-    expect(() => insertStep(doc, { branch: ROOT_BRANCH, index: 1 }, makeStep('rfl', {}, ids))).toThrow(EditError);
-  });
-
-  it('drops branches when the tactic changes', () => {
-    const ids = counterIds();
-    const c = makeStep('constructor', {}, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, c);
-    doc = setBranches(doc, c.id, [{ tag: 'left' }, { tag: 'right' }], ids);
-    doc = updateStep(doc, c.id, { tactic: 'rfl' });
-    expect(locateStep(doc, c.id)!.step.branches).toBeUndefined();
+    const doc2 = updateStep(doc1, doc1.steps[0]!.id, { tactic: 'assumption' });
+    expect(doc2.revision).toBe(doc1.revision + 1);
+    expect(doc2.steps[0]!.tactic).toBe('assumption');
   });
 
   it('undoes and redoes whole snapshots', () => {

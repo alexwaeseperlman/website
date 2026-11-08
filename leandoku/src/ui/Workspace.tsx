@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { factsFor } from '../core/course/facts';
 import type { Course, Level } from '../core/course/types';
 import { tutorialsBefore, type CourseNode } from '../core/course/nodes';
-import { findBranch, walk } from '../core/document/edit';
 import type { InsertPoint } from '../core/document/types';
-import { checkpointAt, openGoals, renameSuggestion } from '../core/play/play';
+import { checkpointAt, hiddenNames } from '../core/play/play';
 import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
 import { CodePane } from './CodePane';
@@ -37,21 +36,17 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
   const offer = (name: string) => setPick((p) => ({ name, n: (p?.n ?? 0) + 1 }));
   const chapter = course.chapters.find((c) => c.id === level.chapter);
   // The intro matters when starting out; on a proof in progress it is just in the way.
-  const [showIntro, setShowIntro] = useState(() => game.doc.root.steps.length === 0);
+  const [showIntro, setShowIntro] = useState(() => game.doc.steps.length === 0);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
 
   const ev = game.checked?.ev ?? null;
   const stale = !game.upToDate;
   const checkpoint = checkpointAt(game.doc, ev, game.selection);
-  const others = openGoals(game.doc, ev).filter(
-    (o) => o.at.branch !== game.selection.branch || o.at.index !== game.selection.index,
-  );
-  const branch = findBranch(game.doc, game.selection.branch);
   const selectedStep = checkpoint.next;
   const stepResult = selectedStep ? ev?.steps.get(selectedStep.id) : undefined;
   const offline = game.engine.kind === 'offline';
 
-  const addBlocked = checkpoint.split ? 'This step split the goal; add steps inside one of its cases.' : null;
+  const goal = checkpoint.goals?.[0] ?? null;
 
   return (
     <div className="workspace">
@@ -129,7 +124,7 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
       <section className="panel">
         <div className="panel-head">
           <span>
-            {selectedStep ? 'Before the selected step' : branch?.tag ? `Case ${branch.tag}` : 'Proof state'}
+            {selectedStep ? 'Before the selected step' : 'Proof state'}
           </span>
           {selectedStep && (
             <button type="button" className="link danger" onClick={() => game.removeStep(selectedStep.id)}>
@@ -141,9 +136,7 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
           checkpoint={checkpoint}
           stale={stale && game.engine.kind === 'checking'}
           offline={offline}
-          others={others}
           onPick={offer}
-          onJump={game.setSelection}
         />
         {checkpoint.goals === null && !stepResult?.errors.length && ev && (
           <FirstError ev={ev} doc={game.doc} onSelect={game.setSelection} />
@@ -163,12 +156,11 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
       <Composer
         catalog={game.catalog}
         policy={level.policy}
-        goal={checkpoint.goals?.[0] ?? null}
+        goal={goal}
         facts={facts}
         definitions={course.definitions}
-        disabled={addBlocked}
         pick={pick}
-        renameNames={renameSuggestion(game.doc, game.selection, checkpoint.goals?.[0] ?? null)}
+        renameNames={hiddenNames(goal)}
         onAdd={game.addStep}
       />
 
@@ -199,15 +191,9 @@ function FirstError({
   doc: ReturnType<typeof useProofGame>['doc'];
   onSelect: (at: InsertPoint) => void;
 }) {
-  let found: { at: InsertPoint; text: string } | null = null;
-  walk(doc.root, (b) => {
-    b.steps.forEach((s, index) => {
-      const r = ev.steps.get(s.id);
-      if (!found && r?.status === 'error') found = { at: { branch: b.id, index }, text: r.errors[0]?.text ?? '' };
-    });
-  });
-  if (!found) return null;
-  const { at, text } = found;
+  const at = doc.steps.findIndex((s) => ev.steps.get(s.id)?.status === 'error');
+  if (at < 0) return null;
+  const text = ev.steps.get(doc.steps[at]!.id)!.errors[0]?.text ?? '';
   return (
     <>
       <pre className="error">{text}</pre>

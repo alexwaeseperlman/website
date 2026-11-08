@@ -106,7 +106,7 @@ export const levels: Level[] = [
     policy: { tactics: ['constructor', 'intro', 'unfold', 'rw'], facts: 'all' },
     library: [...homRules, ...rulesOf('H')],
     solution: [
-      split(
+      ...split(
         constructor,
         [unfold(['kernel']), rw('F.map_one')],
         [intro('x', 'y', 'hx', 'hy'), unfold(['kernel'], 'hx'), unfold(['kernel'], 'hy'), unfold(['kernel']), rw('F.map_mul', 'hx', 'hy', 'H.one_mul')],
@@ -124,7 +124,7 @@ export const levels: Level[] = [
     policy: { tactics: ['constructor', 'intro', 'unfold', 'apply', 'rw'], facts: 'all' },
     library: [...homRules, ...rulesOf('H')],
     solution: [
-      split(
+      ...split(
         constructor,
         [apply('kernel_subgroup')],
         [intro('a', 'x', 'hx'), unfold(['kernel'], 'hx'), unfold(['kernel']), rw('F.map_mul', 'F.map_mul', 'hx', 'H.mul_one', 'hom_inv', 'H.mul_inv')],

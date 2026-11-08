@@ -58,7 +58,7 @@ export const levels: Level[] = [
     theoremName: 'eq_bridge',
     header: 'theorem eq_bridge (A : Type) (a b c : A) (hab : a = b) (hcb : c = b) : a = c := by',
     policy: { tactics: ['apply', 'assumption'], facts: 'all' },
-    solution: [split(apply('eq_trans A a b c'), [assumption], [apply('eq_symm'), assumption])],
+    solution: [...split(apply('eq_trans A a b c'), [assumption], [apply('eq_symm'), assumption])],
   }),
   level({
     id: 'equality.eq_both_ways',
@@ -68,7 +68,7 @@ export const levels: Level[] = [
     theoremName: 'eq_both_ways',
     header: 'theorem eq_both_ways (A : Type) (a b : A) : a = b ↔ b = a := by',
     policy: { tactics: ['constructor', 'intro', 'apply', 'assumption'], facts: 'all' },
-    solution: [split(constructor, [intro('h'), apply('eq_symm'), assumption], [intro('h'), apply('eq_symm'), assumption])],
+    solution: [...split(constructor, [intro('h'), apply('eq_symm'), assumption], [intro('h'), apply('eq_symm'), assumption])],
   }),
   level({
     id: 'equality.and_iff',
@@ -83,10 +83,10 @@ export const levels: Level[] = [
       { name: 'Iff.mpr', statement: '(h : P ↔ Q) (hq : Q) : P' },
     ],
     solution: [
-      split(
+      ...split(
         constructor,
-        [intro('h'), casesAnd('h', 'hp', 'hq', [exact('⟨hPR.mp hp, hQS.mp hq⟩')])],
-        [intro('h'), casesAnd('h', 'hr', 'hs', [exact('⟨hPR.mpr hr, hQS.mpr hs⟩')])],
+        [intro('h'), ...casesAnd('h', 'hp', 'hq', [exact('⟨hPR.mp hp, hQS.mp hq⟩')])],
+        [intro('h'), ...casesAnd('h', 'hr', 'hs', [exact('⟨hPR.mpr hr, hQS.mpr hs⟩')])],
       ),
     ],
   }),

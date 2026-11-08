@@ -14,10 +14,9 @@ interface Props {
   goal: Goal | null;
   facts: Fact[];
   definitions: Definition[];
-  disabled: string | null;
   /** A name tapped in the proof state; `n` changes on every tap. */
   pick: { name: string; n: number } | null;
-  /** Names for the goal's unnamed (✝) hypotheses; empty when there are none. */
+  /** Lean's names for the goal's hidden (✝) hypotheses, to start rename_i with; empty when there are none. */
   renameNames: string[];
   onAdd: (tactic: string, args: Record<string, SlotValue>) => void;
 }
@@ -37,7 +36,7 @@ const CATEGORY_LABEL: Record<TacticCategory, string> = {
  * One composer for every tactic: pick a tactic, fill its slots from what is
  * on screen, then add it. Nothing enters the proof until it is complete.
  */
-export function Composer({ catalog, policy, goal, facts, definitions, disabled, pick, renameNames, onAdd }: Props) {
+export function Composer({ catalog, policy, goal, facts, definitions, pick, renameNames, onAdd }: Props) {
   const [tactic, setTacticState] = useState<string | null>(null);
   const [args, setArgs] = useState<Record<string, SlotValue>>({});
   const [hint, setHint] = useState<string | null>(null);
@@ -143,8 +142,7 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
             <button
               type="button"
               className="primary"
-              disabled={preview === null || disabled !== null}
-              title={disabled ?? undefined}
+              disabled={preview === null}
               onClick={() => {
                 onAdd(spec.id, args);
                 setTactic(null);
@@ -175,7 +173,6 @@ export function Composer({ catalog, policy, goal, facts, definitions, disabled, 
               }
             />
           ))}
-          {disabled && <p className="builder-note">{disabled}</p>}
         </div>
       )}
     </section>

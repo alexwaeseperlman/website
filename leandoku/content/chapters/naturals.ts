@@ -1,5 +1,5 @@
 import type { Chapter, Level, Tutorial } from '../../src/core/course/types';
-import { local, renameI, rfl, rw } from '../script';
+import { induction, renameI, rfl, rw } from '../script';
 
 export const chapter: Chapter = {
   id: 'naturals',
@@ -46,11 +46,7 @@ export const levels: Level[] = [
     header: 'theorem zero_add (n : Natural) : zero + n = n := by',
     policy: withInduction,
     solution: [
-      {
-        tactic: 'induction',
-        args: { target: local('n') },
-        branches: [[rfl], [renameI('n', 'ih'), rw('add_succ', 'ih')]],
-      },
+      induction('n'), rfl, renameI('n', 'ih'), rw('add_succ', 'ih'),
     ],
   },
   {
@@ -64,11 +60,7 @@ export const levels: Level[] = [
     header: 'theorem succ_add (n m : Natural) : succ n + m = succ (n + m) := by',
     policy: withInduction,
     solution: [
-      {
-        tactic: 'induction',
-        args: { target: local('m') },
-        branches: [[rfl], [renameI('k', 'ih'), rw('add_succ', 'add_succ', 'ih')]],
-      },
+      induction('m'), rfl, renameI('k', 'ih'), rw('add_succ', 'add_succ', 'ih'),
     ],
   },
   {
@@ -82,11 +74,7 @@ export const levels: Level[] = [
     header: 'theorem add_assoc (a b c : Natural) : a + b + c = a + (b + c) := by',
     policy: withInduction,
     solution: [
-      {
-        tactic: 'induction',
-        args: { target: local('c') },
-        branches: [[rfl], [renameI('k', 'ih'), rw('add_succ', 'add_succ', 'add_succ', 'ih')]],
-      },
+      induction('c'), rfl, renameI('k', 'ih'), rw('add_succ', 'add_succ', 'add_succ', 'ih'),
     ],
   },
   {
@@ -100,11 +88,7 @@ export const levels: Level[] = [
     header: 'theorem add_comm (a b : Natural) : a + b = b + a := by',
     policy: { tactics: ['rw', 'induction'], facts: 'all' },
     solution: [
-      {
-        tactic: 'induction',
-        args: { target: local('b') },
-        branches: [[rw('add_zero', 'zero_add')], [renameI('k', 'ih'), rw('add_succ', 'succ_add', 'ih')]],
-      },
+      induction('b'), rw('add_zero', 'zero_add'), renameI('k', 'ih'), rw('add_succ', 'succ_add', 'ih'),
     ],
   },
 ];
@@ -181,11 +165,11 @@ export const tutorials: Tutorial[] = [
       {
         text: "Lean doesn't name the new number or that assumption, because you never chose names for them. It marks them with ✝, and a name with ✝ can't be typed. rename_i gives them names, in order:",
       },
-      { code: 'induction n\n· rfl\n· rename_i n ih\n  -- n : Natural\n  -- ih : zero + n = n\n  -- ⊢ zero + succ n = succ n' },
+      { code: 'induction n\nrfl          -- proves the zero goal\nrename_i n ih\n-- n : Natural\n-- ih : zero + n = n\n-- ⊢ zero + succ n = succ n' },
       {
-        text: 'The dots mark where each goal starts. Those two goals cover every number: zero directly, then 1 from 0, 2 from 1, and so on.',
+        text: 'Each step works on the first goal in the list. When rfl closes the zero goal, the succ goal is next. Those two goals cover every number: zero directly, then 1 from 0, 2 from 1, and so on.',
       },
-      { aside: 'Tap a ✝ hypothesis in the proof state and the app fills in rename_i for you.' },
+      { aside: 'Tap a ✝ hypothesis in the proof state to start a rename_i with the names Lean gave them.' },
     ],
   },
   {

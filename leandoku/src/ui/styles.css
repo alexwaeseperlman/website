@@ -1067,33 +1067,17 @@ pre,
   }
 }
 
-/* Later goals from other cases: tap to go and prove them. */
-button.target.is-later {
-  display: flex;
-  width: 100%;
-  align-items: baseline;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  background: none;
-  text-align: left;
+/* Lean's case tag, shown as Lean shows it: `case succ`. */
+.goal-case {
   font-family: var(--mono);
-  font-size: 14px;
-  color: var(--ink);
-}
-
-button.target.is-later:active {
-  background: var(--accent-soft);
+  font-size: 13px;
+  color: var(--muted);
+  padding-bottom: 4px;
 }
 
 .case-tag {
   flex: none;
-  font-family: var(--sans);
-  font-size: 12px;
+  font-family: var(--mono);
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
