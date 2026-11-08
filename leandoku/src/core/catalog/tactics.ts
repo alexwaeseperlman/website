@@ -13,7 +13,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Close a goal whose two sides are equal by computation.',
     slots: [],
     template: 'rfl',
-    branchStyle: 'bullets',
   },
   {
     id: 'exact',
@@ -22,7 +21,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Close the goal with a term of exactly its type.',
     slots: [{ id: 'term', kind: 'term', label: 'proof' }],
     template: 'exact {term}',
-    branchStyle: 'bullets',
   },
   {
     id: 'assumption',
@@ -31,7 +29,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Close the goal with a hypothesis that matches it.',
     slots: [],
     template: 'assumption',
-    branchStyle: 'bullets',
   },
   {
     id: 'intro',
@@ -40,7 +37,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Move a hypothesis or variable from the goal into the context.',
     slots: [{ id: 'names', kind: 'names', label: 'names', optional: true }],
     template: 'intro{ |names}',
-    branchStyle: 'bullets',
   },
   {
     id: 'rename_i',
@@ -49,7 +45,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Name the hypotheses Lean shows with ✝, such as the new number and ih after induction.',
     slots: [{ id: 'names', kind: 'names', label: 'names, in order' }],
     template: 'rename_i {names}',
-    branchStyle: 'bullets',
   },
   {
     id: 'funext',
@@ -58,7 +53,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Prove two functions equal by showing they agree on an input you name.',
     slots: [{ id: 'names', kind: 'names', label: 'input name' }],
     template: 'funext {names}',
-    branchStyle: 'bullets',
   },
   {
     id: 'apply',
@@ -67,7 +61,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Use a fact whose conclusion matches the goal; its premises become new goals.',
     slots: [{ id: 'term', kind: 'term', label: 'fact' }],
     template: 'apply {term}',
-    branchStyle: 'bullets',
   },
   {
     id: 'constructor',
@@ -76,7 +69,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Split a goal such as A ∧ B into one goal per part.',
     slots: [],
     template: 'constructor',
-    branchStyle: 'bullets',
   },
   {
     id: 'rw',
@@ -88,7 +80,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
       { id: 'at', kind: 'location', label: 'where', optional: true },
     ],
     template: 'rw [{rules}]{ at |at}',
-    branchStyle: 'bullets',
   },
   {
     id: 'unfold',
@@ -100,7 +91,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
       { id: 'at', kind: 'location', label: 'where', optional: true },
     ],
     template: 'unfold {defs}{ at |at}',
-    branchStyle: 'bullets',
   },
   {
     id: 'show',
@@ -109,7 +99,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Restate the goal in an equal form Lean can check by computation.',
     slots: [{ id: 'term', kind: 'term', label: 'goal' }],
     template: 'show {term}',
-    branchStyle: 'bullets',
   },
   {
     id: 'induction',
@@ -118,7 +107,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Prove a statement for every value: one goal for each way the value is built.',
     slots: [{ id: 'target', kind: 'local', label: 'variable' }],
     template: 'induction {target}',
-    branchStyle: 'bullets',
   },
   {
     id: 'cases',
@@ -127,7 +115,6 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Split on how a value or hypothesis was built.',
     slots: [{ id: 'target', kind: 'local', label: 'value' }],
     template: 'cases {target}',
-    branchStyle: 'alternatives',
   },
   {
     id: 'raw',
@@ -136,6 +123,5 @@ export const BUILTIN_TACTICS: readonly TacticSpec[] = [
     help: 'Type any tactic. Lean still checks it.',
     slots: [{ id: 'text', kind: 'raw', label: 'tactic' }],
     template: '{text}',
-    branchStyle: 'bullets',
   },
 ];

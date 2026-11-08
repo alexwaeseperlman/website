@@ -5,10 +5,6 @@ import type { LevelPolicy } from '../policy/policy';
 export interface ScriptStep {
   tactic: string;
   args?: Record<string, SlotValue>;
-  /** Variable names for each case, when this step splits into `with` arms. */
-  cases?: Record<string, string[]>;
-  /** Steps for each branch this step opens, in Lean's goal order. */
-  branches?: ScriptStep[][];
 }
 
 export interface Level {
@@ -24,7 +20,10 @@ export interface Level {
   /** The statement, up to and including `:= by`. */
   header: string;
   policy: LevelPolicy;
-  /** A solution using only builder actions the policy allows. Replayed in CI. */
+  /**
+   * A solution using only builder actions the policy allows, as one tactic
+   * sequence (the order Lean works through its goals). Replayed in CI.
+   */
   solution: ScriptStep[];
   /** Lean library facts offered in this level's pickers, beyond earlier levels. */
   library?: LibraryFact[];

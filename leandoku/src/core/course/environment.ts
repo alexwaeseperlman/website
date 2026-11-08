@@ -1,6 +1,6 @@
 import type { TacticCatalog } from '../catalog/registry';
-import { emptyDocument, insertStep, makeStep, setBranches, type IdSource } from '../document/edit';
-import type { ProofDocument, StepId } from '../document/types';
+import { emptyDocument, makeStep, type IdSource } from '../document/edit';
+import type { ProofDocument } from '../document/types';
 import { serialize, type LevelSource } from '../serializer/serialize';
 import type { Course, Level, ScriptStep } from './types';
 
@@ -36,34 +36,11 @@ export function levelSource(course: Course, level: Level, catalog: TacticCatalog
 
 /** Build the document a script describes, all at once (no Lean in the loop). */
 export function scriptToDocument(script: readonly ScriptStep[], catalog: TacticCatalog, ids?: IdSource): ProofDocument {
-  let doc = emptyDocument();
-  const fill = (branch: string, steps: readonly ScriptStep[]): void => {
-    steps.forEach((s, i) => {
-      catalog.require(s.tactic);
-      const step = makeStep(s.tactic, s.args ?? {}, ids);
-      doc = insertStep(doc, { branch, index: i }, step);
-      if (s.branches) {
-        const tags = s.cases ? Object.keys(s.cases) : s.branches.map(() => '');
-        doc = setBranches(doc, step.id, tags.map((tag) => ({ tag, names: s.cases?.[tag] ?? [] })), ids);
-        const created = findStepBranches(doc, step.id);
-        s.branches.forEach((sub, j) => fill(created[j]!, sub));
-      }
-    });
-  };
-  fill(doc.root.id, script);
-  return doc;
-}
-
-function findStepBranches(doc: ProofDocument, id: StepId): string[] {
-  const out: string[] = [];
-  const go = (steps: ProofDocument['root']['steps']): void => {
-    for (const s of steps) {
-      if (s.id === id) out.push(...(s.branches ?? []).map((b) => b.id));
-      for (const b of s.branches ?? []) go(b.steps);
-    }
-  };
-  go(doc.root.steps);
-  return out;
+  const steps = script.map((s) => {
+    catalog.require(s.tactic);
+    return makeStep(s.tactic, s.args ?? {}, ids);
+  });
+  return { ...emptyDocument(), steps };
 }
 
 /** The chapters these levels belong to, plus what those chapters need, in course order. */

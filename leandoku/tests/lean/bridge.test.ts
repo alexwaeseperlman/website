@@ -9,11 +9,11 @@ import { course as naturalCourse } from '../../content/course';
 import { defaultCatalog } from '../../src/core/catalog/registry';
 import { levelSource } from '../../src/core/course/environment';
 import type { ScriptStep } from '../../src/core/course/types';
-import { emptyDocument, insertStep, locateStep, makeStep, setBranches, ROOT_BRANCH } from '../../src/core/document/edit';
+import { emptyDocument, insertStep, makeStep } from '../../src/core/document/edit';
 import type { ProofDocument } from '../../src/core/document/types';
 import { evaluate, type Evaluation } from '../../src/core/evaluate/evaluate';
 import { checkPolicy } from '../../src/core/policy/policy';
-import { armName, serialize, type LevelSource } from '../../src/core/serializer/serialize';
+import { serialize, type LevelSource } from '../../src/core/serializer/serialize';
 import { PROTOCOL_VERSION } from '../../src/engine/protocol';
 import { BRIDGE_BINARY } from '../../server/bridge-process';
 import { BridgeEngine } from '../../server/bridge-engine';
@@ -42,35 +42,24 @@ async function check(doc: ProofDocument, level: LevelSource): Promise<{ ev: Eval
   return { ev: evaluate(ser, res), source: ser.source };
 }
 
-/**
- * Play a script the way a player would: commit one action, ask Lean, and
- * open branches only from the goals Lean reports.
- */
+/** Play a script the way a player would: add one step, ask Lean, and expect it to work. */
 async function replay(script: readonly ScriptStep[], level: LevelSource): Promise<{ doc: ProofDocument; ev: Evaluation; source: string }> {
   const ids = counterIds();
   let doc = emptyDocument();
   let last!: { ev: Evaluation; source: string };
-  const play = async (branch: string, steps: readonly ScriptStep[]): Promise<void> => {
-    for (const [i, s] of steps.entries()) {
-      const step = makeStep(s.tactic, s.args ?? {}, ids);
-      doc = insertStep(doc, { branch, index: i }, step);
-      last = await check(doc, level);
-      const r = last.ev.steps.get(step.id)!;
-      expect(r.status, `${s.tactic} in\n${last.source}\n${JSON.stringify(r.errors)}`).toBe('ok');
-      if (!s.branches) continue;
-      const goals = r.goalsAfter!;
-      expect(goals.length).toBe(s.branches.length);
-      // Scripts may key cases by the full goal tag or just the constructor.
-      doc = setBranches(doc, step.id, goals.map((g) => ({ tag: g.tag, names: s.cases?.[g.tag] ?? s.cases?.[armName(g.tag)] ?? [] })), ids);
-      last = await check(doc, level);
-      const created = locateStep(doc, step.id)!.step.branches!;
-      created.forEach((b, j) => expect(last.ev.branches.get(b.id)?.goal?.tag).toBe(goals[j]!.tag));
-      for (const [j, b] of created.entries()) await play(b.id, s.branches[j]!);
-    }
-  };
-  await play(ROOT_BRANCH, script);
+  for (const [i, s] of script.entries()) {
+    const step = makeStep(s.tactic, s.args ?? {}, ids);
+    doc = insertStep(doc, i, step);
+    last = await check(doc, level);
+    const r = last.ev.steps.get(step.id)!;
+    expect(r.status, `${s.tactic} in\n${last.source}\n${JSON.stringify(r.errors)}`).toBe('ok');
+  }
   return { doc, ...last };
 }
+
+const step = (tactic: string, args: Record<string, unknown> = {}): ScriptStep => ({ tactic, args } as ScriptStep);
+const local = (name: string) => ({ kind: 'local', name });
+const names = (...ns: string[]) => ({ kind: 'names', names: ns });
 
 describe.skipIf(!available)('Lean bridge', () => {
   for (const level of naturalCourse.levels) {
@@ -84,51 +73,51 @@ describe.skipIf(!available)('Lean bridge', () => {
 
   const zeroAdd = naturalCourse.levels.find((l) => l.id === 'natural.zero_add')!;
 
-  it('names a nested case arm by its constructor, not its full goal tag', async () => {
+  it('shows the goals Lean reports after induction, with its case tags, and names from rename_i', async () => {
+    const src = levelSource(naturalCourse, zeroAdd, catalog);
+    const { doc, ev, source } = await replay(zeroAdd.solution, src);
+    expect(source).toContain('  induction n\n  rfl\n  rename_i n ih\n');
+    const [ind, rfl, rename] = doc.steps;
+    const before = ev.steps.get(ind!.id)!.goalsBefore;
+    expect(before).toHaveLength(1);
+    expect(before[0]!.target).toBe('zero + n = n');
+    // induction just leaves Lean's goals, tagged by Lean.
+    const after = ev.steps.get(ind!.id)!.goalsAfter!;
+    expect(after.map((g) => g.tag)).toEqual(['zero', 'succ']);
+    // rfl closes the first; the succ goal is next, its new names hidden…
+    const succ = ev.steps.get(rfl!.id)!.goalsAfter!;
+    expect(succ.map((g) => g.tag)).toEqual(['succ']);
+    expect(succ[0]!.hyps.every((h) => h.inaccessible)).toBe(true);
+    // …until rename_i names them.
+    const named = ev.steps.get(rename!.id)!.goalsAfter![0]!;
+    expect(named.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
+    expect(named.target).toBe('zero + succ n = succ n');
+  });
+
+  it('pulls apart nested ands with cases and rename_i', async () => {
     const src: LevelSource = {
       prelude: 'set_option autoImplicit false',
       theoremName: 'regroup',
       header: 'theorem regroup (P Q R : Prop) (h : (P ∧ Q) ∧ R) : P ∧ Q := by',
     };
-    const inner: ScriptStep = {
-      tactic: 'cases',
-      args: { target: { kind: 'local', name: 'hpq' } },
-      cases: { intro: ['hp', 'hq'] },
-      branches: [[{ tactic: 'constructor', branches: [[{ tactic: 'assumption' }], [{ tactic: 'assumption' }]] }]],
-    };
-    const outer: ScriptStep = {
-      tactic: 'cases',
-      args: { target: { kind: 'local', name: 'h' } },
-      cases: { intro: ['hpq', 'hr'] },
-      branches: [[inner]],
-    };
-    const { ev, source } = await replay([outer], src);
-    expect(source).toContain('| intro hp hq =>');
+    const script = [
+      step('cases', { target: local('h') }),
+      step('rename_i', { names: names('hpq', 'hr') }),
+      step('cases', { target: local('hpq') }),
+      step('rename_i', { names: names('hp', 'hq') }),
+      step('constructor'),
+      step('assumption'),
+      step('assumption'),
+    ];
+    const { ev, source } = await replay(script, src);
     expect(ev.status, source).toBe('complete');
-  });
-
-  it('shows the real goals at every checkpoint, with names from rename_i', async () => {
-    const src = levelSource(naturalCourse, zeroAdd, catalog);
-    const { doc, ev } = await replay(zeroAdd.solution, src);
-    const ind = doc.root.steps[0]!;
-    const before = ev.steps.get(ind.id)!.goalsBefore;
-    expect(before).toHaveLength(1);
-    expect(before[0]!.target).toBe('zero + n = n');
-    const succ = ind.branches![1]!;
-    // Plain induction leaves the new number and hypothesis unnamed…
-    const goal = ev.branches.get(succ.id)!.goal!;
-    expect(goal.hyps.every((h) => h.inaccessible)).toBe(true);
-    // …until rename_i names them.
-    const named = ev.steps.get(succ.steps[0]!.id)!.goalsAfter![0]!;
-    expect(named.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
-    expect(named.target).toBe('zero + succ n = succ n');
   });
 
   it('marks the failing step and leaves the valid prefix intact', async () => {
     const src = levelSource(naturalCourse, zeroAdd, catalog);
     const ids = counterIds();
     const bad = makeStep('rfl', {}, ids);
-    const doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, bad);
+    const doc = insertStep(emptyDocument(), 0, bad);
     const { ev } = await check(doc, src);
     expect(ev.status).toBe('rejected');
     const r = ev.steps.get(bad.id)!;
@@ -137,35 +126,38 @@ describe.skipIf(!available)('Lean bridge', () => {
     expect(r.errors[0]!.text.length).toBeGreaterThan(0);
   });
 
-  it('keeps checking a sibling branch when one branch fails', async () => {
+  it('stops at the first failing step, as Lean does', async () => {
     const src = levelSource(naturalCourse, zeroAdd, catalog);
     const ids = counterIds();
     const ind = makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, ind);
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ' }], ids);
-    const [zero, succ] = locateStep(doc, ind.id)!.step.branches!;
-    const rename = makeStep('rename_i', { names: { kind: 'names', names: ['m', 'ih'] } }, ids);
     const wrong = makeStep('rw', { rules: { kind: 'rules', rules: [{ term: 'ih', reverse: false }] } }, ids);
-    const right = makeStep('rw', { rules: { kind: 'rules', rules: [{ term: 'add_succ', reverse: false }, { term: 'ih', reverse: false }] } }, ids);
-    doc = insertStep(doc, { branch: zero!.id, index: 0 }, wrong);
-    doc = insertStep(doc, { branch: succ!.id, index: 0 }, rename);
-    doc = insertStep(doc, { branch: succ!.id, index: 1 }, right);
+    const later = makeStep('rfl', {}, ids);
+    let doc = insertStep(emptyDocument(), 0, ind);
+    doc = insertStep(doc, 1, wrong);
+    doc = insertStep(doc, 2, later);
     const { ev } = await check(doc, src);
+    expect(ev.steps.get(ind.id)!.status).toBe('ok');
     expect(ev.steps.get(wrong.id)!.status).toBe('error');
-    expect(ev.steps.get(right.id)!.status).toBe('ok');
-    expect(ev.steps.get(right.id)!.goalsAfter).toEqual([]);
+    expect(ev.steps.get(wrong.id)!.goalsBefore.map((g) => g.tag)).toEqual(['zero', 'succ']);
+    expect(ev.steps.get(later.id)!.status).toBe('blocked');
   });
 
   it('does not count an unfinished proof as complete', async () => {
     const src = levelSource(naturalCourse, zeroAdd, catalog);
     const ids = counterIds();
     const ind = makeStep('induction', { target: { kind: 'local', name: 'n' } }, ids);
-    let doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, ind);
-    doc = setBranches(doc, ind.id, [{ tag: 'zero' }, { tag: 'succ' }], ids);
+    const doc = insertStep(emptyDocument(), 0, ind);
     const { ev, source } = await check(doc, src);
-    expect(source).toContain('  induction n\n  · sorry\n  · sorry');
+    expect(source).toMatch(/  induction n\n$/);
     expect(ev.status).toBe('incomplete');
     expect(ev.steps.get(ind.id)!.status).toBe('ok');
+    expect(ev.steps.get(ind.id)!.goalsAfter!.map((g) => g.tag)).toEqual(['zero', 'succ']);
+  });
+
+  it('shows the starting goal of an empty proof', async () => {
+    const src = levelSource(naturalCourse, zeroAdd, catalog);
+    const { ev } = await check(emptyDocument(), src);
+    expect(ev.placeholderGoals?.map((g) => g.target)).toEqual(['zero + n = n']);
   });
 
   it('reports a broken statement as a header error, not a tactic error', async () => {
@@ -178,7 +170,7 @@ describe.skipIf(!available)('Lean bridge', () => {
   it('rejects a proof that leans on sorry even if Lean accepts the file', async () => {
     const level = { prelude: '', theoremName: 'cheat', header: 'theorem cheat : 1 = 2 := by' };
     const ids = counterIds();
-    const doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, makeStep('raw', { text: { kind: 'raw', text: 'sorry' } }, ids));
+    const doc = insertStep(emptyDocument(), 0, makeStep('raw', { text: { kind: 'raw', text: 'sorry' } }, ids));
     const { ev } = await check(doc, level);
     expect(ev.status).not.toBe('complete');
   });
@@ -186,7 +178,7 @@ describe.skipIf(!available)('Lean bridge', () => {
   it('runs a tactic outside the built-in entries through the raw slot', async () => {
     const level = { prelude: '', theoremName: 'arith', header: 'theorem arith (a b : Nat) : a + b = b + a := by' };
     const ids = counterIds();
-    const doc = insertStep(emptyDocument(), { branch: ROOT_BRANCH, index: 0 }, makeStep('raw', { text: { kind: 'raw', text: 'omega' } }, ids));
+    const doc = insertStep(emptyDocument(), 0, makeStep('raw', { text: { kind: 'raw', text: 'omega' } }, ids));
     const { ev } = await check(doc, level);
     expect(ev.status).toBe('complete');
   });

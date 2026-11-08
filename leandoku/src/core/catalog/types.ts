@@ -44,14 +44,6 @@ export type SlotValue =
   | { kind: 'definitions'; names: string[] }
   | { kind: 'raw'; text: string };
 
-/**
- * How the goals a tactic leaves behind are laid out in the generated Lean.
- * - `bullets`: one `·` block per goal (constructor, apply, ...).
- * - `alternatives`: `with | tag names => ...` arms (induction, cases), which
- *   is also how the player names the variables each case introduces.
- */
-export type BranchStyle = 'bullets' | 'alternatives';
-
 export type TacticCategory = 'finish' | 'intro' | 'rewrite' | 'split' | 'apply' | 'simplify' | 'other';
 
 export interface TacticSpec {
@@ -66,5 +58,4 @@ export interface TacticSpec {
    * ` at h` for a hypothesis and nothing for the goal.
    */
   template: string;
-  branchStyle: BranchStyle;
 }

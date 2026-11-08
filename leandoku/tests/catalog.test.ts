@@ -48,7 +48,6 @@ describe('tactic catalog', () => {
         { id: 'stmt', kind: 'term', label: 'statement' },
       ],
       template: 'have {name} : {stmt}',
-      branchStyle: 'bullets',
     };
     c.register(omega);
     expect(c.render('calc_step', { name: { kind: 'names', names: ['h'] }, stmt: { kind: 'term', text: 'a = b' } })).toBe(
@@ -59,7 +58,7 @@ describe('tactic catalog', () => {
   it('rejects entries whose template does not match their slots', () => {
     const c = new TacticCatalog();
     expect(() =>
-      c.register({ id: 'bad', label: 'bad', category: 'other', help: '', slots: [], template: 'exact {t}', branchStyle: 'bullets' }),
+      c.register({ id: 'bad', label: 'bad', category: 'other', help: '', slots: [], template: 'exact {t}' }),
     ).toThrow(/undeclared slot/);
     expect(() => defaultCatalog().register({ ...defaultCatalog().require('rfl') })).toThrow(/already registered/);
   });

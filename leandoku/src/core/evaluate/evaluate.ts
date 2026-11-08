@@ -1,4 +1,4 @@
-import type { BranchId, StepId } from '../document/types';
+import type { StepId } from '../document/types';
 import type { Serialized, SourcePos } from '../serializer/serialize';
 import type { CheckResponse, Goal, Message, TacticStep } from '../../engine/protocol';
 
@@ -19,17 +19,13 @@ export interface StepResult {
   errors: Message[];
 }
 
-export interface BranchResult {
-  /** The goal this branch proves, as Lean stated it; null if never reached. */
-  goal: Goal | null;
-}
-
 export type ProofStatus = 'complete' | 'incomplete' | 'rejected';
 
 export interface Evaluation {
   status: ProofStatus;
   steps: ReadonlyMap<StepId, StepResult>;
-  branches: ReadonlyMap<BranchId, BranchResult>;
+  /** Goals at the start of a proof with no steps yet (at its `sorry`); null otherwise or if never reached. */
+  placeholderGoals: Goal[] | null;
   /** Errors in the statement itself; when present, no tactic can help. */
   headerErrors: Message[];
   /** Goals Lean says remain open, with where it reported them. */
@@ -41,13 +37,8 @@ export interface Evaluation {
 /** Axioms a completed proof may depend on. `sorryAx` is never among them. */
 export const STANDARD_AXIOMS: readonly string[] = ['propext', 'Classical.choice', 'Quot.sound'];
 
-/** Bullet tokens report the focused goal; the step itself is the node after them. */
-const SKIPPED_KINDS = new Set(['Lean.cdot', 'Lean.cdotTk']);
-
 function nodeAt(tactics: readonly TacticStep[], pos: SourcePos): TacticStep | undefined {
-  return tactics.find(
-    (t) => t.range.startLine === pos.line && t.range.startCol === pos.col && !SKIPPED_KINDS.has(t.kind),
-  );
+  return tactics.find((t) => t.range.startLine === pos.line && t.range.startCol === pos.col);
 }
 
 const isUnsolved = (m: Message): boolean => m.text.startsWith('unsolved goals');
@@ -82,10 +73,7 @@ export function evaluate(
     });
   }
 
-  const branches = new Map<BranchId, BranchResult>();
-  for (const [id, pos] of ser.branches) {
-    branches.set(id, { goal: nodeAt(res.tactics, pos)?.goalsBefore[0] ?? null });
-  }
+  const placeholderGoals = ser.placeholder ? (nodeAt(res.tactics, ser.placeholder)?.goalsBefore ?? null) : null;
 
   const otherErrors = errors.filter((m) => !claimed.has(m));
   const anyStepError = [...steps.values()].some((s) => s.status === 'error');
@@ -103,7 +91,7 @@ export function evaluate(
   return {
     status: rejected ? 'rejected' : closed ? 'complete' : 'incomplete',
     steps,
-    branches,
+    placeholderGoals,
     headerErrors,
     unsolved,
     otherErrors,

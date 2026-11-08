@@ -18,7 +18,7 @@ export const levels: Level[] = [
     theoremName: 'and_swap',
     header: 'theorem and_swap (P Q : Prop) (h : P ∧ Q) : Q ∧ P := by',
     policy: { tactics: ['cases', 'constructor', 'assumption'], facts: [] },
-    solution: [casesAnd('h', 'hp', 'hq', [split(constructor, [assumption], [assumption])])],
+    solution: [...casesAnd('h', 'hp', 'hq', [...split(constructor, [assumption], [assumption])])],
   }),
   level({
     id: 'logic.imp_trans',
@@ -38,7 +38,7 @@ export const levels: Level[] = [
     theoremName: 'fork',
     header: 'theorem fork (P Q R : Prop) (hPQ : P → Q) (hPR : P → R) : P → Q ∧ R := by',
     policy: { tactics: ['intro', 'constructor', 'apply', 'assumption'], facts: [] },
-    solution: [intro('hp'), split(constructor, [apply('hPQ'), assumption], [apply('hPR'), assumption])],
+    solution: [intro('hp'), ...split(constructor, [apply('hPQ'), assumption], [apply('hPR'), assumption])],
   }),
   level({
     id: 'logic.fork_swapped',
@@ -48,7 +48,7 @@ export const levels: Level[] = [
     theoremName: 'fork_swapped',
     header: 'theorem fork_swapped (P Q R : Prop) (hPQ : P → Q) (hPR : P → R) : P → R ∧ Q := by',
     policy: { tactics: ['apply', 'assumption'], facts: 'all' },
-    solution: [split(apply('fork'), [assumption], [assumption])],
+    solution: [...split(apply('fork'), [assumption], [assumption])],
   }),
   level({
     id: 'logic.and_regroup',
@@ -59,8 +59,8 @@ export const levels: Level[] = [
     header: 'theorem and_regroup (P Q R : Prop) (h : (P ∧ Q) ∧ R) : P ∧ (Q ∧ R) := by',
     policy: { tactics: ['cases', 'constructor', 'assumption'], facts: [] },
     solution: [
-      casesAnd('h', 'hpq', 'hr', [
-        casesAnd('hpq', 'hp', 'hq', [split(constructor, [assumption], [split(constructor, [assumption], [assumption])])]),
+      ...casesAnd('h', 'hpq', 'hr', [
+        ...casesAnd('hpq', 'hp', 'hq', [...split(constructor, [assumption], [...split(constructor, [assumption], [assumption])])]),
       ]),
     ],
   }),
@@ -72,7 +72,7 @@ export const levels: Level[] = [
     theoremName: 'and_map',
     header: 'theorem and_map (P Q R S : Prop) (hPR : P → R) (hQS : Q → S) (h : P ∧ Q) : R ∧ S := by',
     policy: { tactics: ['cases', 'constructor', 'apply', 'assumption'], facts: [] },
-    solution: [casesAnd('h', 'hp', 'hq', [split(constructor, [apply('hPR'), assumption], [apply('hQS'), assumption])])],
+    solution: [...casesAnd('h', 'hp', 'hq', [...split(constructor, [apply('hPR'), assumption], [apply('hQS'), assumption])])],
   }),
   level({
     id: 'logic.curry',
@@ -82,7 +82,7 @@ export const levels: Level[] = [
     theoremName: 'curry',
     header: 'theorem curry (P Q R : Prop) (h : P ∧ Q → R) : P → Q → R := by',
     policy: { tactics: ['intro', 'apply', 'constructor', 'assumption'], facts: [] },
-    solution: [intro('hp', 'hq'), apply('h'), split(constructor, [assumption], [assumption])],
+    solution: [intro('hp', 'hq'), apply('h'), ...split(constructor, [assumption], [assumption])],
   }),
   level({
     id: 'logic.uncurry',
@@ -92,7 +92,7 @@ export const levels: Level[] = [
     theoremName: 'uncurry',
     header: 'theorem uncurry (P Q R : Prop) (h : P → Q → R) : P ∧ Q → R := by',
     policy: { tactics: ['intro', 'cases', 'apply', 'assumption'], facts: [] },
-    solution: [intro('hpq'), casesAnd('hpq', 'hp', 'hq', [split(apply('h'), [assumption], [assumption])])],
+    solution: [intro('hpq'), ...casesAnd('hpq', 'hp', 'hq', [...split(apply('h'), [assumption], [assumption])])],
   }),
   level({
     id: 'logic.contrapositive',
@@ -126,8 +126,8 @@ export const tutorials: Tutorial[] = [
     title: 'And',
     blocks: [
       { text: 'A proof of `P ∧ Q` is a proof of P and a proof of Q stuck together.' },
-      { text: 'If you have `h : P ∧ Q`, `cases h` pulls it apart into its two halves. You choose their names.' },
-      { code: 'h : P ∧ Q\n\n-- after cases h, naming the halves hp and hq\nhp : P\nhq : Q' },
+      { text: 'If you have `h : P ∧ Q`, `cases h` pulls it apart into its two halves. Lean marks their names with ✝, which you can\'t type, so follow it with rename_i to choose your own.' },
+      { code: 'h : P ∧ Q\n\n-- after cases h\nleft✝ : P\nright✝ : Q\n\n-- after rename_i hp hq\nhp : P\nhq : Q' },
       { text: 'If the goal is `P ∧ Q`, `constructor` splits it into two goals, P and Q, and you prove them one at a time.' },
     ],
   },

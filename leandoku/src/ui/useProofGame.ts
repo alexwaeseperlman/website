@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultCatalog } from '../core/catalog/registry';
 import type { SlotValue } from '../core/catalog/types';
 import { levelSource } from '../core/course/environment';
 import type { Course, Level } from '../core/course/types';
-import { deleteStep, emptyDocument, insertStep, locateStep, makeStep } from '../core/document/edit';
+import { deleteStep, emptyDocument, indexOfStep, insertStep, makeStep, validInsertPoint } from '../core/document/edit';
 import { History } from '../core/document/history';
 import type { InsertPoint, ProofDocument, StepId } from '../core/document/types';
 import { evaluate, type Evaluation } from '../core/evaluate/evaluate';
-import { autoBranch, checkpointAt, firstOpenPoint, validSelection } from '../core/play/play';
 import { checkPolicy } from '../core/policy/policy';
 import { serialize, type Serialized } from '../core/serializer/serialize';
 import type { Session } from '../session/session';
@@ -34,14 +33,12 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     [level],
   );
   const [doc, setDoc] = useState(history.value);
-  const [selection, setSelection] = useState<InsertPoint>(() => firstOpenPoint(history.value, null));
+  // The insertion point; it starts at the end of the proof.
+  const [selection, setSelection] = useState<InsertPoint>(() => history.value.steps.length);
   const [checked, setChecked] = useState<CheckedState | null>(null);
   const [engine, setEngine] = useState<EngineState>(session ? { kind: 'checking' } : { kind: 'offline' });
   const [saved, setSaved] = useState(true);
   const [retries, setRetries] = useState(0);
-  const firstResult = useRef(true);
-  // Set by addStep: once Lean answers, a finished goal hands over to the next one.
-  const advance = useRef(false);
 
   // The source for the current document, recomputed even without an engine so
   // the code pane always shows exactly what would be checked.
@@ -62,26 +59,8 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
         return;
       }
       const ev = evaluate(current, out.response);
-      const fixed = autoBranch(doc, ev, catalog);
-      if (fixed !== doc) {
-        // Opening the branches Lean reported is part of the same action.
-        history.replace(fixed);
-        setDoc(fixed);
-        setSelection(firstOpenPoint(fixed, null));
-        return;
-      }
       setChecked({ doc, ser: current, ev });
       setEngine({ kind: 'ready' });
-      if (firstResult.current) {
-        firstResult.current = false;
-        setSelection(firstOpenPoint(doc, ev));
-      } else if (advance.current) {
-        setSelection((s) => {
-          const cp = checkpointAt(doc, ev, s);
-          return cp.goals?.length === 0 && !cp.split ? firstOpenPoint(doc, ev) : s;
-        });
-      }
-      advance.current = false;
       if (ev.status === 'complete' && checkPolicy(doc, level.policy).length === 0) {
         markComplete(level.id, level.revision);
       }
@@ -89,13 +68,13 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     return () => {
       cancelled = true;
     };
-  }, [doc, current, session, source, catalog, history, level, retries]);
+  }, [doc, current, session, source, level, retries]);
 
   const apply = useCallback(
     (next: ProofDocument, sel: InsertPoint) => {
       history.push(next);
       setDoc(next);
-      setSelection(validSelection(next, sel));
+      setSelection(validInsertPoint(next, sel));
     },
     [history],
   );
@@ -103,18 +82,16 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
   const addStep = useCallback(
     (tactic: string, args: Record<string, SlotValue>) => {
       const step = makeStep(tactic, args);
-      const next = insertStep(doc, selection, step);
-      advance.current = true;
-      apply(next, { branch: selection.branch, index: selection.index + 1 });
+      apply(insertStep(doc, selection, step), selection + 1);
     },
     [doc, selection, apply],
   );
 
   const removeStep = useCallback(
     (id: StepId) => {
-      const loc = locateStep(doc, id);
-      if (!loc) return;
-      apply(deleteStep(doc, id), { branch: loc.branch.id, index: loc.index });
+      const index = indexOfStep(doc, id);
+      if (index < 0) return;
+      apply(deleteStep(doc, id), index);
     },
     [doc, apply],
   );
@@ -123,7 +100,7 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     const prev = history.undo();
     if (prev) {
       setDoc(prev);
-      setSelection((s) => validSelection(prev, s));
+      setSelection((s) => validInsertPoint(prev, s));
     }
   }, [history]);
 
@@ -131,7 +108,7 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     const next = history.redo();
     if (next) {
       setDoc(next);
-      setSelection((s) => validSelection(next, s));
+      setSelection((s) => validInsertPoint(next, s));
     }
   }, [history]);
 
@@ -140,7 +117,7 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     setRetries((n) => n + 1);
   }, [session]);
 
-  const reset = useCallback(() => apply(emptyDocument(), { branch: 'root', index: 0 }), [apply]);
+  const reset = useCallback(() => apply(emptyDocument(), 0), [apply]);
 
   const upToDate = checked?.doc === doc;
   const complete = upToDate && checked.ev.status === 'complete' && checkPolicy(doc, level.policy).length === 0;

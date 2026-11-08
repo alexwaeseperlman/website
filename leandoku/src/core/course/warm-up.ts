@@ -6,8 +6,7 @@ import type { Course, ScriptStep } from './types';
 /** How many shallow levels the warm-up replays. */
 const WARM_UP_LEVELS = 12;
 
-const usesInduction = (steps: readonly ScriptStep[]): boolean =>
-  steps.some((s) => s.tactic === 'induction' || (s.branches ?? []).some(usesInduction));
+const usesInduction = (steps: readonly ScriptStep[]): boolean => steps.some((s) => s.tactic === 'induction');
 
 /**
  * Solved levels for Lean to check, and throw away, before the player's first

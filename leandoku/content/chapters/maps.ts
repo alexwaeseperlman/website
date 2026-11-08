@@ -66,7 +66,7 @@ export const levels: Level[] = [
     (hf : IsHom opA opB f) (hg : IsHom opB opC g) (hh : IsHom opB opD h) :
     IsHom opA (prodOp opC opD) (compose (pairMap g h) f) := by`,
     policy: { tactics: ['apply', 'assumption'], facts: 'all' },
-    solution: [split(apply('hom_comp (opB := opB)'), [assumption], [split(apply('hom_pair'), [assumption], [assumption])])],
+    solution: [...split(apply('hom_comp (opB := opB)'), [assumption], [...split(apply('hom_pair'), [assumption], [assumption])])],
   }),
 ];
 
