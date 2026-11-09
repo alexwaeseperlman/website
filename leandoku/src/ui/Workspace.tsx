@@ -8,7 +8,7 @@ import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
 import { CodePane } from './CodePane';
 import { Composer } from './Composer';
-import { FactsSheet } from './FactsSheet';
+import { FactsPanel } from './FactsPanel';
 import { StatePane } from './StatePane';
 import { useProofGame } from './useProofGame';
 
@@ -25,19 +25,24 @@ interface Props {
 
 export function Workspace({ course, level, session, startup, next, onBack, onOpen, onEngineSettings }: Props) {
   const game = useProofGame(course, level, session);
-  // The last step is usually added far down the page, so bring the result
-  // into view when the proof completes, clear of the sticky top bar.
+  // Bring the result into view when the proof completes, clear of the
+  // sticky top bar.
   const provedRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (game.complete) provedRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [game.complete]);
-  const [showFacts, setShowFacts] = useState(false);
   const [pick, setPick] = useState<{ name: string; n: number } | null>(null);
   const offer = (name: string) => setPick((p) => ({ name, n: (p?.n ?? 0) + 1 }));
+  // Using a theorem from the list below the goals opens the editor above it.
+  const useFact = (name: string) => {
+    offer(name);
+    document.querySelector('.composer')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
   const chapter = course.chapters.find((c) => c.id === level.chapter);
   // The intro matters when starting out; on a proof in progress it is just in the way.
   const [showIntro, setShowIntro] = useState(() => game.doc.steps.length === 0);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
+  const showFacts = () => document.getElementById('facts')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 
   const ev = game.checked?.ev ?? null;
   const stale = !game.upToDate;
@@ -77,8 +82,8 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
                 {t.title}
               </button>
             ))}
-            <button type="button" className="link" onClick={() => setShowFacts(true)}>
-              Definitions and facts
+            <button type="button" className="link" onClick={showFacts}>
+              Theorems and definitions
             </button>
             <button type="button" className="link" onClick={() => setShowIntro(false)}>
               Hide
@@ -91,8 +96,8 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
           <button type="button" className="link" onClick={() => setShowIntro(true)}>
             Show intro
           </button>
-          <button type="button" className="link" onClick={() => setShowFacts(true)}>
-            Definitions and facts
+          <button type="button" className="link" onClick={showFacts}>
+            Theorems and definitions
           </button>
         </div>
       )}
@@ -119,6 +124,17 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
         stale={stale}
         selection={game.selection}
         onSelect={game.setSelection}
+      />
+
+      <Composer
+        catalog={game.catalog}
+        policy={level.policy}
+        goal={goal}
+        facts={facts}
+        definitions={course.definitions}
+        pick={pick}
+        renameNames={hiddenNames(goal)}
+        onAdd={game.addStep}
       />
 
       <section className="panel">
@@ -153,30 +169,9 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
         ))}
       </section>
 
-      <Composer
-        catalog={game.catalog}
-        policy={level.policy}
-        goal={goal}
-        facts={facts}
-        definitions={course.definitions}
-        pick={pick}
-        renameNames={hiddenNames(goal)}
-        onAdd={game.addStep}
-      />
+      <FactsPanel facts={facts} definitions={course.definitions} onUse={useFact} />
 
       {!game.saved && <p className="note">This browser is not saving drafts (storage is unavailable).</p>}
-
-      {showFacts && (
-        <FactsSheet
-          facts={facts}
-          definitions={course.definitions}
-          onClose={() => setShowFacts(false)}
-          onUse={(name) => {
-            setShowFacts(false);
-            offer(name);
-          }}
-        />
-      )}
     </div>
   );
 }

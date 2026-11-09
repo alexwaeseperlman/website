@@ -57,26 +57,12 @@ body {
   padding: 0 16px calc(24px + env(safe-area-inset-bottom));
 }
 
-/* The workspace ends in the sticky tactic tray, which brings its own padding. */
-#root:has(.workspace) {
-  padding-bottom: 0;
-}
-
-/* Keep the tray at the bottom of the screen even when the proof is short. */
+/* Code, then the tactic editor, then the goals, then the theorems. */
 .workspace {
-  min-height: 100vh;
-  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
-.workspace > .composer {
-  margin-top: auto;
-}
-
-.workspace > .panel {
-  margin-bottom: 12px;
-}
 
 button {
   font: inherit;
@@ -614,21 +600,10 @@ pre,
 }
 
 /* Composer */
+/* The tactic editor sits right under the code, in the page flow. */
 .composer {
-  /* The tactic tray stays at the bottom of the screen, like a keyboard, so
-     the code and the proof state above it never have to scroll away. */
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  margin: 12px -16px 0;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
-  max-height: 58vh;
-  max-height: 58dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
-  box-shadow: 0 -6px 16px rgb(0 0 0 / 0.06);
+  margin: 12px 0 0;
+  scroll-margin-top: calc(64px + env(safe-area-inset-top));
 }
 
 .palette,
@@ -775,7 +750,8 @@ pre,
   font-size: 18px;
 }
 
-.sheet h3 {
+.sheet h3,
+.facts h3 {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1025,42 +1001,6 @@ pre,
   color: inherit;
 }
 
-/* Wide screens: code and state on the left, tactics on the right. */
-@media (min-width: 1000px) {
-  #root:has(.workspace) {
-    max-width: 1160px;
-  }
-
-  .workspace {
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 400px;
-    column-gap: 24px;
-    align-items: start;
-  }
-
-  .workspace > * {
-    grid-column: 1;
-  }
-
-  .workspace > .bar {
-    grid-column: 1 / -1;
-  }
-
-  .workspace > .composer {
-    grid-column: 2;
-    grid-row: 2 / span 20;
-    position: sticky;
-    top: 72px;
-    bottom: auto;
-    margin: 12px 0 0;
-    padding: 0;
-    max-height: calc(100vh - 96px);
-    border: none;
-    box-shadow: none;
-  }
-}
-
 @media (prefers-color-scheme: dark) {
   .chip.is-on {
     color: #10131a;
@@ -1080,4 +1020,22 @@ pre,
   font-family: var(--mono);
   font-weight: 600;
   color: var(--muted);
+}
+
+/* Definitions fold away under the theorem list. */
+.definitions {
+  margin-top: 10px;
+}
+
+.definitions summary {
+  cursor: pointer;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
+.facts .fact:last-of-type {
+  border-bottom: none;
 }

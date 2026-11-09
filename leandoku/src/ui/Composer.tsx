@@ -80,14 +80,6 @@ export function Composer({ catalog, policy, goal, facts, definitions, pick, rena
     else setHint(`Pick a tactic first, then tap ${pick.name} to use it there.`);
   }, [pick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On a phone the tray covers the bottom of the page; keep the proof state
-  // (the last thing above the tray) in view while a tactic is being built.
-  useEffect(() => {
-    if (tactic && !matchMedia('(min-width: 1000px)').matches) {
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
-    }
-  }, [tactic]);
-
   const locals = goal?.hyps.filter((h) => !h.inaccessible) ?? [];
   const groups = CATEGORY_ORDER.map((c) => ({
     category: c,
