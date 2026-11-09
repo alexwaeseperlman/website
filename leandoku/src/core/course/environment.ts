@@ -2,26 +2,20 @@ import type { TacticCatalog } from '../catalog/registry';
 import { emptyDocument, makeStep, type IdSource } from '../document/edit';
 import type { ProofDocument } from '../document/types';
 import { serialize, type LevelSource } from '../serializer/serialize';
+import { citableLevels, prerequisiteClosure } from './facts';
 import type { Course, Level, ScriptStep } from './types';
 
 /**
  * The Lean that comes before a level's theorem: the course prelude, the
- * preludes of the chapters it draws on, then the theorems of its
- * prerequisites (transitively), and nothing else. A level can never see a
- * declaration the player has not unlocked.
+ * preludes of the chapters it draws on, then the earlier theorems its policy
+ * lets it cite (with what their proofs need), and nothing else. A level can
+ * never see a declaration the player has not unlocked, and a level that
+ * allows no facts has none to cite: Lean enforces the limit, not the menu.
  */
 export function levelSource(course: Course, level: Level, catalog: TacticCatalog): LevelSource {
-  const byId = new Map(course.levels.map((l) => [l.id, l]));
-  const needed = new Set<string>();
-  const collect = (id: string): void => {
-    for (const p of byId.get(id)?.prerequisites ?? []) {
-      if (!needed.has(p)) {
-        needed.add(p);
-        collect(p);
-      }
-    }
-  };
-  collect(level.id);
+  // The theorems the level may cite, plus whatever their own proofs cite.
+  const citable = citableLevels(course, level).map((l) => l.id);
+  const needed = new Set([...citable, ...prerequisiteClosure(course, citable)]);
 
   const parts = [course.prelude.trimEnd()];
   for (const c of chaptersFor(course, [level.id, ...needed])) if (c.prelude) parts.push(c.prelude.trimEnd());

@@ -15,7 +15,13 @@ export interface Level {
   /** Bumped whenever the statement or the allowed knowledge changes. */
   revision: number;
   prerequisites: string[];
+  /** What the theorem says and why it matters. It sets the puzzle; it does not solve it. */
   intro: string;
+  /**
+   * Nudges toward the proof, mildest first. The player reveals them one at
+   * a time, so the last may name the move outright.
+   */
+  hints?: string[];
   theoremName: string;
   /** The statement, up to and including `:= by`. */
   header: string;

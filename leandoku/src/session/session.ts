@@ -24,6 +24,7 @@ export class Session {
   private engine: Engine | null = null;
   private generation = 0;
   private nextRequest = 0;
+  private probesOff = false;
   private readonly cache: ByteLru<CheckResponse>;
 
   constructor(private readonly opts: SessionOptions) {
@@ -47,6 +48,31 @@ export class Session {
       if (e instanceof EngineUnavailableError) this.retire(engine);
       if (generation !== this.generation) return { kind: 'stale', generation };
       return { kind: 'unavailable', generation, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * Ask Lean about source that is not the player's proof (a preview of
+   * steps they could add). It shares the engine and the cache but is not a
+   * submission: it never makes a real check stale, and a failure returns
+   * `null` rather than a state the view has to show.
+   */
+  async probe(source: string): Promise<CheckResponse | null> {
+    // A preview is a convenience. If one ever takes the runtime down, stop
+    // asking for them rather than restart Lean over and over.
+    if (this.probesOff) return null;
+    const engine = (this.engine ??= this.opts.createEngine());
+    const key = `${engine.identity}\u0000\u0000${source}`;
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    try {
+      const response = await engine.check({ version: PROTOCOL_VERSION, requestId: `p${++this.nextRequest}`, source });
+      this.cache.set(key, response, JSON.stringify(response).length * 2);
+      return response;
+    } catch (e) {
+      this.probesOff = true;
+      if (e instanceof EngineUnavailableError) this.retire(engine);
+      return null;
     }
   }
 

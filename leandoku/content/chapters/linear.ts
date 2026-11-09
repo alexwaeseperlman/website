@@ -48,7 +48,12 @@ export const levels: Level[] = [
     id: 'linear.comp',
     title: 'Compose linear maps',
     prerequisites: [],
-    intro: 'Doing f and then g keeps zero, sums and scaling, because each of them does. Three goals, each two rewrites once compose is unfolded.',
+    intro: "Doing f and then g keeps zero, sums and scaling, because each of them does.",
+    hints: [
+      "`constructor` gives three goals, one for each thing a linear map keeps.",
+      "In each, `intro` if the goal starts with \"for all\", then unfold `compose`.",
+      "Then two rewrites: what f keeps, then what g keeps.",
+    ],
     theoremName: 'comp_linear',
     header: `theorem comp_linear (K : Type) (U V W : LinearSignature K)
     (f : U.Carrier → V.Carrier) (g : V.Carrier → W.Carrier)
@@ -75,7 +80,12 @@ export const levels: Level[] = [
     id: 'linear.preimage',
     title: 'Pull a subspace back',
     prerequisites: ['linear.comp'],
-    intro: 'If S is a subspace of W and f is linear, the points that f sends into S form a subspace of V. In each goal: unfold, rewrite with what f keeps, then use what S is closed under.',
+    intro: "If S is a subspace of W and f is linear, the points that f sends into S form a subspace of V.",
+    hints: [
+      "Three goals again. In each: `intro`, unfold `preimage`, and rewrite with what f keeps.",
+      "What is left says something is in S. Use what S is closed under.",
+      "For example `apply hS.add_mem`, then `exact hx` and `exact hy`.",
+    ],
     theoremName: 'preimage_subspace',
     header: `theorem preimage_subspace (K : Type) (V W : LinearSignature K) (f : V.Carrier → W.Carrier)
     (hf : IsLinear K V W f) (S : W.Carrier → Prop) (hS : SubspaceLaws K W S) :
@@ -102,7 +112,12 @@ export const levels: Level[] = [
     id: 'linear.inter',
     title: 'Intersect any number of subspaces',
     prerequisites: ['linear.comp'],
-    intro: 'S is a whole family of subspaces, one for each i, maybe infinitely many. Their intersection is a subspace too. Being in inter S means being in S i for every i, so intro i works on it.',
+    intro: "S is a whole family of subspaces, one for each i, maybe infinitely many. Their intersection is a subspace too.",
+    hints: [
+      "Being in `inter S` means being in `S i` for every i, so `intro i` works on it.",
+      "Each `S i` is a subspace: `(laws i).zero_mem`, `(laws i).add_mem`, `(laws i).smul_mem`.",
+      "A hypothesis like `hx` holds for every i. For this one, use `hx i`.",
+    ],
     theoremName: 'inter_subspace',
     header: `theorem inter_subspace (K I : Type) (V : LinearSignature K) (S : I → V.Carrier → Prop)
     (laws : ∀ i, SubspaceLaws K V (S i)) : SubspaceLaws K V (inter S) := by`,
@@ -125,7 +140,12 @@ export const levels: Level[] = [
     id: 'linear.pullback_family',
     title: 'Everything at once',
     prerequisites: ['linear.preimage', 'linear.inter'],
-    intro: 'Take a family of subspaces of W, intersect them, and pull the result back through f then g. It is a subspace of U. No unfolding needed: the three earlier levels fit together.',
+    intro: "Take a family of subspaces of W, intersect them, and pull the result back through f then g. It is a subspace of U.",
+    hints: [
+      "No unfolding needed: the three earlier levels fit together.",
+      "The outermost thing in the goal is `preimage`, so start with `preimage_subspace`.",
+      "Then `comp_linear` and `inter_subspace`.",
+    ],
     theoremName: 'pullback_family',
     header: `theorem pullback_family (K I : Type) (U V W : LinearSignature K)
     (f : U.Carrier → V.Carrier) (g : V.Carrier → W.Carrier)

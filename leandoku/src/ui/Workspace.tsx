@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { factsFor } from '../core/course/facts';
 import type { Course, Level } from '../core/course/types';
 import { tutorialsBefore, type CourseNode } from '../core/course/nodes';
-import type { InsertPoint } from '../core/document/types';
+import type { InsertPoint, StepId } from '../core/document/types';
+import { errorSummary, hasMoreThanSummary } from '../core/play/errors';
 import { checkpointAt, hiddenNames } from '../core/play/play';
 import type { StartupProgress } from '../engine/wasm-client';
 import type { Session } from '../session/session';
@@ -10,6 +11,7 @@ import { CodePane } from './CodePane';
 import { Composer } from './Composer';
 import { FactsPanel } from './FactsPanel';
 import { StatePane } from './StatePane';
+import { Text } from './TutorialScreen';
 import { useProofGame } from './useProofGame';
 
 interface Props {
@@ -42,6 +44,20 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
   // The intro matters when starting out; on a proof in progress it is just in the way.
   const [showIntro, setShowIntro] = useState(() => game.doc.steps.length === 0);
   const facts = useMemo(() => factsFor(course, level), [course, level]);
+  // Hints come one at a time, and only when asked for.
+  const hints = level.hints ?? [];
+  const [hintsShown, setHintsShown] = useState(0);
+  const moreHints = hintsShown < hints.length;
+  const showHint = () => {
+    setHintsShown((n) => Math.min(n + 1, hints.length));
+    setShowIntro(true);
+  };
+  const hintButton = moreHints && (
+    <button type="button" className="link" onClick={showHint}>
+      {hintsShown === 0 ? 'Hint' : `Next hint (${hintsShown}/${hints.length})`}
+    </button>
+  );
+  const [editingId, setEditingId] = useState<StepId | null>(null);
   const showFacts = () => document.getElementById('facts')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 
   const ev = game.checked?.ev ?? null;
@@ -50,8 +66,12 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
   const selectedStep = checkpoint.next;
   const stepResult = selectedStep ? ev?.steps.get(selectedStep.id) : undefined;
   const offline = game.engine.kind === 'offline';
+  const rejected = stepResult?.status === 'error';
+  // Editing follows the selection: choosing another step ends it.
+  const editing = selectedStep && selectedStep.id === editingId ? selectedStep : null;
 
   const goal = checkpoint.goals?.[0] ?? null;
+  const previewReady = game.upToDate && game.engine.kind === 'ready';
 
   return (
     <div className="workspace">
@@ -75,8 +95,20 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
 
       {showIntro && (
         <section className="intro">
-          <p>{level.intro}</p>
+          <p>
+            <Text text={level.intro} />
+          </p>
+          {hintsShown > 0 && (
+            <ol className="hints">
+              {hints.slice(0, hintsShown).map((h, i) => (
+                <li key={i}>
+                  <Text text={h} />
+                </li>
+              ))}
+            </ol>
+          )}
           <div className="intro-actions">
+            {hintButton}
             {tutorialsBefore(course, level.id).map((t) => (
               <button key={t.id} type="button" className="link" onClick={() => onOpen(t.id)}>
                 {t.title}
@@ -96,6 +128,7 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
           <button type="button" className="link" onClick={() => setShowIntro(true)}>
             Show intro
           </button>
+          {hintButton}
           <button type="button" className="link" onClick={showFacts}>
             Theorems and definitions
           </button>
@@ -129,23 +162,39 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
       <Composer
         catalog={game.catalog}
         policy={level.policy}
-        goal={goal}
+        goals={checkpoint.goals}
         facts={facts}
         definitions={course.definitions}
         pick={pick}
         renameNames={hiddenNames(goal)}
+        editing={editing}
+        preview={{ session, level: game.source, doc: game.doc, at: game.selection, ready: previewReady }}
         onAdd={game.addStep}
+        onReplace={(step, tactic, args) => game.replaceStep(step.id, tactic, args)}
+        onStopEditing={() => setEditingId(null)}
       />
 
       <section className="panel">
         <div className="panel-head">
           <span>
-            {selectedStep ? 'Before the selected step' : 'Proof state'}
+            {rejected ? 'Before the rejected step' : selectedStep ? 'Before the selected step' : 'Proof state'}
           </span>
           {selectedStep && (
-            <button type="button" className="link danger" onClick={() => game.removeStep(selectedStep.id)}>
-              Delete step
-            </button>
+            <span className="panel-actions">
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  setEditingId(selectedStep.id);
+                  document.querySelector('.composer')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }}
+              >
+                Change
+              </button>
+              <button type="button" className="link danger" onClick={() => game.removeStep(selectedStep.id)}>
+                  Delete
+              </button>
+            </span>
           )}
         </div>
         <StatePane
@@ -157,16 +206,8 @@ export function Workspace({ course, level, session, startup, next, onBack, onOpe
         {checkpoint.goals === null && !stepResult?.errors.length && ev && (
           <FirstError ev={ev} doc={game.doc} onSelect={game.setSelection} />
         )}
-        {stepResult?.errors.map((e, i) => (
-          <pre key={i} className="error">
-            {e.text}
-          </pre>
-        ))}
-        {ev?.headerErrors.map((e, i) => (
-          <pre key={i} className="error">
-            The statement itself has an error: {e.text}
-          </pre>
-        ))}
+        {stepResult?.errors.map((e, i) => <ErrorNote key={i} text={e.text} />)}
+        {ev?.headerErrors.map((e, i) => <ErrorNote key={i} text={`The statement itself has an error: ${e.text}`} />)}
       </section>
 
       <FactsPanel facts={facts} definitions={course.definitions} onUse={useFact} />
@@ -191,11 +232,29 @@ function FirstError({
   const text = ev.steps.get(doc.steps[at]!.id)!.errors[0]?.text ?? '';
   return (
     <>
-      <pre className="error">{text}</pre>
+      <ErrorNote text={text} />
       <button type="button" className="link" onClick={() => onSelect(at)}>
         Show the state before that step
       </button>
     </>
+  );
+}
+
+/**
+ * A Lean error, shortest useful form first: what went wrong on one line.
+ * The rest (Lean repeats the goal it was on) is a tap away.
+ */
+function ErrorNote({ text }: { text: string }) {
+  return (
+    <div className="error">
+      <p className="error-summary">{errorSummary(text)}</p>
+      {hasMoreThanSummary(text) && (
+        <details>
+          <summary>Lean's full message</summary>
+          <pre>{text}</pre>
+        </details>
+      )}
+    </div>
   );
 }
 

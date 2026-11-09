@@ -34,7 +34,12 @@ export const levels: Level[] = [
     id: 'maps.hom_comp',
     title: 'Compose two maps',
     prerequisites: [],
-    intro: 'If f and g each respect the operations, so does doing f and then g.',
+    intro: "If f and g each respect the operations, so does doing f and then g.",
+    hints: [
+      "`IsHom` is a definition. Unfold it to see what has to be shown.",
+      "It starts with \"for all x and y\", so `intro` them.",
+      "Unfold `compose`, then rewrite with what f and g each respect: `hf`, then `hg`.",
+    ],
     theoremName: 'hom_comp',
     header: `theorem hom_comp (A B C : Type) (opA : A → A → A) (opB : B → B → B) (opC : C → C → C)
     (f : A → B) (g : B → C) (hf : IsHom opA opB f) (hg : IsHom opB opC g) :
@@ -46,7 +51,12 @@ export const levels: Level[] = [
     id: 'maps.hom_pair',
     title: 'Pair two maps',
     prerequisites: ['maps.hom_comp'],
-    intro: 'f and g start from the same place. Sending x to (f x, g x) respects the operations, with pairs combined part by part.',
+    intro: "f and g start from the same place. Sending x to (f x, g x) respects the operations, with pairs combined part by part.",
+    hints: [
+      "Start as in the last level: unfold `IsHom`, then `intro`.",
+      "Unfold `pairMap` and `prodOp` to see the pairs.",
+      "Rewrite with `hf` and `hg`.",
+    ],
     theoremName: 'hom_pair',
     header: `theorem hom_pair (A B C : Type) (opA : A → A → A) (opB : B → B → B) (opC : C → C → C)
     (f : A → B) (g : A → C) (hf : IsHom opA opB f) (hg : IsHom opA opC g) :
@@ -58,8 +68,12 @@ export const levels: Level[] = [
     id: 'maps.hom_fanout',
     title: 'Compose, then pair',
     prerequisites: ['maps.hom_pair'],
-    intro:
-      'Go from A to B with f, then split into C and D with g and h. Both earlier levels fit together here. apply hom_comp can\'t guess the operation on B from the goal, so name it: hom_comp (opB := opB).',
+    intro: "Go from A to B with f, then split into C and D with g and h. No unfolding this time: the two earlier levels fit together.",
+    hints: [
+      "The outermost thing in the goal is a `compose`, so start with `hom_comp`.",
+      "`apply hom_comp` can't guess the operation on B from the goal, so name it: `hom_comp (opB := opB)`.",
+      "The goal about the pair is exactly `hom_pair`.",
+    ],
     theoremName: 'hom_fanout',
     header: `theorem hom_fanout (A B C D : Type) (opA : A → A → A) (opB : B → B → B) (opC : C → C → C)
     (opD : D → D → D) (f : A → B) (g : B → C) (h : B → D)

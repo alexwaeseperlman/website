@@ -6,7 +6,7 @@ import { Session } from '../session/session';
 import { warmUpChecks } from '../core/course/warm-up';
 import { defaultCatalog } from '../core/catalog/registry';
 import { courseNodes, nextNode, tutorialsBefore } from '../core/course/nodes';
-import { loadProgress, loadReadTutorials } from '../storage/storage';
+import { loadProgress, loadReadTutorials, saveSetting } from '../storage/storage';
 import { EngineSettings } from './EngineSettings';
 import { MapScreen } from './MapScreen';
 import { TutorialScreen } from './TutorialScreen';
@@ -56,6 +56,10 @@ export function App() {
 
   const node = courseNodes(course).find((n) => (n.kind === 'level' ? n.level.id : n.tutorial.id) === levelId);
   const level = node?.kind === 'level' ? node.level : undefined;
+  // The map reopens on the chapter of the level played last.
+  useEffect(() => {
+    if (level) saveSetting('last-level', level.id);
+  }, [level]);
   const progress = useMemo(() => loadProgress(), [progressTick, levelId]);
   const readTutorials = useMemo(() => loadReadTutorials(), [progressTick, levelId]);
 

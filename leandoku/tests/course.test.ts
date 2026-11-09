@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { course as naturalCourse } from '../content/course';
 import { defaultCatalog } from '../src/core/catalog/registry';
 import { levelSource, scriptToDocument } from '../src/core/course/environment';
+import { factsFor } from '../src/core/course/facts';
 import { unlockedLevels, validateCourse } from '../src/core/course/graph';
 import type { Course } from '../src/core/course/types';
 import { checkPolicy, paletteFor } from '../src/core/policy/policy';
@@ -44,6 +45,24 @@ describe('course', () => {
     expect(src.prelude).toContain('theorem add_succ');
     expect(src.prelude).not.toContain('theorem zero_add');
     expect(src.prelude).not.toContain('theorem add_assoc');
+  });
+
+  it('offers and compiles only the theorems a level allows', () => {
+    const catalog = defaultCatalog();
+    const level = (id: string) => naturalCourse.levels.find((l) => l.id === id)!;
+    // facts: [] means no earlier theorem, even though some are prerequisites.
+    const closed = level('logic.imp_trans');
+    expect(factsFor(naturalCourse, closed)).toEqual([]);
+    expect(levelSource(naturalCourse, closed, catalog).prelude).not.toContain('theorem and_swap');
+    const open = level('logic.fork_swapped');
+    expect(factsFor(naturalCourse, open).map((f) => f.name)).toContain('fork');
+    expect(levelSource(naturalCourse, open, catalog).prelude).toContain('theorem fork');
+  });
+
+  it('gives every level hints, and keeps the answer out of the intro', () => {
+    for (const l of naturalCourse.levels) {
+      expect(l.hints?.length, l.id).toBeGreaterThan(0);
+    }
   });
 
   it("compiles only the chapter preludes a level uses", () => {

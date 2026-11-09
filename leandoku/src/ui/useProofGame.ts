@@ -3,7 +3,7 @@ import { defaultCatalog } from '../core/catalog/registry';
 import type { SlotValue } from '../core/catalog/types';
 import { levelSource } from '../core/course/environment';
 import type { Course, Level } from '../core/course/types';
-import { deleteStep, emptyDocument, indexOfStep, insertStep, makeStep, validInsertPoint } from '../core/document/edit';
+import { deleteStep, emptyDocument, indexOfStep, insertStep, makeStep, updateStep, validInsertPoint } from '../core/document/edit';
 import { History } from '../core/document/history';
 import type { InsertPoint, ProofDocument, StepId } from '../core/document/types';
 import { evaluate, type Evaluation } from '../core/evaluate/evaluate';
@@ -61,6 +61,10 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
       const ev = evaluate(current, out.response);
       setChecked({ doc, ser: current, ev });
       setEngine({ kind: 'ready' });
+      // Lean stops at the first step it rejects. Looking past it shows
+      // nothing, so bring the selection back to that step.
+      const failed = doc.steps.findIndex((s) => ev.steps.get(s.id)?.status === 'error');
+      if (failed >= 0) setSelection((s) => Math.min(s, failed));
       if (ev.status === 'complete' && checkPolicy(doc, level.policy).length === 0) {
         markComplete(level.id, level.revision);
       }
@@ -92,6 +96,16 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
       const index = indexOfStep(doc, id);
       if (index < 0) return;
       apply(deleteStep(doc, id), index);
+    },
+    [doc, apply],
+  );
+
+  /** Swap a step for another tactic in place; the steps around it stay. */
+  const replaceStep = useCallback(
+    (id: StepId, tactic: string, args: Record<string, SlotValue>) => {
+      const index = indexOfStep(doc, id);
+      if (index < 0) return;
+      apply(updateStep(doc, id, { tactic, args }), index + 1);
     },
     [doc, apply],
   );
@@ -136,6 +150,7 @@ export function useProofGame(course: Course, level: Level, session: Session | nu
     setSelection,
     addStep,
     removeStep,
+    replaceStep,
     undo,
     redo,
     canUndo: history.canUndo,

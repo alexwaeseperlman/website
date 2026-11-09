@@ -12,6 +12,7 @@ import type { ScriptStep } from '../../src/core/course/types';
 import { emptyDocument, insertStep, makeStep } from '../../src/core/document/edit';
 import type { ProofDocument } from '../../src/core/document/types';
 import { evaluate, type Evaluation } from '../../src/core/evaluate/evaluate';
+import { probeSource, readProbe } from '../../src/core/play/probe';
 import { checkPolicy } from '../../src/core/policy/policy';
 import { serialize, type LevelSource } from '../../src/core/serializer/serialize';
 import { PROTOCOL_VERSION } from '../../src/engine/protocol';
@@ -92,6 +93,33 @@ describe.skipIf(!available)('Lean bridge', () => {
     const named = ev.steps.get(rename!.id)!.goalsAfter![0]!;
     expect(named.hyps.map((h) => `${h.name} : ${h.type}`)).toEqual(['n : Natural', 'ih : zero + n = n']);
     expect(named.target).toBe('zero + succ n = succ n');
+  });
+
+  it('previews candidate steps: the goal each would leave, or why Lean rejects it', async () => {
+    const src = levelSource(naturalCourse, zeroAdd, catalog);
+    const { doc } = await replay(zeroAdd.solution.slice(0, 3), src);
+    const rule = (term: string, reverse = false) => ({ tactic: 'rw', args: { rules: { kind: 'rules' as const, rules: [{ term, reverse }] } } });
+    const probe = probeSource(doc, 3, [rule('add_succ'), rule('add_zero'), rule('ih'), rule('ih', true), { tactic: 'rfl', args: {} }], catalog, src);
+    const res = await engine!.check({ version: PROTOCOL_VERSION, requestId: `t${++req}`, source: probe.source });
+    const [addSucc, addZero, ih, ihBack, byRfl] = readProbe(probe, res);
+    expect(addSucc).toMatchObject({ kind: 'ok', goals: [{ target: 'succ (zero + n) = succ n' }] });
+    expect(addZero!.kind).toBe('error');
+    expect(ih!.kind).toBe('error');
+    expect(ihBack!.kind).toBe('ok');
+    expect(byRfl!.kind).toBe('error');
+    // A candidate that closes the goal leaves one goal fewer.
+    const early = probeSource(doc, 1, [{ tactic: 'rfl', args: {} }], catalog, src);
+    const closed = readProbe(early, await engine!.check({ version: PROTOCOL_VERSION, requestId: `t${++req}`, source: early.source }));
+    expect(closed[0]).toMatchObject({ kind: 'ok', goals: [{ tag: 'succ' }] });
+  });
+
+  it('a level that allows no facts cannot cite an earlier theorem, even typed by hand', async () => {
+    const level = naturalCourse.levels.find((l) => l.id === 'logic.imp_trans')!;
+    expect(level.policy.facts).toEqual([]);
+    const src = levelSource(naturalCourse, level, catalog);
+    const cite = makeStep('exact', { term: { kind: 'term', text: 'and_swap' } }, counterIds());
+    const { ev } = await check(insertStep(emptyDocument(), 0, cite), src);
+    expect(ev.steps.get(cite.id)!.errors[0]!.text).toMatch(/[Uu]nknown identifier/);
   });
 
   it('pulls apart nested ands with cases and rename_i', async () => {

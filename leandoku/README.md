@@ -15,6 +15,7 @@ behind it, are in the [design doc](https://claude.ai/artifact/K3GPQ4TBKLyc4hFq8o
 | `src/core/document/` | The proof as structure: steps with stable ids, branches, undo. |
 | `src/core/serializer/` | Document → ordinary Lean + a source map. Every generated line is visible to the player. |
 | `src/core/evaluate/` | Matches Lean's results to visible steps and decides complete / incomplete / rejected. |
+| `src/core/play/` | What the player sees at a point in the proof, and previews: candidate steps are written out as `example`s, checked by Lean, and shown with the goals Lean reports for them. |
 | `src/core/policy/` | Per-level limits applied on top of the catalog, and checked again at completion. |
 | `src/core/course/` | Levels, prerequisite graph, and each level's Lean environment. |
 | `src/engine/` | The `Engine` interface and the versioned, validated wire protocol. |

@@ -14,7 +14,7 @@ interface Props {
 }
 
 /** Inline `code` in tutorial text, the only markup tutorials use. */
-function Text({ text }: { text: string }) {
+export function Text({ text }: { text: string }) {
   return (
     <>
       {text.split(/(`[^`]+`)/).map((part, i) =>
