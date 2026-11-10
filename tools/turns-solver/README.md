@@ -9,6 +9,12 @@ Then check both against every stored par:
     python3 cpp_check.py      # turns.cpp
     python3 lat2_check.py     # lat2.cpp
 
+## In the browser
+`./build-wasm.sh` builds `turns.cpp` as `public/turns/solver.wasm` (needs `pip install ziglang`). The level builder's
+"Run solver" button runs it in a worker (`public/turns/solver-worker.js`) to find par and the hint solution.
+It also takes fixed-angle tools (r90, r120, ...) through an optional trailing line of the input.
+`levels.sql` is the Supabase table that published community levels live in.
+
 ## Solvers
 - `turns.cpp` / `cpp.py`: exact BFS. Turns (ccw/cw, minimal angle), mirrors with an optional flip budget, links, arrows. Lists every legal selection up front, so it's best on small and medium boards.
 - `lat2.cpp` / `lat.py`: piece-centric solver for big boards. A move is (centre, order, direction, which pieces' orbits turn); black dots are padding chosen so the turn is exactly the intended one. Bidirectional search for solving, random walks for proposing goals, fixed-angle tools (quarter/third turns), and a no-tilt mode (`lat.TILT = 90` or `60`) to test whether tilted squares/triangles are required. No mirrors.
