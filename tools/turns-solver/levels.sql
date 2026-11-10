@@ -15,18 +15,16 @@ create index turns_levels_plays_idx on public.turns_levels (plays desc, id desc)
 create index turns_levels_author_idx on public.turns_levels (author_id);
 
 alter table public.turns_levels enable row level security;
--- anyone can read; only the signed-in author can add, change or remove their own levels
+-- anyone can read; only the signed-in author can add or remove their own levels.
+-- A published level can't be changed: results on it would stop meaning anything. Copy it and publish the copy.
 create policy "levels are public" on public.turns_levels for select to anon, authenticated using (true);
 create policy "authors add levels" on public.turns_levels for insert to authenticated with check (author_id = (select auth.uid()));
-create policy "authors change their levels" on public.turns_levels for update to authenticated
-  using (author_id = (select auth.uid())) with check (author_id = (select auth.uid()));
 create policy "authors remove their levels" on public.turns_levels for delete to authenticated using (author_id = (select auth.uid()));
 
--- authors can't set the counters or the owner: only these columns are writable
+-- authors can't set the counters or the owner: only these columns can be given on insert
 revoke all on public.turns_levels from anon, authenticated;
 grant select on public.turns_levels to anon, authenticated;
 grant insert (name, author_name, data) on public.turns_levels to authenticated;
-grant update (name, author_name, data, updated_at) on public.turns_levels to authenticated;
 grant delete on public.turns_levels to authenticated;
 
 -- play and solve counters, bumped by the game for anyone who plays
