@@ -7,9 +7,22 @@
 //   nl then nl lines "i j"        (links between tracked pieces i,j)
 //   na then na lines "i j"        (arrow i -> j)
 //   [solve] ng then ng lines "pos color"
+//   [optional] nf then nf fixed turn angles in degrees (90 -90 120 -120 180 ...), for the fixed-angle tools
 // Output: explore -> "moves M\nmaxdepth D\nstates S\n" then lines "depth pos_r pos_g pos_y" for configs at max depth (up to 50)
-//         solve   -> "par D" then one line per move "size type" (type 0 turn, 1 flip)
-#include <bits/stdc++.h>
+//         solve   -> "par D" then one line per move "size type mask dir phi" (type 0 turn, 1 flip, 2 fixed turn with dir = degrees)
+//                    "par -1" = no solution, "par -2" = gave up (too many states for the memory limit)
+// Also builds as WebAssembly for the in-game level builder: see build-wasm.sh.
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+#include <set>
+#include <map>
+#include <tuple>
+#include <algorithm>
+#include <iostream>
+#include <unordered_map>
 using namespace std;
 typedef unsigned long long u64;
 int n; vector<double> X, Y;
@@ -62,10 +75,12 @@ int main(){
   int nl; cin>>nl; vector<pair<int,int>> links(nl); for(auto&l:links) cin>>l.first>>l.second;
   int na; cin>>na; vector<pair<int,int>> arrows(na); for(auto&a:arrows) cin>>a.first>>a.second;
   vector<pair<int,int>> goal; if(mode=="solve"){ int ng; cin>>ng; goal.resize(ng); for(auto&g:goal) cin>>g.first>>g.second; }
+  vector<int> fixedDeg; { int nf=0; if(cin>>nf){ fixedDeg.resize(nf); for(int&d:fixedDeg) cin>>d; } }
+  if(n>64 || T>16){ fprintf(stderr,"too big: at most 64 dots and 16 tracked pieces\n"); return 1; }
 
   // ---- rotation moves: unions of full orbits about candidate centres
   set<u64> rotMasks;
-  if(ccw||cw) for(int k=2;k<=8;k++){
+  if(ccw||cw||!fixedDeg.empty()) for(int k=2;k<=12;k++){
     double th=2*M_PI/k, cs=cos(th), sn=sin(th);
     set<pair<long long,long long>> seenC;
     for(int a=0;a<n;a++) for(int b=0;b<n;b++){ if(a==b) continue;
@@ -87,6 +102,10 @@ int main(){
     if(ccw && rotperm(m,cx,cy, 2*M_PI/k, mv.perm)) moves.push_back(mv);
     if(cw && k>2 && rotperm(m,cx,cy,-2*M_PI/k, mv.perm)){ mv.dir=-1; moves.push_back(mv); }
     else if(cw && k==2 && !ccw && rotperm(m,cx,cy,-2*M_PI/k, mv.perm)){ mv.dir=-1; moves.push_back(mv); } }
+  // ---- fixed-angle turns: any selection that the exact angle maps onto itself
+  for(int deg:fixedDeg) for(u64 m:rotMasks){ double cx,cy; centroid(m,cx,cy);
+    Move mv; mv.mask=m; mv.type=2; mv.dir=deg;
+    if(rotperm(m,cx,cy,deg*M_PI/180,mv.perm)) moves.push_back(mv); }
   // ---- mirror moves: unions of swapped pairs and fixed points for each axis
   if(mm){
     set<tuple<long long,long long>> seenAx; set<pair<u64,long long>> seenMv;
@@ -110,8 +129,15 @@ int main(){
   int M=moves.size();
   // ---- BFS over tracked positions (+ flips used)
   int FB = mb<0 ? 1 : mb+1;
+  double Sd=FB; for(int i=0;i<T;i++) Sd*=n;
+  if(Sd>9e18){ fprintf(stderr,"too big: too many tracked pieces for this many dots\n"); return 1; }
   long long S=FB; for(int i=0;i<T;i++) S*=n;
-  bool dense = S <= 200000000LL;
+#ifdef __wasm__
+  const long long DENSE=48000000LL; const size_t MAXSTATES=4000000;    // stay well inside a browser tab's memory
+#else
+  const long long DENSE=200000000LL; const size_t MAXSTATES=(size_t)-1;
+#endif
+  bool dense = S <= DENSE;
   vector<signed char> dv; unordered_map<long long,signed char> dm;
   if(dense) dv.assign(S,-1);
   auto getd=[&](long long s)->int{ if(dense) return dv[s]; auto it=dm.find(s); return it==dm.end()?-1:it->second; };
@@ -130,6 +156,7 @@ int main(){
   while(h<q.size() && found<0){
     long long s=q[h]; int f; dec(s,cur,f); int d=getd(s);
     if(goalDepth>=0 && d>=goalDepth) break;     // the goal layer is complete
+    if(q.size()>MAXSTATES){ printf(solve?"par -2\n":"gaveup\n"); return 0; }
     h++;
     int cs = solve ? back[s].cost : 0;
     u64 occ=0; for(int i=0;i<T;i++) occ|=1ULL<<cur[i];
