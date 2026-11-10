@@ -1,7 +1,7 @@
 // Turns service worker: works offline after the first visit
-const CACHE = 'turns-v6';
+const CACHE = 'turns-v7';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
-  './builder.js?v=20261110e', './solver-worker.js?v=20261110a', './solver.wasm?v=1'];   // level builder and its solver;
+  './builder.js?v=20261110f', './solver-worker.js?v=20261110f', './solver.wasm?v=2'];   // level builder and its solver;
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

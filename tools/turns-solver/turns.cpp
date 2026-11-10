@@ -8,6 +8,8 @@
 //   na then na lines "i j"        (arrow i -> j)
 //   [solve] ng then ng lines "pos color"
 //   [optional] nf then nf fixed turn angles in degrees (90 -90 120 -120 180 ...), for the fixed-angle tools
+//   [optional] nfl then nfl lines "p q"   fixed links between board positions p,q (they never move)
+//              nfa then nfa lines "p q"   fixed arrows p -> q between board positions
 // Output: explore -> "moves M\nmaxdepth D\nstates S\n" then lines "depth pos_r pos_g pos_y" for configs at max depth (up to 50)
 //         solve   -> "par D" then one line per move "size type mask dir phi" (type 0 turn, 1 flip, 2 fixed turn with dir = degrees)
 //                    "par -1" = no solution, "par -2" = gave up (too many states for the memory limit)
@@ -76,6 +78,9 @@ int main(){
   int na; cin>>na; vector<pair<int,int>> arrows(na); for(auto&a:arrows) cin>>a.first>>a.second;
   vector<pair<int,int>> goal; if(mode=="solve"){ int ng; cin>>ng; goal.resize(ng); for(auto&g:goal) cin>>g.first>>g.second; }
   vector<int> fixedDeg; { int nf=0; if(cin>>nf){ fixedDeg.resize(nf); for(int&d:fixedDeg) cin>>d; } }
+  vector<pair<int,int>> flinks, farrows;
+  { int k=0; if(cin>>k){ flinks.resize(k); for(auto&l:flinks) cin>>l.first>>l.second; }
+    k=0; if(cin>>k){ farrows.resize(k); for(auto&a:farrows) cin>>a.first>>a.second; } }
   if(n>64 || T>16){ fprintf(stderr,"too big: at most 64 dots and 16 tracked pieces\n"); return 1; }
 
   // ---- rotation moves: unions of full orbits about candidate centres
@@ -125,6 +130,15 @@ int main(){
           double cx,cy; centroid(v,cx,cy); Move mv; mv.mask=v; mv.type=1; mv.phi=phi;
           if(reflperm(v,cx,cy,phi,mv.perm)) moves.push_back(mv); } }
     }
+  }
+  // ---- fixed links and arrows constrain the selection itself, wherever the pieces are: drop the moves they forbid
+  if(!flinks.empty() || !farrows.empty()){
+    vector<Move> keep;
+    for(auto&mv:moves){ u64 m=mv.mask; bool ok=true;
+      for(auto&l:flinks) if(((m>>l.first)&1)!=((m>>l.second)&1)){ok=false;break;}
+      if(ok) for(auto&a:farrows) if(((m>>a.first)&1) && !((m>>a.second)&1)){ok=false;break;}
+      if(ok) keep.push_back(mv); }
+    moves.swap(keep);
   }
   int M=moves.size();
   // ---- BFS over tracked positions (+ flips used)
