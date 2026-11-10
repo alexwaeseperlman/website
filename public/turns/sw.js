@@ -1,5 +1,5 @@
 // Turns service worker: works offline after the first visit
-const CACHE = 'turns-v7';
+const CACHE = 'turns-v8';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './builder.js?v=20261110f', './solver-worker.js?v=20261110f', './solver.wasm?v=2'];   // level builder and its solver;
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });

@@ -3,3 +3,4 @@ lat2
 sols.json
 results*.jsonl
 __pycache__/
+fixed_pack.json
