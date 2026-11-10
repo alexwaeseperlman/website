@@ -183,10 +183,25 @@ function edit(fn){
   D.par = null; D.sol = null; D.tested = null; D.state = null; stopSolver();
   saveStore(); recompute(); bRefresh(); autoSolve();
 }
+// Working out what can be built from a selection gets slow on big boards (tens of milliseconds on a laptop,
+// several times that on a phone), so it runs in a worker made from the game's own completions() source.
+// The board never waits for it: the selection shows at once and the shapes arrive a moment later.
+let shapeWorker = null, shapeSeq = 0, shapesPending = false;
+try{
+  const src = `const EPS = ${EPS}, ROT = ${JSON.stringify(ROT)}, MINROT = ${JSON.stringify(MINROT)}, ADD_ANGLES = ${JSON.stringify(ADD_ANGLES)};
+    const keyOf = ${keyOf}; ${centroid} ${rotP} ${reflP} ${completions}
+    onmessage = e => { const { seq, pts, idx, budget } = e.data; let out = []; try{ out = completions(pts, idx, ['ccw'], budget); }catch(err){} postMessage({ seq, out }); };`;
+  shapeWorker = new Worker(URL.createObjectURL(new Blob([src], { type:'text/javascript' })));
+  shapeWorker.onmessage = e => { if (e.data.seq !== shapeSeq) return; shapesPending = false; bopts = e.data.out; bk = -1; if (screen === 'build') bRefresh(); };
+  shapeWorker.onerror = () => { shapeWorker = null; if (shapesPending && D){ recompute(); bRefresh(); } };
+}catch(e){ shapeWorker = null; }
 function recompute(){
-  const idx = [...bsel].sort((a, b) => a - b), room = MAXPTS - D.pts.length;
-  bopts = mode === 'points' && idx.length >= 2 && room > 0 ? completions(D.pts, idx, ['ccw'], Math.min(24, room)) : [];
+  const idx = [...bsel].sort((a, b) => a - b), room = MAXPTS - D.pts.length, want = mode === 'points' && idx.length >= 2 && room > 0;
   bk = -1;   // nothing is chosen until the author taps a shape
+  shapeSeq++; shapesPending = false; bopts = [];
+  if (!want) return;
+  if (shapeWorker){ shapesPending = true; shapeWorker.postMessage({ seq: shapeSeq, pts: D.pts, idx, budget: Math.min(24, room) }); }
+  else bopts = completions(D.pts, idx, ['ccw'], Math.min(24, room));
 }
 
 /* ================= editor: drawing ================= */
@@ -268,6 +283,7 @@ function bRefresh(){
     st.textContent = D.pts.length >= MAXPTS ? `That's the most dots a level can have (${MAXPTS}).`
       : n === 0 ? 'Select two or more dots to see what you can build from them.'
       : n === 1 ? 'Select one more dot.'
+      : shapesPending ? 'Working out what can be built from these dots…'
       : !bopts.length ? 'Nothing new can be built from these dots.'
       : cur ? `This shape adds ${cur.pts.length} dot${cur.pts.length > 1 ? 's' : ''}. Tap Add to keep it, or pick another.`
       : `${bopts.length} shape${bopts.length > 1 ? 's' : ''} can be built from these dots. Tap one to see it on the board.`;
