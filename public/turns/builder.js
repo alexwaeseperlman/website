@@ -6,7 +6,7 @@
    - #l=<id>   play one published level (the share link)
    Published levels live in the Supabase table `turns_levels` (see tools/turns-solver/levels.sql). */
 (() => {
-const V = '20261110f';   // solver files only; bump with solver.wasm
+const V = '20261110g';   // solver files only; bump with solver.wasm
 const BTOOLS = ['ccw', 'cw', 'r90', 'r-90', 'r120', 'r-120'];
 const COLS = ['r', 'g', 'y'], COLNAME = { r:'red', g:'green', y:'gold' }, COLVAR = { r:'var(--red)', g:'var(--green)', y:'var(--gold)' };
 const MAXPTS = 64, MAXTRACKED = 16, GHOSTS = 10, TILES = 48;   // GHOSTS: how many of the smallest shapes are sketched faintly on the board; TILES: how many get a picture to tap
@@ -682,5 +682,17 @@ $('buildBtn').onclick = () => go('build');
 $('bBack').onclick = () => go('home');
 $('xBack').onclick = () => go('home');
 $('xBuild').onclick = () => go('build');
-showScreen();    // the game already routed once, before these screens existed
+// #d=<base64url JSON> opens a level sent as a link (not published anywhere) as a new draft in the editor
+function importLink(){
+  const m = /^#d=([A-Za-z0-9_-]+)$/.exec(location.hash); if (!m) return false;
+  let lv = null, raw = null;
+  try{ raw = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))))); lv = cleanLevel(raw, 'x'); }catch(e){}
+  window.history.replaceState(null, '', '#build');   // so a reload doesn't import it twice
+  if (lv) copyLevel(lv, raw.name, raw.hint);
+  showScreen();
+  if (!lv) say('Level link not understood', '<p>This link doesn\'t hold a level the editor can open.</p>', [['OK', 'primary', closeAcct]]);
+  return true;
+}
+addEventListener('hashchange', importLink);
+if (!importLink()) showScreen();    // the game already routed once, before these screens existed
 })();
