@@ -8,11 +8,8 @@ export interface Fact {
   level: string | null;
 }
 
-/**
- * Theorems this level may cite: exactly those of its prerequisites,
- * transitively, then the library facts the level itself offers.
- */
-export function factsFor(course: Course, level: Level): Fact[] {
+/** Every level this one builds on, transitively. */
+export function prerequisiteClosure(course: Course, levelIds: readonly string[]): Set<string> {
   const byId = new Map(course.levels.map((l) => [l.id, l]));
   const seen = new Set<string>();
   const visit = (id: string): void => {
@@ -22,9 +19,26 @@ export function factsFor(course: Course, level: Level): Fact[] {
       visit(p);
     }
   };
-  visit(level.id);
-  return course.levels
-    .filter((l) => seen.has(l.id))
+  levelIds.forEach(visit);
+  return seen;
+}
+
+/**
+ * Earlier levels whose theorems this level may cite, in course order: its
+ * prerequisites, transitively, narrowed to the names its policy lists.
+ */
+export function citableLevels(course: Course, level: Level): Level[] {
+  const seen = prerequisiteClosure(course, [level.id]);
+  const allowed = level.policy.facts;
+  return course.levels.filter((l) => seen.has(l.id) && (allowed === 'all' || allowed.includes(l.theoremName)));
+}
+
+/**
+ * Theorems this level may cite: the earlier levels its policy allows, then
+ * the library facts the level itself offers.
+ */
+export function factsFor(course: Course, level: Level): Fact[] {
+  return citableLevels(course, level)
     .map((l): Fact => ({ name: l.theoremName, statement: statementOf(l), level: l.id }))
     .concat((level.library ?? []).map((f) => ({ name: f.name, statement: f.statement, level: null })));
 }

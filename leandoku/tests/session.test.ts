@@ -46,6 +46,38 @@ describe('session', () => {
     expect(made).toBe(2);
   });
 
+  it('previews never make a real check stale', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const session = new Session({
+      createEngine: () =>
+        fakeEngine(async (req) => {
+          if (req.source === 'proof') await gate;
+          return empty(req);
+        }),
+    });
+    const real = session.check('proof', 't');
+    expect(await session.probe('preview')).not.toBeNull();
+    release();
+    expect((await real).kind).toBe('result');
+  });
+
+  it('stops asking for previews once one has taken the runtime down', async () => {
+    let calls = 0;
+    const session = new Session({
+      createEngine: () =>
+        fakeEngine(async (req) => {
+          calls++;
+          if (req.source === 'preview') throw new EngineUnavailableError('trap');
+          return empty(req);
+        }),
+    });
+    expect(await session.probe('preview')).toBeNull();
+    expect(await session.probe('preview')).toBeNull();
+    expect(calls).toBe(1);
+    expect((await session.check('proof', 't')).kind).toBe('result');
+  });
+
   it('bounds its cache by bytes', () => {
     const lru = new ByteLru<string>(10);
     lru.set('a', 'x', 4);
