@@ -41,11 +41,12 @@ It also takes fixed-angle tools (r90, r120, ...) through an optional trailing li
 - `lattices.py`: board generators (square, hexagon, triangle, rhombus, honeycomb).
 - `chal_layouts.py`: the small hand-made Challenge boards.
 - `free_search.py`, `hole_search.py`, `lat_search3.py`, `chal_new.py`: random searches for deep levels (full boards, holes that force tilted shapes, far tethers, small challenge boards). Each takes `<seed> <seconds>` and appends JSON lines to a results file. They parallelise perfectly: run several seeds at once on a multi-core machine.
+- `fixed_search.py`, `fixed_pack.py`: random search for levels with fixed links/arrows, and the script that builds the ten "Fixed" chapter levels from the picks (writes `fixed_pack.json`).
 - `gen_sol.py`: regenerates a full par solution for every level (used by the in-game Shapes hints).
 - `gen.py`, `lv2.py`, `shapes.py`: older level-generation helpers some scripts still import.
 
 ## Data
-- `levels6.json`: the current 50 levels, with par, hint sizes and stored solutions.
+- `levels6.json`: the current 60 levels, with par, hint sizes and stored solutions.
 - `levels6_with_mirrors.json`, `levels6_with_building.json`: earlier sets including the removed Mirror and Building levels.
 
 ## Note
