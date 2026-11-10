@@ -6,10 +6,10 @@
    - #l=<id>   play one published level (the share link)
    Published levels live in the Supabase table `turns_levels` (see tools/turns-solver/levels.sql). */
 (() => {
-const V = '20261110a';
+const V = '20261110a';   // solver files only; bump with solver.wasm
 const BTOOLS = ['ccw', 'cw', 'r90', 'r-90', 'r120', 'r-120'];
 const COLS = ['r', 'g', 'y'], COLNAME = { r:'red', g:'green', y:'gold' }, COLVAR = { r:'var(--red)', g:'var(--green)', y:'var(--gold)' };
-const MAXPTS = 64, MAXTRACKED = 16, GHOSTS = 10;   // GHOSTS: how many of the smallest shapes are sketched faintly at once
+const MAXPTS = 64, MAXTRACKED = 16, GHOSTS = 10, TILES = 48;   // GHOSTS: how many of the smallest shapes are sketched faintly on the board; TILES: how many get a picture to tap
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const BACK = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 
@@ -24,9 +24,13 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .b-dock{width:100%;max-width:560px;margin:0 auto}
 .b-dock .seg{margin:8px 0 10px}
 .b-dock .seg button{padding:6px 4px}
-#bPanel{min-height:92px}
+#bPanel{min-height:124px}
 #bPanel .row{margin-bottom:8px;flex-wrap:wrap}
-#bPanel .opt{flex:1;text-align:center;color:var(--grey);font-size:15px;font-variant-numeric:tabular-nums}
+#bShapes{display:flex;gap:6px;overflow-x:auto;min-height:70px;margin:0 -14px 8px;padding:2px 14px 4px;scrollbar-width:thin}
+.bshape{flex:none;width:56px;padding:3px 0 1px;display:flex;flex-direction:column;align-items:center;border-color:var(--border);border-radius:10px;background:var(--field)}
+.bshape svg{width:44px;height:44px;display:block}
+.bshape span{font-size:11px;line-height:1.2;color:var(--grey);font-variant-numeric:tabular-nums}
+.bshape[aria-selected="true"]{border-color:var(--sel);background:color-mix(in srgb, var(--sel) 14%, var(--card))}
 #bPanel .lab{font-size:13px;color:var(--grey);width:44px;flex-shrink:0}
 .brush{width:44px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;border-color:var(--border)}
 .brush[aria-pressed="true"]{border-color:var(--sel);background:color-mix(in srgb, var(--sel) 14%, var(--card))}
@@ -142,7 +146,7 @@ const saveStore = () => { try{ localStorage.setItem(DKEY, JSON.stringify(store))
 const newDraft = () => ({ lid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name:'', hint:'',
   pts:[[0,0],[1,0]], start:[null,null], goal:[], links:[], arrows:[], tools:['ccw','cw'], par:null, sol:null, tested:null, state:null, pubId:null });
 let D = null;                       // the draft being edited
-let mode = 'points', bsel = new Set(), bopts = [], bk = 0, brush = 'r', linkKind = 'link', linkFrom = -1, undoStack = [];
+let mode = 'points', bsel = new Set(), bopts = [], bk = -1, brush = 'r', linkKind = 'link', linkFrom = -1, undoStack = [];
 let bview = { s:1, ox:0, oy:0, dot:10 }, bpaint = null;
 
 function openDraft(d){
@@ -166,7 +170,7 @@ function edit(fn){
 function recompute(){
   const idx = [...bsel].sort((a, b) => a - b), room = MAXPTS - D.pts.length;
   bopts = mode === 'points' && idx.length >= 2 && room > 0 ? completions(D.pts, idx, ['ccw'], Math.min(24, room)) : [];
-  bk = 0;
+  bk = -1;   // nothing is chosen until the author taps a shape
 }
 
 /* ================= editor: drawing ================= */
@@ -200,14 +204,14 @@ function bRender(){
   }
   // everything that could be built from the selection, faintly; the chosen option on top
   if (bopts.length){
-    const seen = new Set(cur.pts.map(keyOf));
+    const seen = new Set(cur ? cur.pts.map(keyOf) : []);
     for (const op of bopts.slice(0, GHOSTS)) for (const p of op.pts){ const k = keyOf(p); if (seen.has(k)) continue; seen.add(k);
       o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${(dot*.55).toFixed(1)}" fill="none" stroke="var(--grey)" stroke-opacity=".55" stroke-width="1.5" stroke-dasharray="2 3"/>`; }
-    const c = cur.info.c;
-    for (const p of cur.pts.concat([...bsel].map(i => D.pts[i])))
+    const c = cur ? cur.info.c : [0, 0];
+    if (cur) for (const p of cur.pts.concat([...bsel].map(i => D.pts[i])))
       o += `<line x1="${X(c[0])}" y1="${Y(c[1])}" x2="${X(p[0])}" y2="${Y(p[1])}" stroke="var(--sel)" stroke-opacity=".4" stroke-width="1.2" stroke-dasharray="3 4"/>`;
-    o += `<circle cx="${X(c[0])}" cy="${Y(c[1])}" r="3.5" fill="var(--sel)"/>`;
-    for (const p of cur.pts) o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${dot.toFixed(1)}" fill="color-mix(in srgb, var(--sel) 16%, transparent)" stroke="var(--sel)" stroke-width="2" stroke-dasharray="5 4"/>`;
+    if (cur) o += `<circle cx="${X(c[0])}" cy="${Y(c[1])}" r="3.5" fill="var(--sel)"/>`;
+    if (cur) for (const p of cur.pts) o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${dot.toFixed(1)}" fill="color-mix(in srgb, var(--sel) 16%, transparent)" stroke="var(--sel)" stroke-width="2" stroke-dasharray="5 4"/>`;
   }
   D.pts.forEach((p, i) => {
     const x = X(p[0]), y = Y(p[1]), c = D.start[i];
@@ -227,6 +231,18 @@ const ringIcon = c => c ? `<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="9
   : `<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="9" fill="none" stroke="var(--grey)" stroke-width="2" stroke-dasharray="3 3"/><path d="M7 19L19 7" stroke="var(--grey)" stroke-width="2" stroke-linecap="round"/></svg>`;
 const toolIcon = t => t in MINROT ? rotIcon(MINROT[t]*90, '') : rotIcon(ROT[t]);
 
+// a small picture of one buildable shape: the selected dots solid, the dots it would add as dashed rings
+function shapeIcon(op){
+  const selP = [...bsel].map(i => D.pts[i]), all = selP.concat(op.pts);
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const s = 30/Math.max(maxX - minX, maxY - minY, 1e-6), ox = 22 - s*(minX + maxX)/2, oy = 22 + s*(minY + maxY)/2;
+  const X = x => (ox + x*s).toFixed(1), Y = y => (oy - y*s).toFixed(1), r = Math.max(1.6, Math.min(4, minDist(all)*s*.22));
+  let o = `<circle cx="${X(op.info.c[0])}" cy="${Y(op.info.c[1])}" r="1" fill="var(--sel)"/>`;
+  for (const p of selP) o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${r.toFixed(1)}" fill="var(--ink)"/>`;
+  for (const p of op.pts) o += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${r.toFixed(1)}" fill="color-mix(in srgb, var(--sel) 25%, transparent)" stroke="var(--sel)" stroke-width="1.2" stroke-dasharray="2 1.5"/>`;
+  return `<svg viewBox="0 0 44 44" aria-hidden="true">${o}</svg>`;
+}
 function bRefresh(){
   if (!D) return;
   for (const b of $('bModes').children) b.setAttribute('aria-pressed', b.dataset.m === mode);
@@ -237,15 +253,17 @@ function bRefresh(){
       : n === 0 ? 'Select two or more dots to see what you can build from them.'
       : n === 1 ? 'Select one more dot.'
       : !bopts.length ? 'Nothing new can be built from these dots.'
-      : `${bopts.length} shape${bopts.length > 1 ? 's' : ''} can be built from these dots. Tap a faint dot or use the arrows.`;
-    pn.innerHTML = `<div class="row"><button id="bPrev" aria-label="Previous shape">‹</button>
-        <span class="opt">${cur ? `Shape ${bk+1} of ${bopts.length}, adds ${cur.pts.length} dot${cur.pts.length > 1 ? 's' : ''}` : 'No shape chosen'}</span>
-        <button id="bNext" aria-label="Next shape">›</button><button id="bAdd" class="primary">Add</button></div>
-      <div class="row"><button id="bDel">Delete selected</button><button id="bNone">Clear selection</button></div>`;
-    $('bPrev').disabled = $('bNext').disabled = bopts.length < 2; $('bAdd').disabled = !cur;
+      : cur ? `This shape adds ${cur.pts.length} dot${cur.pts.length > 1 ? 's' : ''}. Tap Add to keep it, or pick another.`
+      : `${bopts.length} shape${bopts.length > 1 ? 's' : ''} can be built from these dots. Tap one to see it on the board.`;
+    const old = $('bShapes'), scroll = old ? old.scrollLeft : 0;
+    pn.innerHTML = `<div id="bShapes" role="listbox" aria-label="Shapes you can build">${bopts.slice(0, TILES).map((op, k) =>
+        `<button class="bshape" role="option" data-k="${k}" aria-selected="${k === bk}" aria-label="Shape ${k+1}, adds ${op.pts.length} dot${op.pts.length > 1 ? 's' : ''}">${shapeIcon(op)}<span>+${op.pts.length}</span></button>`).join('')
+        || '<span class="muted" style="margin:0;align-self:center">Shapes you can build show up here.</span>'}</div>
+      <div class="row"><button id="bAdd" class="primary">Add</button><button id="bDel">Delete selected</button><button id="bNone">Clear selection</button></div>`;
+    $('bShapes').scrollLeft = bk >= 0 ? scroll : 0;
+    for (const x of pn.querySelectorAll('.bshape')) x.onclick = () => { bk = +x.dataset.k; tone(700, 0, .08, { type:'triangle', gain:.04 }); bRefresh(); };
+    $('bAdd').disabled = !cur;
     $('bDel').disabled = !n || D.pts.length - n < 2; $('bNone').disabled = !n;
-    $('bPrev').onclick = () => { bk = (bk - 1 + bopts.length) % bopts.length; bRefresh(); };
-    $('bNext').onclick = () => { bk = (bk + 1) % bopts.length; bRefresh(); };
     $('bAdd').onclick = addShape; $('bDel').onclick = deleteSel;
     $('bNone').onclick = () => { bsel.clear(); recompute(); bRefresh(); };
   } else if (mode === 'colors'){
@@ -325,9 +343,9 @@ function bHit(e){
   let best = -1, bd = Math.max(24, bview.dot*2.2);
   D.pts.forEach((p, i) => { const d = px(p); if (d < bd){ bd = d; best = i; } });
   if (best >= 0) return { dot: best };
-  // a faint dot: jump to the next shape that includes it
-  const n = Math.min(bopts.length, Math.max(GHOSTS, bk + 1));
-  for (let j = 1; j <= n; j++){ const k = (bk + j) % n; if (bopts[k].pts.some(p => px(p) < 20)) return { opt: k }; }
+  // a faint dot: choose the smallest shape that includes it
+  const k = bopts.slice(0, GHOSTS).findIndex(op => op.pts.some(p => px(p) < 20));
+  if (k >= 0) return { opt: k };
   return {};
 }
 function bSelect(i, on){
@@ -342,7 +360,7 @@ $('bBoard').addEventListener('pointerdown', e => {
   const h = bHit(e);
   if (mode === 'points'){
     if (h.dot >= 0){ $('bBoard').setPointerCapture(e.pointerId); bpaint = { id: e.pointerId, on: !bsel.has(h.dot) }; bSelect(h.dot, bpaint.on); }
-    else if (h.opt >= 0){ bk = h.opt; tone(700 + (bk % 8)*60, 0, .08, { type:'triangle', gain:.04 }); bRefresh(); }
+    else if (h.opt >= 0){ bk = h.opt; tone(700, 0, .08, { type:'triangle', gain:.04 }); bRefresh(); const t = $('bShapes').children[bk]; if (t && t.scrollIntoView) t.scrollIntoView({ block:'nearest', inline:'nearest' }); }
     else if (bsel.size){ bsel.clear(); sfx.deselect(); recompute(); bRefresh(); }
   } else if (h.dot >= 0){
     if (mode === 'colors') applyBrush(h.dot);
