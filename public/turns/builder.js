@@ -39,7 +39,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .btool svg{width:36px;height:36px;overflow:visible}
 .btool[aria-pressed="true"]{opacity:1;border-color:var(--sel);background:color-mix(in srgb, var(--sel) 14%, var(--card))}
 #bHint,.b-in{width:100%;font:inherit;font-size:15px;padding:6px 10px;border:2px solid var(--border);border-radius:8px;background:var(--field);color:var(--ink);-webkit-user-select:text;user-select:text}
-.b-par{margin-top:4px}
+.b-par{margin-top:4px;min-height:38px}
 .b-par .meta b{color:var(--ink);font-weight:600}
 .b-acts{margin-top:8px}
 .b-acts button{flex:1}
@@ -152,7 +152,7 @@ let bview = { s:1, ox:0, oy:0, dot:10 }, bpaint = null;
 function openDraft(d){
   D = d; store.cur = d.lid; saveStore();
   bsel = new Set(); linkFrom = -1; undoStack = []; stopSolver();
-  $('bName').value = D.name; recompute(); bRefresh();
+  $('bName').value = D.name; recompute(); bRefresh(); autoSolve();
 }
 function ensureDraft(){
   if (D) return;
@@ -165,7 +165,7 @@ function edit(fn){
   undoStack.push(JSON.stringify(D)); if (undoStack.length > 100) undoStack.shift();
   fn();
   D.par = null; D.sol = null; D.tested = null; D.state = null; stopSolver();
-  saveStore(); recompute(); bRefresh();
+  saveStore(); recompute(); bRefresh(); autoSolve();
 }
 function recompute(){
   const idx = [...bsel].sort((a, b) => a - b), room = MAXPTS - D.pts.length;
@@ -288,11 +288,14 @@ function bRefresh(){
       const t = x.dataset.t; D.tools = BTOOLS.filter(u => u === t ? !D.tools.includes(t) : D.tools.includes(u)); });
   }
   const pr = $('bPar');
-  if (solver) pr.textContent = 'Solving…';
+  if (solver || autoTimer) pr.textContent = 'Solving…';
   else if (D.state) pr.innerHTML = D.state;
   else if (typeof D.par === 'number') pr.innerHTML = `Par <b>${D.par}</b>, hints ready`;
-  else pr.textContent = D.tested ? `Par unknown. You solved it in ${D.tested}.` : 'Par unknown';
-  $('bSolve').textContent = solver ? 'Cancel' : 'Run solver';
+  else pr.textContent = D.tested ? `Par unknown. You solved it in ${D.tested}.` : (problems(D)[0] || 'Par unknown');
+  if (D.state && D.tested && !/^<b>No solution/.test(D.state)) pr.innerHTML += ` You solved it in ${D.tested}.`;
+  // the solver runs by itself; the button only cancels a run, or retries one that gave up, without a time limit
+  $('bSolve').textContent = solver ? 'Cancel' : D.state === TOO_LONG ? 'Keep solving' : 'Run solver';
+  $('bSolve').hidden = !solver && (!!autoTimer || typeof D.par === 'number' || problems(D).length > 0 || /^<b>No solution/.test(D.state || ''));
   $('bUndo').disabled = !undoStack.length;
   $('bPublish').textContent = D.pubId ? 'Update' : 'Publish';
   bRender();
@@ -378,7 +381,7 @@ $('bName').oninput = () => { D.name = $('bName').value; saveStore(); };
 $('bUndo').onclick = () => {
   if (!undoStack.length) return;
   const d = JSON.parse(undoStack.pop()), keep = { name: D.name, hint: D.hint, pubId: D.pubId };
-  Object.assign(D, d, keep); stopSolver(); bsel.clear(); linkFrom = -1; saveStore(); recompute(); sfx.undo(); bRefresh();
+  Object.assign(D, d, keep); stopSolver(); bsel.clear(); linkFrom = -1; saveStore(); recompute(); sfx.undo(); bRefresh(); autoSolve();
 };
 const say = (title, html, buttons) => acctDialog(title, html, buttons || [['OK', 'primary', closeAcct]]);
 // the draft as a playable level, or a dialog saying what is missing
@@ -398,7 +401,8 @@ $('bTest').onclick = () => {
 
 /* ================= solver (WebAssembly, in a worker) ================= */
 let solver = null;
-function stopSolver(){ if (solver){ solver.terminate(); solver = null; } }
+let autoTimer = 0, limitTimer = 0;
+function stopSolver(){ clearTimeout(autoTimer); autoTimer = 0; clearTimeout(limitTimer); if (solver){ solver.terminate(); solver = null; } }
 function solverInput(lv){
   const CODE = { r:1, g:2, y:3 }, tr = [];
   lv.start.forEach((c, i) => { if (c) tr.push(i); });
@@ -413,18 +417,22 @@ function solverInput(lv){
   const fx = lv.tools.filter(t => t in ROT).map(t => ROT[t]); o.push(fx.length, ...fx);
   return o.join('\n') + '\n';
 }
-$('bSolve').onclick = () => {
-  if (solver){ stopSolver(); bRefresh(); return; }
-  const lv = playable('solve'); if (!lv) return;
-  const input = solverInput(lv), d = D, tooBig = 'Too big for the solver. Par stays unknown.';
-  if (!input){ d.state = tooBig; say('Too big for the solver', `<p>The solver can follow at most ${MAXTRACKED} pieces (colored dots, plus any dot with a link or an arrow). You can still publish with par unknown.</p>`); bRefresh(); return; }
-  let w; try{ w = new Worker('solver-worker.js?v=' + V); }catch(e){ d.state = 'The solver could not start.'; bRefresh(); return; }
+// The solver runs by itself a moment after every edit. If it hasn't finished within AUTO_LIMIT the par is
+// left unknown, and the button offers to keep going without a limit.
+const AUTO_LIMIT = 8000, TOO_LONG = 'Par unknown: solving is taking too long.', TOO_BIG = 'Par unknown: too big for the solver.';
+function startSolver(limit){
+  stopSolver();
+  if (!D || typeof D.par === 'number' || problems(D).length) return bRefresh();
+  const lv = cleanLevel(D, 'x'), input = lv && solverInput(lv), d = D;
+  if (!input){ d.state = TOO_BIG; return bRefresh(); }
+  let w; try{ w = new Worker('solver-worker.js?v=' + V); }catch(e){ d.state = 'Par unknown: the solver could not start.'; return bRefresh(); }
   solver = w; d.state = null;
+  if (limit) limitTimer = setTimeout(() => { if (solver === w){ stopSolver(); d.state = TOO_LONG; saveStore(); if (d === D) bRefresh(); } }, limit);
   const done = r => {
     if (solver !== w) return;
-    w.terminate(); solver = null;
+    stopSolver();
     const lines = (r.out || '').trim().split('\n'), par = /^par (-?\d+)$/.test(lines[0]) ? +lines[0].slice(4) : null;
-    if (r.error || r.code || par === null || par === -2) d.state = tooBig;
+    if (r.error || r.code || par === null || par === -2) d.state = TOO_BIG;
     else if (par === -1){ d.state = '<b>No solution.</b> This level can\'t be solved.'; d.tested = null; }
     else {
       const sol = lines.slice(1).map(l => { const [, type, mask, dir] = l.split(' '), m = BigInt(mask), s = [];
@@ -432,13 +440,20 @@ $('bSolve').onclick = () => {
         return { s, t: type === '2' ? 'r' + dir : +dir > 0 ? 'ccw' : 'cw' }; });
       // keep the result only if the game itself agrees that these moves solve the level
       const chk = cleanLevel(Object.assign({}, d, { par, sol }), 'x');
-      if (chk && chk.par === par){ d.par = par; d.sol = sol; } else d.state = 'The solver\'s answer did not check out. Par stays unknown.';
+      if (chk && chk.par === par){ d.par = par; d.sol = sol; } else d.state = 'Par unknown: the solver\'s answer did not check out.';
     }
     saveStore(); if (d === D) bRefresh();
   };
   w.onmessage = e => done(e.data); w.onerror = () => done({ error:'worker' });
   w.postMessage(input); bRefresh();
-};
+}
+function autoSolve(){
+  clearTimeout(autoTimer); autoTimer = 0;
+  if (!D || D.state || typeof D.par === 'number' || problems(D).length) return;
+  autoTimer = setTimeout(() => { autoTimer = 0; if (D && screen === 'build' && !solver && !D.state) startSolver(AUTO_LIMIT); else bRefresh(); }, 350);
+  bRefresh();
+}
+$('bSolve').onclick = () => { if (solver){ stopSolver(); D.state = 'Par unknown: solving was cancelled.'; bRefresh(); } else startSolver(0); };
 
 /* ================= my levels ================= */
 function draftRow(d){
@@ -480,7 +495,7 @@ $('bPublish').onclick = () => {
   const lv = playable('publish'); if (!lv) return;
   if (/^<b>No solution/.test(D.state || '')) return say('This level can\'t be solved', '<p>The solver found no way to finish it. Change the level, then run the solver again.</p>');
   if (typeof D.par !== 'number' && !D.tested) return say('Solve it first',
-    '<p>So that nobody gets an impossible level, solve it yourself with <b>Test</b>, or let <b>Run solver</b> find par.</p><p>Par can stay unknown: a level you solved by hand can be published without it.</p>');
+    '<p>So that nobody gets an impossible level, solve it yourself with <b>Test</b>, or let the solver finish.</p><p>Par can stay unknown: a level you solved by hand can be published without it.</p>');
   if (!D.name.trim()) return say('Give it a name', '<p>Type a name for your level in the box at the top.</p>', [['OK', 'primary', () => { closeAcct(); $('bName').focus(); }]]);
   if (!sbOn || !sb) return say('Can\'t publish right now', '<p>The level server can\'t be reached. Your level is saved on this device, so try again later.</p>');
   if (!user) return say('Sign in to publish', '<p>Publishing needs an account, so you can update or take down your levels later. Your level is saved on this device.</p>',
@@ -589,7 +604,7 @@ for (const b of $('xSort').children) b.onclick = () => { if (xSort !== b.dataset
 $('xMore').onclick = () => xLoad(true);
 
 /* ================= screens ================= */
-XSCREENS.build = () => { ensureDraft(); bRefresh(); };
+XSCREENS.build = () => { ensureDraft(); bRefresh(); autoSolve(); };
 XSCREENS.explore = () => { for (const b of $('xSort').children) b.setAttribute('aria-pressed', b.dataset.s === xSort); if (xLoaded) xRender(); else xLoad(false); };
 $('exploreBtn').onclick = () => go('explore');
 $('buildBtn').onclick = () => go('build');
