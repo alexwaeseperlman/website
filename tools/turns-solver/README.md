@@ -26,6 +26,7 @@ It also takes fixed-angle tools (r90, r120, ...) through an optional trailing li
       "start": ["r", null, "g", ...],          colour per dot: r, g, y or null
       "goal": [[dotIndex, "r"], ...],
       "links": [[a,b], ...], "arrows": [[from,to], ...],   dot indices at the start
+      "flinks": [[a,b], ...], "farrows": [[from,to], ...], fixed links/arrows: they belong to board positions and never move (turns.cpp only)
       "flips": 1 }                              optional mirror budget (turns.cpp only)
 
 ## Examples

@@ -17,6 +17,10 @@ def to_input(lv, mode, mbudget=None):
     out.append(str(len(A))); out+=[f"{tid[a]} {tid[b]}" for a,b in A]
     if mode=='solve':
         out.append(str(len(lv['goal']))); out+=[f"{p} {CODE[c]}" for p,c in lv['goal']]
+    fx=[t[1:] for t in tools if t[0]=='r' and t[1:].lstrip('-').isdigit()]
+    out.append(str(len(fx))); out+=fx
+    for key in ('flinks','farrows'):
+        F=lv.get(key,[]); out.append(str(len(F))); out+=[f"{a} {b}" for a,b in F]
     return "\n".join(out)+"\n"
 def run(lv, mode, mbudget=None, timeout=300):
     r=subprocess.run(['./turns'],input=to_input(lv,mode,mbudget),capture_output=True,text=True,timeout=timeout)

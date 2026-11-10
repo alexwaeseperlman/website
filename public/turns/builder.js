@@ -6,7 +6,7 @@
    - #l=<id>   play one published level (the share link)
    Published levels live in the Supabase table `turns_levels` (see tools/turns-solver/levels.sql). */
 (() => {
-const V = '20261110a';   // solver files only; bump with solver.wasm
+const V = '20261110f';   // solver files only; bump with solver.wasm
 const BTOOLS = ['ccw', 'cw', 'r90', 'r-90', 'r120', 'r-120'];
 const COLS = ['r', 'g', 'y'], COLNAME = { r:'red', g:'green', y:'gold' }, COLVAR = { r:'var(--red)', g:'var(--green)', y:'var(--gold)' };
 const MAXPTS = 64, MAXTRACKED = 16, GHOSTS = 10, TILES = 48;   // GHOSTS: how many of the smallest shapes are sketched faintly on the board; TILES: how many get a picture to tap
@@ -25,6 +25,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .b-dock .seg{margin:8px 0 10px}
 .b-dock .seg button{padding:6px 4px}
 #bPanel{min-height:124px}
+#bPanel .seg button{font-size:14px}
 #bPanel .row{margin-bottom:8px;flex-wrap:wrap}
 #bShapes{display:flex;gap:6px;overflow-x:auto;min-height:70px;margin:0 -14px 8px;padding:2px 14px 4px;scrollbar-width:thin}
 .bshape{flex:none;width:56px;padding:3px 0 1px;display:flex;flex-direction:column;align-items:center;border-color:var(--border);border-radius:10px;background:var(--field)}
@@ -117,7 +118,8 @@ function cleanLevel(d, name){
     const tools = BTOOLS.filter(t => (d.tools || []).includes(t));
     if (!tools.length || !goal.length) return null;
     const lv = { chapter:'Community', name: String(name || 'Untitled').slice(0, 40), hint: esc(String(d.hint || '').slice(0, 200)), pts, start, goal, tools,
-      links: (d.links || []).filter(pair).map(l => [l[0], l[1]]), arrows: (d.arrows || []).filter(pair).map(l => [l[0], l[1]]) };
+      links: (d.links || []).filter(pair).map(l => [l[0], l[1]]), arrows: (d.arrows || []).filter(pair).map(l => [l[0], l[1]]),
+      flinks: (d.flinks || []).filter(pair).map(l => [l[0], l[1]]), farrows: (d.farrows || []).filter(pair).map(l => [l[0], l[1]]) };
     if (Number.isInteger(d.par) && d.par > 0 && d.par < 1000 && Array.isArray(d.sol) && d.sol.length === d.par &&
         d.sol.every(m => m && tools.includes(m.t) && Array.isArray(m.s) && m.s.length >= 3 && m.s.every(okI))){
       lv.sol = d.sol.map(m => ({ s: m.s.slice(), t: m.t }));
@@ -147,13 +149,14 @@ let store = { cur:null, list:[], author:'' };
 try{ const s = JSON.parse(localStorage.getItem(DKEY)); if (s && Array.isArray(s.list)) store = Object.assign(store, s); }catch(e){}
 const saveStore = () => { try{ localStorage.setItem(DKEY, JSON.stringify(store)); }catch(e){} };
 const newDraft = () => ({ lid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name:'', hint:'',
-  pts:[[0,0],[1,0]], start:[null,null], goal:[], links:[], arrows:[], tools:['ccw','cw'], par:null, sol:null, tested:null, state:null, pubId:null });
+  pts:[[0,0],[1,0]], start:[null,null], goal:[], links:[], arrows:[], flinks:[], farrows:[], tools:['ccw','cw'], par:null, sol:null, tested:null, state:null, pubId:null });
 let D = null;                       // the draft being edited
-let mode = 'points', bsel = new Set(), bopts = [], bk = -1, brush = 'r', linkKind = 'link', linkFrom = -1, undoStack = [];
+let mode = 'points', bsel = new Set(), bopts = [], bk = -1, brush = 'r', linkKind = 'link', linkFixed = false, linkFrom = -1, undoStack = [];
 let bview = { s:1, ox:0, oy:0, dot:10 }, bpaint = null;
 
 function openDraft(d){
   D = d; store.cur = d.lid; saveStore();
+  if (!D.flinks) D.flinks = []; if (!D.farrows) D.farrows = [];   // drafts from before fixed links existed
   bsel = new Set(); linkFrom = -1; undoStack = []; stopSolver();
   $('bName').value = D.name; recompute(); bRefresh(); autoSolve();
 }
@@ -167,7 +170,7 @@ function ensureDraft(){
 // A published level can't be changed (people's results on it would stop meaning anything), only deleted.
 // Any level can be copied into a new draft: one of your own, or one from Community levels.
 function copyLevel(src, name, hint){
-  const d = Object.assign(newDraft(), JSON.parse(JSON.stringify({ pts: src.pts, start: src.start, goal: src.goal, links: src.links || [], arrows: src.arrows || [], tools: src.tools,
+  const d = Object.assign(newDraft(), JSON.parse(JSON.stringify({ pts: src.pts, start: src.start, goal: src.goal, links: src.links || [], arrows: src.arrows || [], flinks: src.flinks || [], farrows: src.farrows || [], tools: src.tools,
     par: typeof src.par === 'number' && src.sol ? src.par : null, sol: typeof src.par === 'number' && src.sol ? src.sol : null })), { name: String(name || '').slice(0, 40), hint: String(hint || '').slice(0, 200) });
   store.list.unshift(d); openDraft(d); return d;
 }
@@ -221,6 +224,14 @@ function bRender(){
   let g = null; try{ g = computeGuides(fit, false); }catch(e){}
   if (g && g.lines) for (const [a, b] of g.lines) o += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="var(--grey)" stroke-opacity=".22"/>`;
   if (g && g.polys) for (const pg of g.polys) o += `<circle cx="${X(pg.c[0])}" cy="${Y(pg.c[1])}" r="${(pg.r*s).toFixed(1)}" fill="none" stroke="var(--grey)" stroke-opacity=".26" stroke-dasharray="3 4"/>`;
+  // fixed links and arrows: dotted and grey, part of the board
+  for (const [a, b] of D.flinks.concat(D.farrows)){
+    const cc = bowCtrl(D.pts[a], D.pts[b], D.pts), isArrow = D.farrows.some(l => l[0] === a && l[1] === b), cx = X(cc[0]), cy = Y(cc[1]), bx = X(D.pts[b][0]), by = Y(D.pts[b][1]);
+    const len = Math.hypot(bx - cx, by - cy) || 1, ux = (bx - cx)/len, uy = (by - cy)/len, f = v => v.toFixed(1);
+    const tx = isArrow ? bx - ux*dot*1.35 : bx, ty = isArrow ? by - uy*dot*1.35 : by, hw = dot*.75, hl = dot*1.1, sw = Math.max(2, dot*.28).toFixed(1);
+    o += `<path d="M${X(D.pts[a][0])} ${Y(D.pts[a][1])} Q${cx} ${cy} ${f(tx)} ${f(ty)}" fill="none" stroke="var(--grey)" stroke-opacity=".7" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${(dot*.1).toFixed(1)} ${(dot*.62).toFixed(1)}"/>`;
+    if (isArrow) o += `<path d="M${f(tx - ux*hl - uy*hw)} ${f(ty - uy*hl + ux*hw)} L${f(tx)} ${f(ty)} L${f(tx - ux*hl + uy*hw)} ${f(ty - uy*hl - ux*hw)}" fill="none" stroke="var(--grey)" stroke-opacity=".7" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
   for (const [a, b] of D.links){
     const cc = bowCtrl(D.pts[a], D.pts[b], D.pts);
     o += `<path d="M${X(D.pts[a][0])} ${Y(D.pts[a][1])} Q${X(cc[0])} ${Y(cc[1])} ${X(D.pts[b][0])} ${Y(D.pts[b][1])}" fill="none" stroke="var(--ink)" stroke-opacity=".28" stroke-width="${(dot*.55).toFixed(1)}" stroke-linecap="round"/>`;
@@ -307,10 +318,13 @@ function bRefresh(){
     for (const x of pn.querySelectorAll('.brush')) x.onclick = () => { brush = x.dataset.b; bRefresh(); };
   } else if (mode === 'links'){
     st.textContent = linkFrom >= 0 ? (linkKind === 'link' ? 'Now tap the dot to link it to.' : 'Now tap the dot the arrow points at.')
-      : linkKind === 'link' ? 'Tap two dots to link them. Linked dots are always selected together.' : 'Tap the tail, then the head. Selecting the tail selects the head too.';
+      : linkKind === 'link' ? (linkFixed ? 'Tap two spots to link them. Whatever sits on them is selected together.' : 'Tap two dots to link them. Linked dots are always selected together.')
+      : linkFixed ? 'Tap the tail spot, then the head spot. Selecting the tail spot selects the head spot too.' : 'Tap the tail, then the head. Selecting the tail selects the head too.';
     pn.innerHTML = `<div class="seg" style="margin:0 0 8px"><button data-k="link" aria-pressed="${linkKind === 'link'}">Link</button><button data-k="arrow" aria-pressed="${linkKind === 'arrow'}">Arrow</button></div>
-      <p class="muted" style="margin:0">Tap the same two dots again to remove a link or an arrow.</p>`;
+      <div class="seg" style="margin:0 0 8px"><button data-f="0" aria-pressed="${!linkFixed}">Moves with the dots</button><button data-f="1" aria-pressed="${linkFixed}">Stays on the board</button></div>
+      <p class="muted" style="margin:0">Tap the same two dots again to remove it.</p>`;
     for (const x of pn.querySelectorAll('[data-k]')) x.onclick = () => { linkKind = x.dataset.k; linkFrom = -1; bRefresh(); };
+    for (const x of pn.querySelectorAll('[data-f]')) x.onclick = () => { linkFixed = x.dataset.f === '1'; linkFrom = -1; bRefresh(); };
   } else {
     st.textContent = 'Choose which turns the player gets.';
     pn.innerHTML = `<div class="row">${BTOOLS.map(t => `<button class="btool" data-t="${t}" aria-pressed="${D.tools.includes(t)}" aria-label="${TOOL_NAME[t]}" title="${TOOL_NAME[t]}">${toolIcon(t)}</button>`).join('')}</div>
@@ -348,7 +362,7 @@ function deleteSel(){
     const keep = l => map[l[0]] >= 0 && map[l[1]] >= 0, mv = l => [map[l[0]], map[l[1]]];
     D.pts = D.pts.filter((_, i) => map[i] >= 0); D.start = D.start.filter((_, i) => map[i] >= 0);
     D.goal = D.goal.filter(g => map[g[0]] >= 0).map(g => [map[g[0]], g[1]]);
-    D.links = D.links.filter(keep).map(mv); D.arrows = D.arrows.filter(keep).map(mv);
+    for (const k of ['links', 'arrows', 'flinks', 'farrows']) D[k] = D[k].filter(keep).map(mv);
     bsel.clear();
   });
   sfx.undo();
@@ -368,9 +382,10 @@ function linkTap(i){
   if (a === i){ bRefresh(); return; }
   edit(() => {
     const same = (l, x, y) => (l[0] === x && l[1] === y), either = l => same(l, a, i) || same(l, i, a);
-    const had = linkKind === 'link' ? D.links.some(either) : D.arrows.some(l => same(l, a, i));
-    D.links = D.links.filter(l => !either(l)); D.arrows = D.arrows.filter(l => !either(l));   // one connection per pair
-    if (!had) (linkKind === 'link' ? D.links : D.arrows).push([a, i]);
+    const key = (linkFixed ? 'f' : '') + linkKind + 's';   // links, arrows, flinks or farrows
+    const had = linkKind === 'link' ? D[key].some(either) : D[key].some(l => same(l, a, i));
+    for (const k of ['links', 'arrows', 'flinks', 'farrows']) D[k] = D[k].filter(l => !either(l));   // one connection per pair
+    if (!had) D[key].push([a, i]);
   });
   sfx.select(2);
 }
@@ -449,6 +464,7 @@ function solverInput(lv){
   o.push(lv.arrows.length, ...lv.arrows.map(([a, b]) => tid.get(a) + ' ' + tid.get(b)));
   o.push(lv.goal.length, ...lv.goal.map(([p, c]) => p + ' ' + CODE[c]));
   const fx = lv.tools.filter(t => t in ROT).map(t => ROT[t]); o.push(fx.length, ...fx);
+  o.push(lv.flinks.length, ...lv.flinks.map(l => l[0] + ' ' + l[1]), lv.farrows.length, ...lv.farrows.map(l => l[0] + ' ' + l[1]));
   return o.join('\n') + '\n';
 }
 // The solver runs by itself a moment after every edit. If it hasn't finished within AUTO_LIMIT the par is
@@ -526,6 +542,7 @@ $('bDrafts').onclick = showDrafts;
 const shareUrl = id => location.origin + location.pathname + '#l=' + id;
 // the public copy: the puzzle plus, when the solver has run, par and the solution the hints are drawn from
 const publicData = d => { const o = { pts: d.pts, start: d.start, goal: d.goal, links: d.links, arrows: d.arrows, tools: d.tools, hint: d.hint.trim() };
+  if (d.flinks.length) o.flinks = d.flinks; if (d.farrows.length) o.farrows = d.farrows;
   if (typeof d.par === 'number' && d.sol){ o.par = d.par; o.sol = d.sol; } return o; };
 function shareDialog(d, title){
   const url = shareUrl(d.pubId);

@@ -559,6 +559,9 @@ function buildComps(){
   outAdj = P.map(()=>[]); inAdj = P.map(()=>[]);
   for (const [a,b] of links){ outAdj[a].push(b); outAdj[b].push(a); inAdj[a].push(b); inAdj[b].push(a); }
   for (const [a,b] of arrows){ outAdj[a].push(b); inAdj[b].push(a); }
+  // fixed links and arrows belong to the board, not the pieces: same pull, but they never move
+  for (const [a,b] of (L.flinks||[])){ outAdj[a].push(b); outAdj[b].push(a); inAdj[a].push(b); inAdj[b].push(a); }
+  for (const [a,b] of (L.farrows||[])){ outAdj[a].push(b); inAdj[b].push(a); }
 }
 function reach(i, adj){
   const seen = new Set([i]), st = [i];
@@ -1072,6 +1075,13 @@ function thumb(lv){
   if (g && g.pairs) for (const pr of g.pairs){
     for (const [a,b] of pr.segs) o += `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" ${gs} stroke-opacity=".45" stroke-width=".4" stroke-dasharray="1 1.3"/>`;
     o += `<circle cx="${X(pr.c[0])}" cy="${Y(pr.c[1])}" r=".6" fill="var(--grey)" fill-opacity=".6"/>`;
+  }
+  for (const [a,b] of (lv.flinks||[]).concat(lv.farrows||[])){   // fixed links and arrows: dotted, part of the board
+    const cc = bowCtrl(lv.pts[a], lv.pts[b], lv.pts), isArrow = (lv.farrows||[]).some(l => l[0] === a && l[1] === b);
+    const qx = +X(cc[0]), qy = +Y(cc[1]), bx = +X(lv.pts[b][0]), by = +Y(lv.pts[b][1]), len = Math.hypot(bx-qx, by-qy) || 1, ux = (bx-qx)/len, uy = (by-qy)/len;
+    const tx = isArrow ? bx - ux*2.6 : bx, ty = isArrow ? by - uy*2.6 : by, f = v => v.toFixed(2);
+    o += `<path d="M${X(lv.pts[a][0])} ${Y(lv.pts[a][1])} Q${f(qx)} ${f(qy)} ${f(tx)} ${f(ty)}" fill="none" stroke="var(--grey)" stroke-opacity=".8" stroke-width="1" stroke-linecap="round" stroke-dasharray=".2 1.8"/>`;
+    if (isArrow) o += `<path d="M${f(tx-ux*2.4-uy*1.6)} ${f(ty-uy*2.4+ux*1.6)} L${f(tx)} ${f(ty)} L${f(tx-ux*2.4+uy*1.6)} ${f(ty-uy*2.4-ux*1.6)}" fill="none" stroke="var(--grey)" stroke-opacity=".8" stroke-width=".8" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
   for (const [a,b] of (lv.links||[])){
     const cc = bowCtrl(lv.pts[a], lv.pts[b], lv.pts);
@@ -1643,8 +1653,26 @@ function drawFrame(now){
   const fit = sel.size >= 3 && anyFit();
   spokeAmt += ((fit ? 1 : 0) - spokeAmt)*(1-Math.exp(-dt*(fit?7:14)));
 
-  // links
+  // fixed links and arrows: part of the board, so drawn like the guides (grey, dashed) and never animated
   ctx.lineCap = 'round';
+  if ((L.flinks && L.flinks.length) || (L.farrows && L.farrows.length)){
+    ctx.save(); ctx.strokeStyle = grey; ctx.globalAlpha = .7; ctx.lineWidth = Math.max(2, dot*.28); ctx.setLineDash([dot*.1, dot*.62]);
+    for (const [a,b] of (L.flinks||[])){
+      const cc = bowCtrl(P[a], P[b], P);
+      ctx.beginPath(); ctx.moveTo(X(P[a][0]),Y(P[a][1])); ctx.quadraticCurveTo(X(cc[0]),Y(cc[1]),X(P[b][0]),Y(P[b][1])); ctx.stroke();
+    }
+    for (const [a,b] of (L.farrows||[])){
+      const cc = bowCtrl(P[a], P[b], P), bx = X(P[b][0]), by = Y(P[b][1]), cx = X(cc[0]), cy = Y(cc[1]);
+      const len = Math.hypot(bx-cx, by-cy) || 1, ux = (bx-cx)/len, uy = (by-cy)/len;
+      const tipX = bx - ux*dot*1.35, tipY = by - uy*dot*1.35, hw = dot*.75, hl = dot*1.1;
+      ctx.setLineDash([dot*.1, dot*.62]);
+      ctx.beginPath(); ctx.moveTo(X(P[a][0]),Y(P[a][1])); ctx.quadraticCurveTo(cx, cy, tipX, tipY); ctx.stroke();
+      ctx.setLineDash([]);   // an open chevron for the head, so it can't be mistaken for a moving arrow's solid one
+      ctx.beginPath(); ctx.moveTo(tipX - ux*hl - uy*hw, tipY - uy*hl + ux*hw); ctx.lineTo(tipX, tipY); ctx.lineTo(tipX - ux*hl + uy*hw, tipY - uy*hl - ux*hw); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // links
   for (const [a,b] of (anim ? anim.links : links)){
     const pa = tokenPos(a, k), pb = tokenPos(b, k), cc = bowCtrl(pa, pb, P);
     ctx.strokeStyle = ink; ctx.globalAlpha = .28; ctx.lineWidth = dot*.55;
@@ -1673,6 +1701,7 @@ function drawFrame(now){
   const conn = [];
   for (const [a,b] of (anim ? anim.links : links).concat(anim ? anim.arrows : arrows)){
     const pa = tokenPos(a, k), pb = tokenPos(b, k); conn.push([a, b, pa, pb, bowCtrl(pa, pb, P)]); }
+  if (!anim) for (const [a,b] of (L.flinks||[]).concat(L.farrows||[])) conn.push([a, b, P[a], P[b], bowCtrl(P[a], P[b], P)]);
   drawSelection(gooPos, X, Y, mdPx, selCol, conn);
   if (center && spokeAmt > .02 && !preview){   // dashed spokes from the turning centre
     ctx.save(); ctx.strokeStyle = selCol; ctx.globalAlpha = .55*spokeAmt; ctx.lineWidth = 1.3; ctx.setLineDash([3,4]);
@@ -1915,6 +1944,6 @@ renderAcct();
 { const c = curIndex(); loadLevel(levelOpen(c) ? c : lastOpen()); }
 showScreen();
 </script>
-<script src="builder.js?v=20261110e"></script>
+<script src="builder.js?v=20261110f"></script>
 </body>
 </html>

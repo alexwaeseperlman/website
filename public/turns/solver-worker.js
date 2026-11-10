@@ -40,7 +40,7 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
   let modP = null;
   onmessage = async e => {
     try{
-      if (!modP) modP = fetch('solver.wasm?v=1').then(r => { if (!r.ok) throw new Error('Could not load the solver.'); return r.arrayBuffer(); }).then(b => WebAssembly.compile(b));
+      if (!modP) modP = fetch('solver.wasm?v=2').then(r => { if (!r.ok) throw new Error('Could not load the solver.'); return r.arrayBuffer(); }).then(b => WebAssembly.compile(b));
       postMessage(runSolver(await modP, e.data));
     }catch(err){ modP = null; postMessage({ error: String(err && err.message || err) }); }
   };
