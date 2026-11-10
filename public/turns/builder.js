@@ -39,11 +39,14 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .btool svg{width:36px;height:36px;overflow:visible}
 .btool[aria-pressed="true"]{opacity:1;border-color:var(--sel);background:color-mix(in srgb, var(--sel) 14%, var(--card))}
 #bHint,.b-in{width:100%;font:inherit;font-size:15px;padding:6px 10px;border:2px solid var(--border);border-radius:8px;background:var(--field);color:var(--ink);-webkit-user-select:text;user-select:text}
-.b-par{margin-top:4px}
+.b-par{margin-top:4px;min-height:38px}
 .b-par .meta b{color:var(--ink);font-weight:600}
 .b-acts{margin-top:8px}
 .b-acts button{flex:1}
-.xcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:8px 12px;margin-top:10px;border-color:var(--border);border-radius:10px;background:var(--card)}
+.xrow{display:flex;align-items:stretch;gap:8px;margin-top:10px}
+.xside{display:flex;flex-direction:column;gap:6px;flex:none}
+.xcopy{flex:1;font-size:13px;padding:2px 10px;border-color:var(--border);border-radius:10px;background:var(--card)}
+.xcard{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;padding:8px 12px;border-color:var(--border);border-radius:10px;background:var(--card)}
 .xcard svg.thumb{width:60px;height:60px;flex-shrink:0}
 .xcard .xt{flex:1;min-width:0}
 .xcard .xn{font-weight:600;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -56,7 +59,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .d-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:2px solid var(--border)}
 .d-row svg.thumb{width:44px;height:44px;flex-shrink:0}
 .d-row .xt{flex:1;min-width:0}
-.d-row button{font-size:14px;padding:4px 10px}
+.d-row button{font-size:14px;padding:4px 8px}
 .share-link{display:block;width:100%;font:inherit;font-size:15px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;background:var(--field);color:var(--ink);-webkit-user-select:all;user-select:all}
 .hint .by{color:var(--grey);white-space:nowrap}
 </style>`);
@@ -152,7 +155,7 @@ let bview = { s:1, ox:0, oy:0, dot:10 }, bpaint = null;
 function openDraft(d){
   D = d; store.cur = d.lid; saveStore();
   bsel = new Set(); linkFrom = -1; undoStack = []; stopSolver();
-  $('bName').value = D.name; recompute(); bRefresh();
+  $('bName').value = D.name; recompute(); bRefresh(); autoSolve();
 }
 function ensureDraft(){
   if (D) return;
@@ -161,11 +164,24 @@ function ensureDraft(){
   openDraft(d);
 }
 // every edit to the puzzle itself goes through here: remember it for Undo, and forget what we knew about par
+// A published level can't be changed (people's results on it would stop meaning anything), only deleted.
+// Any level can be copied into a new draft: one of your own, or one from Community levels.
+function copyLevel(src, name, hint){
+  const d = Object.assign(newDraft(), JSON.parse(JSON.stringify({ pts: src.pts, start: src.start, goal: src.goal, links: src.links || [], arrows: src.arrows || [], tools: src.tools,
+    par: typeof src.par === 'number' && src.sol ? src.par : null, sol: typeof src.par === 'number' && src.sol ? src.sol : null })), { name: String(name || '').slice(0, 40), hint: String(hint || '').slice(0, 200) });
+  store.list.unshift(d); openDraft(d); return d;
+}
+const copyName = n => ((n || '').trim() || 'Untitled').slice(0, 35) + ' copy';
+function askCopy(){
+  say('This level is published', '<p>Published levels can\'t be changed, because players\' results on them would stop counting. You can edit a copy and publish that as a new level.</p>',
+    [['Edit a copy', 'primary', () => { closeAcct(); copyLevel(D, copyName(D.name), D.hint); }], ['Cancel', '', () => { closeAcct(); bRefresh(); }]]);
+}
 function edit(fn){
+  if (D.pubId) return askCopy();
   undoStack.push(JSON.stringify(D)); if (undoStack.length > 100) undoStack.shift();
   fn();
   D.par = null; D.sol = null; D.tested = null; D.state = null; stopSolver();
-  saveStore(); recompute(); bRefresh();
+  saveStore(); recompute(); bRefresh(); autoSolve();
 }
 function recompute(){
   const idx = [...bsel].sort((a, b) => a - b), room = MAXPTS - D.pts.length;
@@ -283,18 +299,23 @@ function bRefresh(){
     st.textContent = 'Choose which turns the player gets.';
     pn.innerHTML = `<div class="row">${BTOOLS.map(t => `<button class="btool" data-t="${t}" aria-pressed="${D.tools.includes(t)}" aria-label="${TOOL_NAME[t]}" title="${TOOL_NAME[t]}">${toolIcon(t)}</button>`).join('')}</div>
       <input id="bHint" maxlength="200" placeholder="A line of help shown above the board (optional)" aria-label="Help text" autocomplete="off">`;
-    $('bHint').value = D.hint; $('bHint').oninput = () => { D.hint = $('bHint').value; saveStore(); };
+    $('bHint').value = D.hint; $('bHint').readOnly = !!D.pubId; $('bHint').oninput = () => { D.hint = $('bHint').value; saveStore(); };
     for (const x of pn.querySelectorAll('.btool')) x.onclick = () => edit(() => {
       const t = x.dataset.t; D.tools = BTOOLS.filter(u => u === t ? !D.tools.includes(t) : D.tools.includes(u)); });
   }
   const pr = $('bPar');
-  if (solver) pr.textContent = 'Solving…';
+  if (solver || autoTimer) pr.textContent = 'Solving…';
   else if (D.state) pr.innerHTML = D.state;
   else if (typeof D.par === 'number') pr.innerHTML = `Par <b>${D.par}</b>, hints ready`;
-  else pr.textContent = D.tested ? `Par unknown. You solved it in ${D.tested}.` : 'Par unknown';
-  $('bSolve').textContent = solver ? 'Cancel' : 'Run solver';
+  else pr.textContent = D.tested ? `Par unknown. You solved it in ${D.tested}.` : (problems(D)[0] || 'Par unknown');
+  if (D.state && D.tested && !/^<b>No solution/.test(D.state)) pr.innerHTML += ` You solved it in ${D.tested}.`;
+  // the solver runs by itself; the button only cancels a run, or retries one that gave up, without a time limit
+  $('bSolve').textContent = solver ? 'Cancel' : D.state === TOO_LONG ? 'Keep solving' : 'Run solver';
+  $('bSolve').hidden = !solver && (!!autoTimer || typeof D.par === 'number' || problems(D).length > 0 || /^<b>No solution/.test(D.state || ''));
   $('bUndo').disabled = !undoStack.length;
-  $('bPublish').textContent = D.pubId ? 'Update' : 'Publish';
+  $('bPublish').textContent = D.pubId ? 'Share' : 'Publish';
+  $('bName').readOnly = !!D.pubId;
+  if (D.pubId){ pr.innerHTML = 'Published' + (typeof D.par === 'number' ? `, par <b>${D.par}</b>` : ', par unknown') + '. Copy it to make changes.'; $('bSolve').hidden = true; }
   bRender();
 }
 
@@ -374,11 +395,11 @@ $('bBoard').addEventListener('pointermove', e => {
 const bEnd = e => { if (bpaint && bpaint.id === e.pointerId) bpaint = null; };
 $('bBoard').addEventListener('pointerup', bEnd); $('bBoard').addEventListener('pointercancel', bEnd);
 for (const b of $('bModes').children) b.onclick = () => { mode = b.dataset.m; linkFrom = -1; if (mode !== 'points') bsel.clear(); recompute(); bRefresh(); };
-$('bName').oninput = () => { D.name = $('bName').value; saveStore(); };
+$('bName').oninput = () => { if (D.pubId) return; D.name = $('bName').value; saveStore(); };
 $('bUndo').onclick = () => {
   if (!undoStack.length) return;
   const d = JSON.parse(undoStack.pop()), keep = { name: D.name, hint: D.hint, pubId: D.pubId };
-  Object.assign(D, d, keep); stopSolver(); bsel.clear(); linkFrom = -1; saveStore(); recompute(); sfx.undo(); bRefresh();
+  Object.assign(D, d, keep); stopSolver(); bsel.clear(); linkFrom = -1; saveStore(); recompute(); sfx.undo(); bRefresh(); autoSolve();
 };
 const say = (title, html, buttons) => acctDialog(title, html, buttons || [['OK', 'primary', closeAcct]]);
 // the draft as a playable level, or a dialog saying what is missing
@@ -398,7 +419,8 @@ $('bTest').onclick = () => {
 
 /* ================= solver (WebAssembly, in a worker) ================= */
 let solver = null;
-function stopSolver(){ if (solver){ solver.terminate(); solver = null; } }
+let autoTimer = 0, limitTimer = 0;
+function stopSolver(){ clearTimeout(autoTimer); autoTimer = 0; clearTimeout(limitTimer); if (solver){ solver.terminate(); solver = null; } }
 function solverInput(lv){
   const CODE = { r:1, g:2, y:3 }, tr = [];
   lv.start.forEach((c, i) => { if (c) tr.push(i); });
@@ -413,18 +435,22 @@ function solverInput(lv){
   const fx = lv.tools.filter(t => t in ROT).map(t => ROT[t]); o.push(fx.length, ...fx);
   return o.join('\n') + '\n';
 }
-$('bSolve').onclick = () => {
-  if (solver){ stopSolver(); bRefresh(); return; }
-  const lv = playable('solve'); if (!lv) return;
-  const input = solverInput(lv), d = D, tooBig = 'Too big for the solver. Par stays unknown.';
-  if (!input){ d.state = tooBig; say('Too big for the solver', `<p>The solver can follow at most ${MAXTRACKED} pieces (colored dots, plus any dot with a link or an arrow). You can still publish with par unknown.</p>`); bRefresh(); return; }
-  let w; try{ w = new Worker('solver-worker.js?v=' + V); }catch(e){ d.state = 'The solver could not start.'; bRefresh(); return; }
+// The solver runs by itself a moment after every edit. If it hasn't finished within AUTO_LIMIT the par is
+// left unknown, and the button offers to keep going without a limit.
+const AUTO_LIMIT = 8000, TOO_LONG = 'Par unknown: solving is taking too long.', TOO_BIG = 'Par unknown: too big for the solver.';
+function startSolver(limit){
+  stopSolver();
+  if (!D || D.pubId || typeof D.par === 'number' || problems(D).length) return bRefresh();
+  const lv = cleanLevel(D, 'x'), input = lv && solverInput(lv), d = D;
+  if (!input){ d.state = TOO_BIG; return bRefresh(); }
+  let w; try{ w = new Worker('solver-worker.js?v=' + V); }catch(e){ d.state = 'Par unknown: the solver could not start.'; return bRefresh(); }
   solver = w; d.state = null;
+  if (limit) limitTimer = setTimeout(() => { if (solver === w){ stopSolver(); d.state = TOO_LONG; saveStore(); if (d === D) bRefresh(); } }, limit);
   const done = r => {
     if (solver !== w) return;
-    w.terminate(); solver = null;
+    stopSolver();
     const lines = (r.out || '').trim().split('\n'), par = /^par (-?\d+)$/.test(lines[0]) ? +lines[0].slice(4) : null;
-    if (r.error || r.code || par === null || par === -2) d.state = tooBig;
+    if (r.error || r.code || par === null || par === -2) d.state = TOO_BIG;
     else if (par === -1){ d.state = '<b>No solution.</b> This level can\'t be solved.'; d.tested = null; }
     else {
       const sol = lines.slice(1).map(l => { const [, type, mask, dir] = l.split(' '), m = BigInt(mask), s = [];
@@ -432,13 +458,20 @@ $('bSolve').onclick = () => {
         return { s, t: type === '2' ? 'r' + dir : +dir > 0 ? 'ccw' : 'cw' }; });
       // keep the result only if the game itself agrees that these moves solve the level
       const chk = cleanLevel(Object.assign({}, d, { par, sol }), 'x');
-      if (chk && chk.par === par){ d.par = par; d.sol = sol; } else d.state = 'The solver\'s answer did not check out. Par stays unknown.';
+      if (chk && chk.par === par){ d.par = par; d.sol = sol; } else d.state = 'Par unknown: the solver\'s answer did not check out.';
     }
     saveStore(); if (d === D) bRefresh();
   };
   w.onmessage = e => done(e.data); w.onerror = () => done({ error:'worker' });
   w.postMessage(input); bRefresh();
-};
+}
+function autoSolve(){
+  clearTimeout(autoTimer); autoTimer = 0;
+  if (!D || D.pubId || D.state || typeof D.par === 'number' || problems(D).length) return;
+  autoTimer = setTimeout(() => { autoTimer = 0; if (D && screen === 'build' && !solver && !D.state) startSolver(AUTO_LIMIT); else bRefresh(); }, 350);
+  bRefresh();
+}
+$('bSolve').onclick = () => { if (solver){ stopSolver(); D.state = 'Par unknown: solving was cancelled.'; bRefresh(); } else startSolver(0); };
 
 /* ================= my levels ================= */
 function draftRow(d){
@@ -446,8 +479,10 @@ function draftRow(d){
   row.innerHTML = thumb(d) + '<div class="xt"><div class="xn"></div><div class="xm"></div></div>';
   row.querySelector('.xn').textContent = d.name.trim() || 'Untitled';
   row.querySelector('.xm').textContent = (d.pubId ? 'Published' : 'Draft') + `, ${d.pts.length} dots` + (typeof d.par === 'number' ? `, par ${d.par}` : '');
-  const open = document.createElement('button'); open.textContent = d === D ? 'Editing' : 'Edit'; open.disabled = d === D;
+  const open = document.createElement('button'); open.textContent = d === D ? 'Open' : d.pubId ? 'View' : 'Edit'; open.disabled = d === D;
   open.onclick = () => { closeAcct(); openDraft(d); };
+  const copy = document.createElement('button'); copy.textContent = 'Copy';
+  copy.onclick = () => { closeAcct(); copyLevel(d, copyName(d.name), d.hint); };
   const del = document.createElement('button'); del.textContent = 'Delete';
   del.onclick = () => {
     const drop = () => { store.list = store.list.filter(x => x !== d); if (d === D){ D = null; store.cur = null; } saveStore(); ensureDraft(); showDrafts(); };
@@ -462,7 +497,7 @@ function draftRow(d){
       }],
       ['Only delete my copy', '', drop], ['Go back', '', showDrafts]]);
   };
-  row.append(open, del); return row;
+  row.append(open, copy, del); return row;
 }
 function showDrafts(){
   say('My levels', '', [['New level', 'primary', () => { const d = newDraft(); store.list.unshift(d); closeAcct(); openDraft(d); }], ['Close', '', closeAcct]]);
@@ -476,42 +511,45 @@ const shareUrl = id => location.origin + location.pathname + '#l=' + id;
 // the public copy: the puzzle plus, when the solver has run, par and the solution the hints are drawn from
 const publicData = d => { const o = { pts: d.pts, start: d.start, goal: d.goal, links: d.links, arrows: d.arrows, tools: d.tools, hint: d.hint.trim() };
   if (typeof d.par === 'number' && d.sol){ o.par = d.par; o.sol = d.sol; } return o; };
+function shareDialog(d, title){
+  const url = shareUrl(d.pubId);
+  say(title, `<p>Share this link:</p><input class="share-link" id="bLink" readonly><p class="auth-msg" id="bCopied"></p>`, [
+    ['Copy link', 'primary', async () => { try{ await navigator.clipboard.writeText(url); $('bCopied').textContent = 'Copied.'; }catch(e){ $('bLink').select(); $('bCopied').textContent = 'Select the link and copy it.'; } }],
+    ['Play it', '', () => { closeAcct(); go('l=' + d.pubId); }], ['Done', 'link', closeAcct]]);
+  $('bLink').value = url;
+}
 $('bPublish').onclick = () => {
+  if (D.pubId) return shareDialog(D, 'Share your level');
   const lv = playable('publish'); if (!lv) return;
   if (/^<b>No solution/.test(D.state || '')) return say('This level can\'t be solved', '<p>The solver found no way to finish it. Change the level, then run the solver again.</p>');
   if (typeof D.par !== 'number' && !D.tested) return say('Solve it first',
-    '<p>So that nobody gets an impossible level, solve it yourself with <b>Test</b>, or let <b>Run solver</b> find par.</p><p>Par can stay unknown: a level you solved by hand can be published without it.</p>');
+    '<p>So that nobody gets an impossible level, solve it yourself with <b>Test</b>, or let the solver finish.</p><p>Par can stay unknown: a level you solved by hand can be published without it.</p>');
   if (!D.name.trim()) return say('Give it a name', '<p>Type a name for your level in the box at the top.</p>', [['OK', 'primary', () => { closeAcct(); $('bName').focus(); }]]);
   if (!sbOn || !sb) return say('Can\'t publish right now', '<p>The level server can\'t be reached. Your level is saved on this device, so try again later.</p>');
-  if (!user) return say('Sign in to publish', '<p>Publishing needs an account, so you can update or take down your levels later. Your level is saved on this device.</p>',
+  if (!user) return say('Sign in to publish', '<p>Publishing needs an account, so you can take down your levels later. Your level is saved on this device.</p>',
     [['Sign in', 'primary', () => { closeAcct(); openAuth(); }], ['Not now', 'link', closeAcct]]);
   const d = D;
-  say(d.pubId ? 'Update your level?' : 'Publish your level?',
-    `<p>${d.pubId ? 'The published copy will be replaced with this version.' : 'Anyone with the link can play it, and it will be listed in Community levels.'}
+  say('Publish your level?',
+    `<p>Anyone with the link can play it, and it will be listed in Community levels. Once published it can't be changed, only deleted.
       ${typeof d.par === 'number' ? `Par is ${d.par}, with hints.` : 'Par is unknown, so players get one star and no hints.'}</p>
      <label class="muted" for="bAuthor" style="display:block;margin-bottom:4px">Your name, shown with the level</label>
      <input class="b-in" id="bAuthor" maxlength="40" placeholder="Anonymous" autocomplete="nickname">`,
-    [[d.pubId ? 'Update' : 'Publish', 'primary', async () => {
+    [['Publish', 'primary', async () => {
       store.author = $('bAuthor').value.trim().slice(0, 40); saveStore();
       const row = { name: d.name.trim().slice(0, 40), author_name: store.author, data: publicData(d) };
       for (const b of $('acctBtns').children) b.disabled = true;
-      let res = d.pubId ? await sb.from('turns_levels').update(Object.assign(row, { updated_at: new Date().toISOString() })).eq('id', d.pubId).select('id') : null;
-      if (!res || (!res.error && !res.data.length)) res = await sb.from('turns_levels').insert(row).select('id');   // never published, or the old copy is gone
+      const res = await sb.from('turns_levels').insert(row).select('id');
       if (res.error || !res.data.length) return say('Could not publish', `<p>${esc(res.error ? res.error.message : 'Something went wrong.')}</p>`);
-      d.pubId = res.data[0].id; saveStore(); shared.delete(d.pubId); xLoaded = false; bRefresh();
+      d.pubId = res.data[0].id; stopSolver(); if (d === D) undoStack = []; saveStore(); xLoaded = false; bRefresh();
       track('builder/publish', 'level_publish', { par_known: typeof d.par === 'number' });
-      const url = shareUrl(d.pubId);
-      say('Published!', `<p>Share this link:</p><input class="share-link" id="bLink" readonly><p class="auth-msg" id="bCopied"></p>`, [
-        ['Copy link', 'primary', async () => { try{ await navigator.clipboard.writeText(url); $('bCopied').textContent = 'Copied.'; }catch(e){ $('bLink').select(); $('bCopied').textContent = 'Select the link and copy it.'; } }],
-        ['Play it', '', () => { closeAcct(); go('l=' + d.pubId); }], ['Done', 'link', closeAcct]]);
-      $('bLink').value = url;
+      shareDialog(d, 'Published!');
     }], ['Cancel', '', closeAcct]]);
   $('bAuthor').value = store.author || '';
 };
 
 /* ================= community levels ================= */
 const shared = new Map();    // id -> { row, lv }
-const FIELDS = 'id,name,author_name,data,plays,solves,created_at';
+const FIELDS = 'id,author_id,name,author_name,data,plays,solves,created_at';
 // supabase-js loads after the page; wait for the game's client to exist
 const withSb = () => new Promise((ok, no) => {
   if (!sbOn) return no(new Error('off'));
@@ -580,7 +618,22 @@ function xRender(){
     b.querySelector('.xn').textContent = e.lv.name;
     b.querySelector('.xm').textContent = `By ${String(r.author_name || '').trim() || 'Anonymous'} · ${hasPar(e.lv) ? 'par ' + e.lv.par : 'par unknown'} · ${r.plays} play${r.plays === 1 ? '' : 's'}`;
     b.onclick = () => go('l=' + r.id);
-    list.append(b);
+    const cp = document.createElement('button'); cp.className = 'xcopy'; cp.textContent = 'Copy'; cp.setAttribute('aria-label', 'Copy this level into the builder');
+    cp.onclick = () => { const src = cleanLevel(r.data || {}, r.name); if (!src) return; copyLevel(src, copyName(r.name), (r.data || {}).hint); go('build'); };
+    const wrap = document.createElement('div'); wrap.className = 'xrow'; const side = document.createElement('div'); side.className = 'xside'; side.append(cp); wrap.append(b, side);
+    if (user && r.author_id === user.id){   // your own level: it can be taken down from here too
+      const del = document.createElement('button'); del.className = 'xcopy'; del.textContent = 'Delete';
+      del.onclick = () => say('Take this level down?', `<p>"${esc(e.lv.name)}" will be removed for everyone. This can't be undone.</p>`, [
+        ['Take it down', 'danger', async () => {
+          const { data, error } = await sb.from('turns_levels').delete().eq('id', r.id).select('id');
+          if (error || !data || !data.length) return say('Could not take it down', `<p>${esc(error ? error.message : 'This account did not publish that level.')}</p>`);
+          shared.delete(r.id); xRows = xRows.filter(x => x !== r);
+          for (const d of store.list) if (d.pubId === r.id) d.pubId = null;   // your own copy becomes a draft again
+          saveStore(); closeAcct(); xRender();
+        }], ['Cancel', '', closeAcct]]);
+      side.append(del);
+    }
+    list.append(wrap);
   }
   if (!list.children.length) list.innerHTML = '<p class="x-msg">No levels yet. Be the first to make one!</p>';
   $('xMore').hidden = xEnd;
@@ -589,7 +642,7 @@ for (const b of $('xSort').children) b.onclick = () => { if (xSort !== b.dataset
 $('xMore').onclick = () => xLoad(true);
 
 /* ================= screens ================= */
-XSCREENS.build = () => { ensureDraft(); bRefresh(); };
+XSCREENS.build = () => { ensureDraft(); bRefresh(); autoSolve(); };
 XSCREENS.explore = () => { for (const b of $('xSort').children) b.setAttribute('aria-pressed', b.dataset.s === xSort); if (xLoaded) xRender(); else xLoad(false); };
 $('exploreBtn').onclick = () => go('explore');
 $('buildBtn').onclick = () => go('build');
